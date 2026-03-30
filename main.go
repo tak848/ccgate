@@ -3,15 +3,18 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/alecthomas/kong"
+	"golang.org/x/term"
 
 	"github.com/tak848/ccgate/internal/config"
 	"github.com/tak848/ccgate/internal/gate"
@@ -20,6 +23,15 @@ import (
 
 var version = "dev"
 
+func init() {
+	if version != "dev" {
+		return
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		version = info.Main.Version
+	}
+}
+
 type CLI struct {
 	Version kong.VersionFlag `help:"Print version and exit."`
 }
@@ -27,12 +39,19 @@ type CLI struct {
 func main() { os.Exit(_main()) }
 
 func _main() int {
+	// Always parse flags first (--version, --help work regardless of tty).
 	var cli CLI
 	kong.Parse(&cli,
 		kong.Name("ccgate"),
-		kong.Description("Claude Code PermissionRequest hook. Reads HookInput JSON from stdin, returns allow/deny/fallthrough to stdout."),
+		kong.Description("Claude Code PermissionRequest hook.\nReads HookInput JSON from stdin, returns allow/deny/fallthrough to stdout."),
 		kong.Vars{"version": version},
 	)
+
+	// When invoked directly from a terminal with no flags, show usage instead of blocking on stdin.
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		fmt.Fprintf(os.Stderr, "ccgate %s\n\nClaude Code PermissionRequest hook.\nReads HookInput JSON from stdin, returns allow/deny/fallthrough to stdout.\n\nUsage: echo '<HookInput JSON>' | ccgate\n\nFlags:\n  --version    Print version and exit\n  --help       Show help\n", version)
+		return 0
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
