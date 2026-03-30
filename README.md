@@ -112,16 +112,27 @@ Project-local configs are only loaded if **not tracked by Git**.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `provider.name` | string | `"anthropic"` | Provider name |
-| `provider.model` | string | `"claude-haiku-4-5"` | Model name |
+| `provider.name` | string | `"anthropic"` | Provider name. Only `"anthropic"` is supported. |
+| `provider.model` | string | `"claude-haiku-4-5"` | Model name (e.g. `claude-haiku-4-5`, `claude-sonnet-4-6`, `claude-opus-4-6`) |
 | `provider.timeout_ms` | int | `20000` | API timeout (ms) |
+| `log_path` | string | `"~/.claude/logs/ccgate.log"` | Log file path. Supports `~` for home directory. |
+| `log_disabled` | bool | `false` | Disable logging entirely |
 | `allow` | string[] | `[]` | Allow rules |
 | `deny` | string[] | `[]` | Deny rules (mandatory) |
 | `environment` | string[] | `[]` | Environment context |
 
 ## Logging
 
-Logs are written to `~/.claude/logs/ccgate.log` with 5 MB rotation (`.log.1`).
+Logs are written to `~/.claude/logs/ccgate.log` by default with 5 MB rotation (`.log.1`).
+
+To change the log path or disable logging:
+
+```jsonnet
+{
+  log_path: '~/my-logs/ccgate.log',
+  // log_disabled: true,
+}
+```
 
 ## Development
 
