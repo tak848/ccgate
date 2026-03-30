@@ -69,7 +69,7 @@ See [example/ccgate.jsonnet](example/ccgate.jsonnet) for reference.
 }
 ```
 
-Place `ccgate.schema.json` in the same directory for editor autocompletion.
+The `$schema` field points to the hosted JSON Schema for editor autocompletion — no local file needed.
 
 ### 2. Register as a Claude Code hook
 
