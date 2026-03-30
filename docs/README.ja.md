@@ -65,7 +65,7 @@ go install github.com/tak848/ccgate@latest
 }
 ```
 
-JSON Schema (`ccgate.schema.json`) を同じディレクトリに配置すると、エディタで補完が効きます。
+`$schema` フィールドでホストされた JSON Schema を参照しているため、ローカルにファイルを配置せずにエディタ補完が効きます。
 
 ### 2. Claude Code の hooks に登録
 
