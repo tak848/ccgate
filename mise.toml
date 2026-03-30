@@ -1,5 +1,5 @@
 [tools]
-go = "1.25"
+go = "1.25.8"
 
 [tasks.build]
 description = "Build the binary (dev use)"
