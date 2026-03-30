@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	jsonnet "github.com/google/go-jsonnet"
@@ -18,12 +19,15 @@ const (
 	DefaultTimeoutMS = 20_000
 	DefaultModel     = string(anthropic.ModelClaudeHaiku4_5)
 	DefaultProvider  = "anthropic"
+	DefaultLogPath   = "~/.claude/logs/ccgate.log"
 	BaseConfigName   = "permission-gate.jsonnet"
 	LocalConfigName  = "permission-gate.local.jsonnet"
 )
 
 type Config struct {
 	Provider    ProviderConfig `json:"provider"`
+	LogPath     string         `json:"log_path"`
+	LogDisabled bool           `json:"log_disabled"`
 	Allow       []string       `json:"allow"`
 	Deny        []string       `json:"deny"`
 	Environment []string       `json:"environment"`
@@ -42,7 +46,22 @@ func Default() Config {
 			Model:     DefaultModel,
 			TimeoutMS: DefaultTimeoutMS,
 		},
+		LogPath: DefaultLogPath,
 	}
+}
+
+// ResolveLogPath expands ~ in LogPath and returns the absolute path.
+func (c Config) ResolveLogPath() string {
+	p := c.LogPath
+	if p == "" {
+		p = DefaultLogPath
+	}
+	if after, ok := strings.CutPrefix(p, "~/"); ok {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, after)
+		}
+	}
+	return p
 }
 
 // Load reads the base config from ~/.claude/ and merges project-local overrides.
@@ -139,6 +158,12 @@ func mergeConfigFile(path string, cfg *Config) error {
 	}
 	if override.Provider.TimeoutMS > 0 {
 		cfg.Provider.TimeoutMS = override.Provider.TimeoutMS
+	}
+	if override.LogPath != "" {
+		cfg.LogPath = override.LogPath
+	}
+	if override.LogDisabled {
+		cfg.LogDisabled = true
 	}
 
 	cfg.Allow = append(cfg.Allow, override.Allow...)

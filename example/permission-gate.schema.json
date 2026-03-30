@@ -34,6 +34,14 @@
         "type": "string"
       }
     },
+    "log_path": {
+      "type": "string",
+      "description": "Log file path. Supports ~ for home directory. Default: ~/.claude/logs/ccgate.log"
+    },
+    "log_disabled": {
+      "type": "boolean",
+      "description": "Disable logging entirely. Default: false"
+    },
     "environment": {
       "type": "array",
       "items": {

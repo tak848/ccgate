@@ -34,10 +34,6 @@ func _main() int {
 		kong.Vars{"version": version},
 	)
 
-	logger, cleanup := initLogger()
-	defer cleanup()
-	slog.SetDefault(logger)
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -47,16 +43,20 @@ func _main() int {
 		return 1
 	}
 
-	slog.Info("hook invoked",
-		"tool", input.ToolName,
-		"permission_mode", input.PermissionMode,
-	)
-
 	cfg, err := config.Load(input.Cwd)
 	if err != nil {
 		slog.Error("failed to load config", "error", err)
 		return 1
 	}
+
+	logger, cleanup := initLogger(cfg.ResolveLogPath(), cfg.LogDisabled)
+	defer cleanup()
+	slog.SetDefault(logger)
+
+	slog.Info("hook invoked",
+		"tool", input.ToolName,
+		"permission_mode", input.PermissionMode,
+	)
 
 	start := time.Now()
 	decision, ok, err := gate.DecidePermission(ctx, cfg, input)
@@ -95,19 +95,17 @@ func _main() int {
 
 const maxLogSize = 5 * 1024 * 1024 // 5 MB
 
-func initLogger() (*slog.Logger, func()) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return slog.New(slog.NewTextHandler(os.Stderr, nil)), func() {}
+func initLogger(logPath string, disabled bool) (*slog.Logger, func()) {
+	if disabled {
+		return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError + 1})), func() {}
 	}
 
-	logDir := filepath.Join(home, ".claude", "logs")
+	logDir := filepath.Dir(logPath)
 	if err := os.MkdirAll(logDir, 0o755); err != nil {
 		slog.Warn("failed to create log directory", "error", err)
 		return slog.New(slog.NewTextHandler(os.Stderr, nil)), func() {}
 	}
 
-	logPath := filepath.Join(logDir, "ccgate.log")
 	rotateLog(logPath)
 
 	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)

@@ -5,6 +5,7 @@
     model: 'claude-haiku-4-5',
     timeout_ms: 40000,
   },
+  // log_path: '~/.claude/logs/ccgate.log',
   allow: [
     'Read-Only Operations: GET requests, read-only API calls, or queries that do not modify state.',
     'Local Operations: Read-only work inside the current repository or current worktree.',
