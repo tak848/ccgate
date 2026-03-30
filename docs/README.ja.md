@@ -113,6 +113,7 @@ JSON Schema (`permission-gate.schema.json`) を同じディレクトリに配置
 | `provider.timeout_ms` | int | `20000` | API タイムアウト (ms) |
 | `log_path` | string | `"~/.claude/logs/ccgate.log"` | ログファイルパス。`~` でホームディレクトリ展開 |
 | `log_disabled` | bool | `false` | ログ出力を完全に無効化 |
+| `log_max_size` | int | `5242880` | ローテーション閾値 (bytes, デフォルト 5MB) |
 | `allow` | string[] | `[]` | 許可ルール |
 | `deny` | string[] | `[]` | 拒否ルール (mandatory) |
 | `environment` | string[] | `[]` | 環境コンテキスト |

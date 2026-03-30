@@ -117,6 +117,7 @@ Project-local configs are only loaded if **not tracked by Git**.
 | `provider.timeout_ms` | int | `20000` | API timeout (ms) |
 | `log_path` | string | `"~/.claude/logs/ccgate.log"` | Log file path. Supports `~` for home directory. |
 | `log_disabled` | bool | `false` | Disable logging entirely |
+| `log_max_size` | int | `5242880` | Max log file size in bytes before rotation (default 5MB) |
 | `allow` | string[] | `[]` | Allow rules |
 | `deny` | string[] | `[]` | Deny rules (mandatory) |
 | `environment` | string[] | `[]` | Environment context |

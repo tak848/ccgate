@@ -49,7 +49,7 @@ func _main() int {
 		return 1
 	}
 
-	logger, cleanup := initLogger(cfg.ResolveLogPath(), cfg.LogDisabled)
+	logger, cleanup := initLogger(cfg.ResolveLogPath(), cfg.LogDisabled, cfg.LogMaxSize)
 	defer cleanup()
 	slog.SetDefault(logger)
 
@@ -93,9 +93,7 @@ func _main() int {
 	return 0
 }
 
-const maxLogSize = 5 * 1024 * 1024 // 5 MB
-
-func initLogger(logPath string, disabled bool) (*slog.Logger, func()) {
+func initLogger(logPath string, disabled bool, maxLogSize int64) (*slog.Logger, func()) {
 	if disabled {
 		return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError + 1})), func() {}
 	}
@@ -106,7 +104,7 @@ func initLogger(logPath string, disabled bool) (*slog.Logger, func()) {
 		return slog.New(slog.NewTextHandler(os.Stderr, nil)), func() {}
 	}
 
-	rotateLog(logPath)
+	rotateLog(logPath, maxLogSize)
 
 	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
@@ -128,9 +126,9 @@ func (w *atomicWriter) Write(p []byte) (int, error) {
 	return w.f.Write(p)
 }
 
-func rotateLog(path string) {
+func rotateLog(path string, maxSize int64) {
 	info, err := os.Stat(path)
-	if err != nil || info.Size() < maxLogSize {
+	if err != nil || info.Size() < maxSize {
 		return
 	}
 	prev := path + ".1"

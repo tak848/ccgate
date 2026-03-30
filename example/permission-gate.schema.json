@@ -42,6 +42,11 @@
       "type": "boolean",
       "description": "Disable logging entirely. Default: false"
     },
+    "log_max_size": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Max log file size in bytes before rotation. Default: 5242880 (5MB)"
+    },
     "environment": {
       "type": "array",
       "items": {
