@@ -2,7 +2,7 @@ module github.com/tak848/ccgate
 
 go 1.25.0
 
-toolchain go1.25.7
+toolchain go1.25.8
 
 require (
 	github.com/alecthomas/kong v1.14.0

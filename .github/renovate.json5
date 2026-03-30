@@ -16,4 +16,26 @@
   gitIgnoredAuthors: [
     "github-actions[bot]@users.noreply.github.com",
   ],
+  packageRules: [
+    {
+      description: "go directive: keep pinned at 1.25.0",
+      matchDepNames: ["go"],
+      matchManagers: ["gomod"],
+      matchDepTypes: ["golang"],
+      enabled: false,
+    },
+    {
+      description: "go toolchain: follow 1.25.x patches only",
+      matchDepNames: ["go"],
+      matchManagers: ["gomod"],
+      matchDepTypes: ["toolchain"],
+      allowedVersions: "<{{major}}.{{add minor 1}}",
+    },
+    {
+      description: "mise go: follow 1.25.x patches only",
+      matchDepNames: ["go"],
+      matchManagers: ["mise"],
+      allowedVersions: "<{{major}}.{{add minor 1}}",
+    },
+  ],
 }
