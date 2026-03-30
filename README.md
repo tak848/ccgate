@@ -1,9 +1,13 @@
 # ccgate
 
-[Claude Code](https://docs.anthropic.com/en/docs/claude-code) の **PermissionRequest** フックとして動作する Go バイナリです。
-ツール実行の許可判定を LLM (Claude Haiku) に委任し、設定ファイルに記述したルールに基づいて allow / deny / fallthrough を返します。
+[![CI](https://github.com/tak848/ccgate/actions/workflows/ci.yml/badge.svg)](https://github.com/tak848/ccgate/actions/workflows/ci.yml)
+[![release](https://github.com/tak848/ccgate/actions/workflows/release.yml/badge.svg)](https://github.com/tak848/ccgate/releases)
 
-## 仕組み
+A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) **PermissionRequest** hook that delegates tool-execution permission decisions to an LLM (Claude Haiku) based on rules defined in a configuration file.
+
+[日本語ドキュメント](docs/README.ja.md)
+
+## How it works
 
 ```
 Claude Code (PermissionRequest hook)
@@ -11,19 +15,19 @@ Claude Code (PermissionRequest hook)
   │  stdin: HookInput JSON
   ▼
 ccgate
-  ├── 設定読み込み (~/.claude/permission-gate.jsonnet)
-  ├── コンテキスト構築 (git repo, worktree, paths, transcript)
-  ├── Claude Haiku API 呼び出し (Structured Output)
+  ├── Load config (~/.claude/permission-gate.jsonnet)
+  ├── Build context (git repo, worktree, paths, transcript)
+  ├── Call Claude Haiku API (Structured Output)
   └── stdout: allow / deny / fallthrough
 ```
 
-1. Claude Code がツール実行前に `ccgate` を呼び出す
-2. `ccgate` は jsonnet 設定の allow/deny ルールをシステムプロンプトに組み込み、ツール情報・git コンテキスト・直近の会話履歴をユーザーメッセージとして Haiku に送信
-3. Haiku の判定結果を Claude Code に返す
+1. Claude Code invokes `ccgate` before executing a tool
+2. `ccgate` embeds allow/deny rules from the jsonnet config into a system prompt, sends tool info, git context, and recent conversation history to Haiku
+3. Returns Haiku's decision to Claude Code
 
-## インストール
+## Installation
 
-### mise (推奨)
+### mise (recommended)
 
 ```bash
 mise use -g go:github.com/tak848/ccgate
@@ -37,14 +41,14 @@ go install github.com/tak848/ccgate@latest
 
 ### GitHub Releases
 
-[Releases](https://github.com/tak848/ccgate/releases) からバイナリをダウンロードし、PATH の通った場所に配置してください。
+Download a binary from [Releases](https://github.com/tak848/ccgate/releases) and place it on your `PATH`.
 
-## セットアップ
+## Setup
 
-### 1. 設定ファイルを配置
+### 1. Create a config file
 
-`~/.claude/permission-gate.jsonnet` にルールを記述します。
-[example/permission-gate.jsonnet](example/permission-gate.jsonnet) を参考にしてください。
+Write your rules in `~/.claude/permission-gate.jsonnet`.
+See [example/permission-gate.jsonnet](example/permission-gate.jsonnet) for reference.
 
 ```jsonnet
 {
@@ -65,9 +69,9 @@ go install github.com/tak848/ccgate@latest
 }
 ```
 
-JSON Schema (`permission-gate.schema.json`) を同じディレクトリに配置すると、エディタで補完が効きます。
+Place `permission-gate.schema.json` in the same directory for editor autocompletion.
 
-### 2. Claude Code の hooks に登録
+### 2. Register as a Claude Code hook
 
 `~/.claude/settings.json`:
 
@@ -89,44 +93,44 @@ JSON Schema (`permission-gate.schema.json`) を同じディレクトリに配置
 }
 ```
 
-### 3. API キー
+### 3. API key
 
-環境変数 `CC_AUTOMODE_ANTHROPIC_API_KEY` または `ANTHROPIC_API_KEY` を設定してください。
+Set the `CC_AUTOMODE_ANTHROPIC_API_KEY` or `ANTHROPIC_API_KEY` environment variable.
 
-## 設定
+## Configuration
 
-### 設定ファイルの読み込み順序
+### Config file loading order
 
-1. `~/.claude/permission-gate.jsonnet` — ベース設定
-2. `{repo_root}/permission-gate.local.jsonnet` — プロジェクトローカル (Git 未追跡のみ)
-3. `{repo_root}/.claude/permission-gate.local.jsonnet` — プロジェクトローカル (Git 未追跡のみ)
+1. `~/.claude/permission-gate.jsonnet` — Base config
+2. `{repo_root}/permission-gate.local.jsonnet` — Project-local (untracked files only)
+3. `{repo_root}/.claude/permission-gate.local.jsonnet` — Project-local (untracked files only)
 
-後のファイルが前のファイルの設定をマージ (allow/deny/environment は追加、provider は上書き) します。
-プロジェクトローカル設定は **Git に追跡されていないファイルのみ** 読み込まれます。
+Later files merge into earlier ones (allow/deny/environment are appended, provider fields are overwritten).
+Project-local configs are only loaded if **not tracked by Git**.
 
-### 設定項目
+### Config fields
 
-| フィールド | 型 | デフォルト | 説明 |
-|-----------|------|-----------|------|
-| `provider.name` | string | `"anthropic"` | プロバイダー名 |
-| `provider.model` | string | `"claude-haiku-4-5"` | モデル名 |
-| `provider.timeout_ms` | int | `20000` | API タイムアウト (ms) |
-| `allow` | string[] | `[]` | 許可ルール |
-| `deny` | string[] | `[]` | 拒否ルール (mandatory) |
-| `environment` | string[] | `[]` | 環境コンテキスト |
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `provider.name` | string | `"anthropic"` | Provider name |
+| `provider.model` | string | `"claude-haiku-4-5"` | Model name |
+| `provider.timeout_ms` | int | `20000` | API timeout (ms) |
+| `allow` | string[] | `[]` | Allow rules |
+| `deny` | string[] | `[]` | Deny rules (mandatory) |
+| `environment` | string[] | `[]` | Environment context |
 
-## ログ
+## Logging
 
-`~/.claude/logs/ccgate.log` に出力されます。5MB でローテーション (`.log.1`)。
+Logs are written to `~/.claude/logs/ccgate.log` with 5 MB rotation (`.log.1`).
 
-## 開発
+## Development
 
 ```bash
-mise run build    # バイナリビルド
-mise run test     # テスト実行
-mise run vet      # go vet
+mise run build    # Build binary
+mise run test     # Run tests
+mise run vet      # Run go vet
 ```
 
-## ライセンス
+## License
 
 MIT

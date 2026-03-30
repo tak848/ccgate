@@ -1,29 +1,27 @@
 # ccgate
 
-Claude Code の PermissionRequest フックとして動作する Go バイナリ。
+Claude Code PermissionRequest hook written in Go.
 
-## インストール
+## Install
 
 ```bash
-# mise (推奨)
 mise use -g go:github.com/tak848/ccgate
-
-# or go install
+# or
 go install github.com/tak848/ccgate@latest
 ```
 
-## 開発
+## Development
 
 ```bash
-mise run build    # バイナリビルド (開発用)
-mise run test     # テスト実行
-mise run vet      # go vet
+mise run build    # Build binary (dev)
+mise run test     # Run tests
+mise run vet      # Run go vet
 ```
 
-## コーディング規約
+## Coding conventions
 
 - Go 1.25
-- エラーは `fmt.Errorf("...: %w", err)` でラップ
-- サイレントなエラー無視は禁止
-- テストは table-driven で書く
-- マジックナンバーは名前付き定数にする
+- Wrap errors with `fmt.Errorf("...: %w", err)`
+- Never silently discard errors
+- Table-driven tests
+- Named constants for magic numbers
