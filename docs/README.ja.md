@@ -108,16 +108,28 @@ JSON Schema (`permission-gate.schema.json`) を同じディレクトリに配置
 
 | フィールド | 型 | デフォルト | 説明 |
 |-----------|------|-----------|------|
-| `provider.name` | string | `"anthropic"` | プロバイダー名 |
-| `provider.model` | string | `"claude-haiku-4-5"` | モデル名 |
+| `provider.name` | string | `"anthropic"` | プロバイダー名。`"anthropic"` のみ対応 |
+| `provider.model` | string | `"claude-haiku-4-5"` | モデル名 (例: `claude-haiku-4-5`, `claude-sonnet-4-6`, `claude-opus-4-6`) |
 | `provider.timeout_ms` | int | `20000` | API タイムアウト (ms) |
+| `log_path` | string | `"~/.claude/logs/ccgate.log"` | ログファイルパス。`~` でホームディレクトリ展開 |
+| `log_disabled` | bool | `false` | ログ出力を完全に無効化 |
+| `log_max_size` | int | `5242880` | ローテーション閾値 (bytes, デフォルト 5MB) |
 | `allow` | string[] | `[]` | 許可ルール |
 | `deny` | string[] | `[]` | 拒否ルール (mandatory) |
 | `environment` | string[] | `[]` | 環境コンテキスト |
 
 ## ログ
 
-`~/.claude/logs/ccgate.log` に出力されます。5MB でローテーション (`.log.1`)。
+デフォルトでは `~/.claude/logs/ccgate.log` に出力されます。5MB でローテーション (`.log.1`)。
+
+ログパスの変更・無効化:
+
+```jsonnet
+{
+  log_path: '~/my-logs/ccgate.log',
+  // log_disabled: true,
+}
+```
 
 ## 開発
 

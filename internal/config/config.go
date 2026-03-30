@@ -16,18 +16,20 @@ import (
 )
 
 const (
-	DefaultTimeoutMS = 20_000
-	DefaultModel     = string(anthropic.ModelClaudeHaiku4_5)
-	DefaultProvider  = "anthropic"
-	DefaultLogPath   = "~/.claude/logs/ccgate.log"
-	BaseConfigName   = "permission-gate.jsonnet"
-	LocalConfigName  = "permission-gate.local.jsonnet"
+	DefaultTimeoutMS  = 20_000
+	DefaultModel      = string(anthropic.ModelClaudeHaiku4_5)
+	DefaultProvider   = "anthropic"
+	DefaultLogPath    = "~/.claude/logs/ccgate.log"
+	DefaultLogMaxSize = 5 * 1024 * 1024 // 5MB
+	BaseConfigName    = "permission-gate.jsonnet"
+	LocalConfigName   = "permission-gate.local.jsonnet"
 )
 
 type Config struct {
 	Provider    ProviderConfig `json:"provider"`
 	LogPath     string         `json:"log_path"`
 	LogDisabled bool           `json:"log_disabled"`
+	LogMaxSize  int64          `json:"log_max_size"`
 	Allow       []string       `json:"allow"`
 	Deny        []string       `json:"deny"`
 	Environment []string       `json:"environment"`
@@ -46,7 +48,8 @@ func Default() Config {
 			Model:     DefaultModel,
 			TimeoutMS: DefaultTimeoutMS,
 		},
-		LogPath: DefaultLogPath,
+		LogPath:    DefaultLogPath,
+		LogMaxSize: DefaultLogMaxSize,
 	}
 }
 
@@ -164,6 +167,9 @@ func mergeConfigFile(path string, cfg *Config) error {
 	}
 	if override.LogDisabled {
 		cfg.LogDisabled = true
+	}
+	if override.LogMaxSize > 0 {
+		cfg.LogMaxSize = override.LogMaxSize
 	}
 
 	cfg.Allow = append(cfg.Allow, override.Allow...)
