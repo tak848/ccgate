@@ -1,0 +1,32 @@
+[tools]
+go = "1.25"
+
+[tasks.build]
+description = "Build the binary (dev use)"
+run = """
+VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+go build -ldflags "-s -w -X main.version=${VERSION}" -o bin/ccgate .
+"""
+
+[tasks.test]
+description = "Run tests"
+run = "go test -race -cover ./..."
+
+[tasks.vet]
+description = "Run go vet"
+run = "go vet ./..."
+
+[tasks.lint]
+description = "Run vet"
+depends = ["vet"]
+
+[tasks.cover]
+description = "Generate coverage report"
+run = """
+go test -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out
+"""
+
+[tasks.clean]
+description = "Clean build artifacts"
+run = "rm -rf bin/ coverage.out"

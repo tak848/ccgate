@@ -1,0 +1,32 @@
+version: 2
+project_name: ccgate
+before:
+  hooks:
+    - go mod tidy
+builds:
+  - main: .
+    binary: ccgate
+    ldflags:
+      - -s -w
+      - -X main.version=v{{.Version}}
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+archives:
+  - name_template: '{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}'
+release:
+  prerelease: auto
+checksum:
+  name_template: checksums.txt
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
