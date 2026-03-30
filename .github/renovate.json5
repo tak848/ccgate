@@ -1,0 +1,19 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: [
+    "config:recommended",
+    "helpers:pinGitHubActionDigestsToSemver",
+    "group:allNonMajor",
+    ":separateMultipleMajorReleases",
+    ":prConcurrentLimitNone",
+    ":prHourlyLimitNone",
+  ],
+  rangeStrategy: "bump",
+  labels: ["renovate"],
+  prConcurrentLimit: 0,
+  prHourlyLimit: 0,
+  major: { labels: ["renovate", "update_major"] },
+  gitIgnoredAuthors: [
+    "github-actions[bot]@users.noreply.github.com",
+  ],
+}
