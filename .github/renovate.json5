@@ -16,4 +16,12 @@
   gitIgnoredAuthors: [
     "github-actions[bot]@users.noreply.github.com",
   ],
+  packageRules: [
+    {
+      description: "Go: keep at current minor (N-1 policy)",
+      matchDepNames: ["go"],
+      matchManagers: ["gomod", "mise"],
+      allowedVersions: "<{{major}}.{{add minor 1}}",
+    },
+  ],
 }
