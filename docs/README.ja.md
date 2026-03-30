@@ -11,7 +11,7 @@ Claude Code (PermissionRequest hook)
   │  stdin: HookInput JSON
   ▼
 ccgate
-  ├── 設定読み込み (~/.claude/permission-gate.jsonnet)
+  ├── 設定読み込み (~/.claude/ccgate.jsonnet)
   ├── コンテキスト構築 (git repo, worktree, paths, transcript)
   ├── Claude Haiku API 呼び出し (Structured Output)
   └── stdout: allow / deny / fallthrough
@@ -43,8 +43,8 @@ go install github.com/tak848/ccgate@latest
 
 ### 1. 設定ファイルを配置
 
-`~/.claude/permission-gate.jsonnet` にルールを記述します。
-[example/permission-gate.jsonnet](../example/permission-gate.jsonnet) を参考にしてください。
+`~/.claude/ccgate.jsonnet` にルールを記述します。
+[example/ccgate.jsonnet](../example/ccgate.jsonnet) を参考にしてください。
 
 ```jsonnet
 {
@@ -65,7 +65,7 @@ go install github.com/tak848/ccgate@latest
 }
 ```
 
-JSON Schema (`permission-gate.schema.json`) を同じディレクトリに配置すると、エディタで補完が効きます。
+JSON Schema (`ccgate.schema.json`) を同じディレクトリに配置すると、エディタで補完が効きます。
 
 ### 2. Claude Code の hooks に登録
 
@@ -97,9 +97,9 @@ JSON Schema (`permission-gate.schema.json`) を同じディレクトリに配置
 
 ### 設定ファイルの読み込み順序
 
-1. `~/.claude/permission-gate.jsonnet` — ベース設定
-2. `{repo_root}/permission-gate.local.jsonnet` — プロジェクトローカル (Git 未追跡のみ)
-3. `{repo_root}/.claude/permission-gate.local.jsonnet` — プロジェクトローカル (Git 未追跡のみ)
+1. `~/.claude/ccgate.jsonnet` — ベース設定
+2. `{repo_root}/ccgate.local.jsonnet` — プロジェクトローカル (Git 未追跡のみ)
+3. `{repo_root}/.claude/ccgate.local.jsonnet` — プロジェクトローカル (Git 未追跡のみ)
 
 後のファイルが前のファイルの設定をマージ (allow/deny/environment は追加、provider は上書き) します。
 プロジェクトローカル設定は **Git に追跡されていないファイルのみ** 読み込まれます。

@@ -21,8 +21,8 @@ const (
 	DefaultProvider   = "anthropic"
 	DefaultLogPath    = "~/.claude/logs/ccgate.log"
 	DefaultLogMaxSize = 5 * 1024 * 1024 // 5MB
-	BaseConfigName    = "permission-gate.jsonnet"
-	LocalConfigName   = "permission-gate.local.jsonnet"
+	BaseConfigName    = "ccgate.jsonnet"
+	LocalConfigName   = "ccgate.local.jsonnet"
 )
 
 type Config struct {

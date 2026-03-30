@@ -15,7 +15,7 @@ Claude Code (PermissionRequest hook)
   │  stdin: HookInput JSON
   ▼
 ccgate
-  ├── Load config (~/.claude/permission-gate.jsonnet)
+  ├── Load config (~/.claude/ccgate.jsonnet)
   ├── Build context (git repo, worktree, paths, transcript)
   ├── Call Claude Haiku API (Structured Output)
   └── stdout: allow / deny / fallthrough
@@ -47,8 +47,8 @@ Download a binary from [Releases](https://github.com/tak848/ccgate/releases) and
 
 ### 1. Create a config file
 
-Write your rules in `~/.claude/permission-gate.jsonnet`.
-See [example/permission-gate.jsonnet](example/permission-gate.jsonnet) for reference.
+Write your rules in `~/.claude/ccgate.jsonnet`.
+See [example/ccgate.jsonnet](example/ccgate.jsonnet) for reference.
 
 ```jsonnet
 {
@@ -69,7 +69,7 @@ See [example/permission-gate.jsonnet](example/permission-gate.jsonnet) for refer
 }
 ```
 
-Place `permission-gate.schema.json` in the same directory for editor autocompletion.
+Place `ccgate.schema.json` in the same directory for editor autocompletion.
 
 ### 2. Register as a Claude Code hook
 
@@ -101,9 +101,9 @@ Set the `CC_AUTOMODE_ANTHROPIC_API_KEY` or `ANTHROPIC_API_KEY` environment varia
 
 ### Config file loading order
 
-1. `~/.claude/permission-gate.jsonnet` — Base config
-2. `{repo_root}/permission-gate.local.jsonnet` — Project-local (untracked files only)
-3. `{repo_root}/.claude/permission-gate.local.jsonnet` — Project-local (untracked files only)
+1. `~/.claude/ccgate.jsonnet` — Base config
+2. `{repo_root}/ccgate.local.jsonnet` — Project-local (untracked files only)
+3. `{repo_root}/.claude/ccgate.local.jsonnet` — Project-local (untracked files only)
 
 Later files merge into earlier ones (allow/deny/environment are appended, provider fields are overwritten).
 Project-local configs are only loaded if **not tracked by Git**.

@@ -1,5 +1,5 @@
 {
-  ['$schema']: './permission-gate.schema.json',
+  ['$schema']: './ccgate.schema.json',
   provider: {
     name: 'anthropic',
     model: 'claude-haiku-4-5',

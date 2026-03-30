@@ -63,7 +63,7 @@ func TestMergeConfigFileAppendsGuidance(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	path := filepath.Join(dir, "permission-gate.local.jsonnet")
+	path := filepath.Join(dir, "ccgate.local.jsonnet")
 	if err := os.WriteFile(path, []byte(`{ allow: ['Read-only test guidance'] }`), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -120,10 +120,10 @@ func TestProjectLocalConfigPaths(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("unexpected path count: %d", len(got))
 	}
-	if got[0] != "/tmp/repo/subdir/permission-gate.local.jsonnet" {
+	if got[0] != "/tmp/repo/subdir/ccgate.local.jsonnet" {
 		t.Fatalf("unexpected first path: %s", got[0])
 	}
-	if got[1] != "/tmp/repo/subdir/.claude/permission-gate.local.jsonnet" {
+	if got[1] != "/tmp/repo/subdir/.claude/ccgate.local.jsonnet" {
 		t.Fatalf("unexpected second path: %s", got[1])
 	}
 }
