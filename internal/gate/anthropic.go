@@ -24,6 +24,7 @@ const (
 // PermissionLLMOutput is the structured output from the LLM.
 type PermissionLLMOutput struct {
 	Behavior    string `json:"behavior" jsonschema_description:"One of allow, deny, fallthrough."`
+	Reason      string `json:"reason" jsonschema_description:"Brief reason for the decision. Always provide this regardless of behavior."`
 	DenyMessage string `json:"deny_message" jsonschema_description:"When behavior is deny, a concise Japanese explanation of why. Must not be empty when denying."`
 }
 
@@ -126,9 +127,12 @@ func buildSystemPrompt(cfg config.Config) string {
 	b.WriteString("Return one of: allow, deny, fallthrough.\n")
 	b.WriteString("Decide quickly. Do not deliberate or reconsider.\n\n")
 	b.WriteString("Decision rules:\n")
-	b.WriteString("- deny: Only when a deny guidance rule clearly matches. Deny guidance is mandatory.\n")
-	b.WriteString("- allow: When the operation is clearly safe, OR matches allow guidance. An operation does NOT need to be listed in allow guidance to be allowed.\n")
-	b.WriteString("- fallthrough: When genuinely uncertain. Do not fallthrough just because something is absent from allow guidance.\n\n")
+	b.WriteString("- deny: When a deny guidance rule matches, OR a built-in rule matches. Mandatory.\n")
+	b.WriteString("- allow: When the operation matches allow guidance, OR is a routine development operation (build, test, lint, git, file read/write) in the current repository.\n")
+	b.WriteString("- fallthrough: Only when genuinely uncertain about safety.\n\n")
+	b.WriteString("Built-in deny rules:\n")
+	b.WriteString("- Direct tool invocation (npx, pnpm exec, etc.): Deny when a command bypasses project scripts by invoking tools directly. Prefer project-defined scripts (e.g. pnpm format over pnpm exec prettier). deny_message: プロジェクトのスクリプトを使用してください。\n\n")
+	b.WriteString("Always provide a brief reason for your decision.\n")
 	b.WriteString("When deny, provide a concise Japanese deny_message.\n")
 	b.WriteString("The user message includes settings_permissions and recent_transcript as background context.\n")
 	b.WriteString("settings_permissions shows static rules. An operation NOT being there is NOT a reason to deny or fallthrough.\n")
