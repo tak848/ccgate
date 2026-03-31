@@ -56,7 +56,7 @@ func NewPermissionResponse(d PermissionDecision) PermissionResponse {
 func DecidePermission(ctx context.Context, cfg config.Config, input hookctx.HookInput) (PermissionDecision, bool, error) {
 	// Tools that require user interaction must never be auto-decided.
 	switch input.ToolName {
-	case "ExitPlanMode", "AskUserQuestion", "EnterPlanMode":
+	case "ExitPlanMode", "AskUserQuestion":
 		slog.Info("user interaction tool: falling through", "tool", input.ToolName)
 		return PermissionDecision{}, false, nil
 	}
