@@ -60,8 +60,10 @@ func DecidePermission(ctx context.Context, cfg config.Config, input hookctx.Hook
 	// - dontAsk: only pre-approved tools run, deny the rest
 	switch input.PermissionMode {
 	case "plan":
-		slog.Info("plan mode: falling through to user", "tool", input.ToolName)
-		return PermissionDecision{}, false, nil
+		if input.ToolName == "ExitPlanMode" {
+			slog.Info("plan mode: ExitPlanMode falling through to user")
+			return PermissionDecision{}, false, nil
+		}
 	case "bypassPermissions":
 		slog.Info("bypass mode: falling through", "tool", input.ToolName)
 		return PermissionDecision{}, false, nil
