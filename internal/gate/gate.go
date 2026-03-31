@@ -54,6 +54,22 @@ func NewPermissionResponse(d PermissionDecision) PermissionResponse {
 // Returns (decision, true, nil) for allow/deny, (zero, false, nil) for fallthrough,
 // and (zero, false, error) on failure.
 func DecidePermission(ctx context.Context, cfg config.Config, input hookctx.HookInput) (PermissionDecision, bool, error) {
+	// Some permission modes should not be overridden by the hook.
+	// - plan: user must approve all actions explicitly
+	// - bypassPermissions: user opted out of permission checks
+	// - dontAsk: only pre-approved tools run, deny the rest
+	switch input.PermissionMode {
+	case "plan":
+		slog.Info("plan mode: falling through to user", "tool", input.ToolName)
+		return PermissionDecision{}, false, nil
+	case "bypassPermissions":
+		slog.Info("bypass mode: falling through", "tool", input.ToolName)
+		return PermissionDecision{}, false, nil
+	case "dontAsk":
+		slog.Info("dontAsk mode: falling through", "tool", input.ToolName)
+		return PermissionDecision{}, false, nil
+	}
+
 	if strings.ToLower(cfg.Provider.Name) != "anthropic" {
 		slog.Info("provider not anthropic, skipping", "provider", cfg.Provider.Name)
 		return PermissionDecision{}, false, nil
