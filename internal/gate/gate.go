@@ -54,16 +54,17 @@ func NewPermissionResponse(d PermissionDecision) PermissionResponse {
 // Returns (decision, true, nil) for allow/deny, (zero, false, nil) for fallthrough,
 // and (zero, false, error) on failure.
 func DecidePermission(ctx context.Context, cfg config.Config, input hookctx.HookInput) (PermissionDecision, bool, error) {
+	// Tools that require user interaction must never be auto-decided.
+	switch input.ToolName {
+	case "ExitPlanMode", "AskUserQuestion", "EnterPlanMode":
+		slog.Info("user interaction tool: falling through", "tool", input.ToolName)
+		return PermissionDecision{}, false, nil
+	}
+
 	// Some permission modes should not be overridden by the hook.
-	// - plan: user must approve all actions explicitly
-	// - bypassPermissions: user opted out of permission checks
-	// - dontAsk: only pre-approved tools run, deny the rest
 	switch input.PermissionMode {
 	case "plan":
-		if input.ToolName == "ExitPlanMode" {
-			slog.Info("plan mode: ExitPlanMode falling through to user")
-			return PermissionDecision{}, false, nil
-		}
+		// In plan mode, let the LLM decide for non-interaction tools.
 	case "bypassPermissions":
 		slog.Info("bypass mode: falling through", "tool", input.ToolName)
 		return PermissionDecision{}, false, nil
