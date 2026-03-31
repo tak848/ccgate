@@ -1,7 +1,7 @@
 ## Why
 
-<!-- Why is this change needed? What problem does it solve? -->
+<!-- Why is this change needed? What problem does it solve? Write in English. -->
 
 ## What
 
-<!-- What does this PR do? Keep it concise. -->
+<!-- What does this PR do? Keep it concise. Write in English. -->
