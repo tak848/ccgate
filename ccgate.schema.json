@@ -36,7 +36,7 @@
     },
     "log_path": {
       "type": "string",
-      "description": "Log file path. Supports ~ for home directory. Default: ~/.claude/logs/ccgate.log"
+      "description": "Log file path. Supports ~ for home directory. Default: $XDG_STATE_HOME/ccgate/ccgate.log"
     },
     "log_disabled": {
       "type": "boolean",
@@ -46,6 +46,19 @@
       "type": "integer",
       "minimum": 0,
       "description": "Max log file size in bytes before rotation. Default: 5242880 (5MB)"
+    },
+    "metrics_path": {
+      "type": "string",
+      "description": "Metrics JSONL file path. Default: $XDG_STATE_HOME/ccgate/metrics.jsonl"
+    },
+    "metrics_disabled": {
+      "type": "boolean",
+      "description": "Disable metrics collection. Default: false"
+    },
+    "metrics_max_size": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Max metrics file size in bytes before rotation. Default: 2097152 (2MB)"
     },
     "environment": {
       "type": "array",

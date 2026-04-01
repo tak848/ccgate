@@ -22,6 +22,15 @@ type PermissionDecision struct {
 	Message  string `json:"message,omitempty"`
 }
 
+// DecisionResult is the rich result from DecidePermission, carrying metrics-relevant data.
+type DecisionResult struct {
+	Decision        PermissionDecision
+	HasDecision     bool
+	FallthroughKind string    // why fallthrough: user_interaction, bypass, dontask, no_apikey, non_anthropic, llm
+	Usage           *APIUsage // nil if no API call
+	LLMReason       string
+}
+
 // PermissionResponse is the JSON structure written to stdout for Claude Code.
 type PermissionResponse struct {
 	HookSpecificOutput hookSpecificOutput `json:"hookSpecificOutput"`
@@ -51,14 +60,12 @@ func NewPermissionResponse(d PermissionDecision) PermissionResponse {
 }
 
 // DecidePermission calls the LLM to decide whether to allow, deny, or fallthrough.
-// Returns (decision, true, nil) for allow/deny, (zero, false, nil) for fallthrough,
-// and (zero, false, error) on failure.
-func DecidePermission(ctx context.Context, cfg config.Config, input hookctx.HookInput) (PermissionDecision, bool, error) {
+func DecidePermission(ctx context.Context, cfg config.Config, input hookctx.HookInput) (DecisionResult, error) {
 	// Tools that require user interaction must never be auto-decided.
 	switch input.ToolName {
 	case "ExitPlanMode", "AskUserQuestion":
 		slog.Info("user interaction tool: falling through", "tool", input.ToolName)
-		return PermissionDecision{}, false, nil
+		return DecisionResult{FallthroughKind: "user_interaction"}, nil
 	}
 
 	// Some permission modes should not be overridden by the hook.
@@ -67,21 +74,21 @@ func DecidePermission(ctx context.Context, cfg config.Config, input hookctx.Hook
 		// In plan mode, let the LLM decide for non-interaction tools.
 	case "bypassPermissions":
 		slog.Info("bypass mode: falling through", "tool", input.ToolName)
-		return PermissionDecision{}, false, nil
+		return DecisionResult{FallthroughKind: "bypass"}, nil
 	case "dontAsk":
 		slog.Info("dontAsk mode: falling through", "tool", input.ToolName)
-		return PermissionDecision{}, false, nil
+		return DecisionResult{FallthroughKind: "dontask"}, nil
 	}
 
 	if strings.ToLower(cfg.Provider.Name) != "anthropic" {
 		slog.Info("provider not anthropic, skipping", "provider", cfg.Provider.Name)
-		return PermissionDecision{}, false, nil
+		return DecisionResult{FallthroughKind: "non_anthropic"}, nil
 	}
 
 	apiKey, ok := resolveAPIKey()
 	if !ok {
 		slog.Warn("no API key found (CC_AUTOMODE_ANTHROPIC_API_KEY / ANTHROPIC_API_KEY)")
-		return PermissionDecision{}, false, nil
+		return DecisionResult{FallthroughKind: "no_apikey"}, nil
 	}
 
 	slog.Info("calling anthropic",
@@ -90,10 +97,10 @@ func DecidePermission(ctx context.Context, cfg config.Config, input hookctx.Hook
 		"tool", input.ToolName,
 	)
 
-	output, err := callAnthropic(ctx, cfg, input, apiKey)
+	output, usage, err := callAnthropic(ctx, cfg, input, apiKey)
 	if err != nil {
 		slog.Error("anthropic API call failed", "error", err, "tool", input.ToolName)
-		return PermissionDecision{}, false, err
+		return DecisionResult{Usage: usage}, err
 	}
 
 	slog.Info("LLM decision",
@@ -103,20 +110,31 @@ func DecidePermission(ctx context.Context, cfg config.Config, input hookctx.Hook
 		"tool", input.ToolName,
 	)
 
+	base := DecisionResult{
+		Usage:     usage,
+		LLMReason: output.Reason,
+	}
+
 	switch output.Behavior {
 	case BehaviorAllow:
-		return PermissionDecision{Behavior: BehaviorAllow}, true, nil
+		base.Decision = PermissionDecision{Behavior: BehaviorAllow}
+		base.HasDecision = true
+		return base, nil
 	case BehaviorDeny:
 		message := strings.TrimSpace(output.DenyMessage)
 		if message == "" {
 			message = DefaultDenyMessage
 		}
-		return PermissionDecision{Behavior: BehaviorDeny, Message: message}, true, nil
+		base.Decision = PermissionDecision{Behavior: BehaviorDeny, Message: message}
+		base.HasDecision = true
+		return base, nil
 	case BehaviorFallthrough, "":
-		return PermissionDecision{}, false, nil
+		base.FallthroughKind = "llm"
+		return base, nil
 	default:
 		slog.Warn("unexpected LLM behavior", "behavior", output.Behavior)
-		return PermissionDecision{}, false, nil
+		base.FallthroughKind = "llm"
+		return base, nil
 	}
 }
 

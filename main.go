@@ -19,6 +19,7 @@ import (
 	"github.com/tak848/ccgate/internal/config"
 	"github.com/tak848/ccgate/internal/gate"
 	"github.com/tak848/ccgate/internal/hookctx"
+	"github.com/tak848/ccgate/internal/metrics"
 )
 
 var version = "dev"
@@ -34,25 +35,52 @@ func init() {
 
 type CLI struct {
 	Version kong.VersionFlag `help:"Print version and exit."`
+	Metrics MetricsCmd       `cmd:"" help:"Show usage metrics summary." default:"withargs"`
+}
+
+type MetricsCmd struct {
+	Days int  `help:"Show last N days." default:"7"`
+	JSON bool `help:"Output as JSON." name:"json"`
 }
 
 func main() { os.Exit(_main()) }
 
 func _main() int {
-	// Always parse flags first (--version, --help work regardless of tty).
-	var cli CLI
-	kong.Parse(&cli,
-		kong.Name("ccgate"),
-		kong.Description("Claude Code PermissionRequest hook.\nReads HookInput JSON from stdin, returns allow/deny/fallthrough to stdout."),
-		kong.Vars{"version": version},
-	)
-
-	// When invoked directly from a terminal with no flags, show usage instead of blocking on stdin.
-	if term.IsTerminal(int(os.Stdin.Fd())) {
-		fmt.Fprintf(os.Stderr, "ccgate %s\n\nClaude Code PermissionRequest hook.\nReads HookInput JSON from stdin, returns allow/deny/fallthrough to stdout.\n\nUsage: echo '<HookInput JSON>' | ccgate\n\nFlags:\n  --version    Print version and exit\n  --help       Show help\n", version)
+	// If args given, parse with kong (subcommands, --version, --help).
+	if len(os.Args) > 1 {
+		var cli CLI
+		kctx := kong.Parse(&cli,
+			kong.Name("ccgate"),
+			kong.Description("Claude Code PermissionRequest hook.\nReads HookInput JSON from stdin, returns allow/deny/fallthrough to stdout."),
+			kong.Vars{"version": version},
+		)
+		if kctx.Command() == "metrics" {
+			cfg, err := config.Load("")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
+				return 1
+			}
+			if err := metrics.PrintReport(os.Stdout, cfg.ResolveMetricsPath(), metrics.ReportOptions{
+				Days:   cli.Metrics.Days,
+				AsJSON: cli.Metrics.JSON,
+			}); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return 1
+			}
+		}
 		return 0
 	}
 
+	// No args: if tty, show usage; if pipe, run hook.
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		fmt.Fprintf(os.Stderr, "ccgate %s\n\nClaude Code PermissionRequest hook.\nReads HookInput JSON from stdin, returns allow/deny/fallthrough to stdout.\n\nCommands:\n  ccgate metrics [--days N] [--json]\n\nFlags:\n  --version    Print version and exit\n  --help       Show help\n", version)
+		return 0
+	}
+
+	return runHook()
+}
+
+func runHook() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -78,8 +106,14 @@ func _main() int {
 	)
 
 	start := time.Now()
-	decision, ok, err := gate.DecidePermission(ctx, cfg, input)
+	result, err := gate.DecidePermission(ctx, cfg, input)
 	elapsed := time.Since(start)
+
+	// Record metrics (fire-and-forget).
+	if !cfg.MetricsDisabled {
+		entry := buildMetricsEntry(start, elapsed, input, cfg, result, err)
+		metrics.Record(cfg.ResolveMetricsPath(), cfg.MetricsMaxSize, entry)
+	}
 
 	if err != nil {
 		slog.Error("DecidePermission failed",
@@ -89,27 +123,65 @@ func _main() int {
 		)
 		return 1
 	}
-	if !ok {
+	if !result.HasDecision {
 		slog.Info("DecidePermission: no decision (fallthrough)",
 			"tool", input.ToolName,
+			"fallthrough_kind", result.FallthroughKind,
 			"elapsed_ms", elapsed.Milliseconds(),
 		)
 		return 0
 	}
 
 	slog.Info("DecidePermission: decision made",
-		"behavior", decision.Behavior,
-		"message", decision.Message,
+		"behavior", result.Decision.Behavior,
+		"message", result.Decision.Message,
 		"tool", input.ToolName,
 		"elapsed_ms", elapsed.Milliseconds(),
 	)
 
-	resp := gate.NewPermissionResponse(decision)
+	resp := gate.NewPermissionResponse(result.Decision)
 	if err := json.NewEncoder(os.Stdout).Encode(resp); err != nil {
 		slog.Error("failed to encode response to stdout", "error", err)
 		return 1
 	}
 	return 0
+}
+
+func buildMetricsEntry(start time.Time, elapsed time.Duration, input hookctx.HookInput, cfg config.Config, result gate.DecisionResult, err error) metrics.Entry {
+	entry := metrics.Entry{
+		Timestamp:      start,
+		SessionID:      input.SessionID,
+		ToolName:       input.ToolName,
+		PermissionMode: input.PermissionMode,
+		Model:          cfg.Provider.Model,
+		ElapsedMS:      elapsed.Milliseconds(),
+	}
+
+	if err != nil {
+		entry.Decision = "error"
+		entry.Error = truncateStr(err.Error(), 200)
+	} else if result.HasDecision {
+		entry.Decision = result.Decision.Behavior
+		entry.DenyMessage = result.Decision.Message
+		entry.Reason = truncateStr(result.LLMReason, 200)
+	} else {
+		entry.Decision = "fallthrough"
+		entry.FallthroughKind = result.FallthroughKind
+	}
+
+	if result.Usage != nil {
+		entry.InputTokens = result.Usage.InputTokens
+		entry.OutputTokens = result.Usage.OutputTokens
+	}
+
+	return entry
+}
+
+func truncateStr(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 func initLogger(logPath string, disabled bool, maxLogSize int64) (*slog.Logger, func()) {
@@ -123,7 +195,7 @@ func initLogger(logPath string, disabled bool, maxLogSize int64) (*slog.Logger, 
 		return slog.New(slog.NewTextHandler(os.Stderr, nil)), func() {}
 	}
 
-	rotateLog(logPath, maxLogSize)
+	rotateFile(logPath, maxLogSize)
 
 	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
@@ -145,16 +217,16 @@ func (w *atomicWriter) Write(p []byte) (int, error) {
 	return w.f.Write(p)
 }
 
-func rotateLog(path string, maxSize int64) {
+func rotateFile(path string, maxSize int64) {
 	info, err := os.Stat(path)
 	if err != nil || info.Size() < maxSize {
 		return
 	}
 	prev := path + ".1"
 	if err := os.Remove(prev); err != nil && !os.IsNotExist(err) {
-		slog.Warn("failed to remove old log", "path", prev, "error", err)
+		slog.Warn("failed to remove old file", "path", prev, "error", err)
 	}
 	if err := os.Rename(path, prev); err != nil {
-		slog.Warn("failed to rotate log", "path", path, "error", err)
+		slog.Warn("failed to rotate file", "path", path, "error", err)
 	}
 }

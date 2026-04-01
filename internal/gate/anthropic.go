@@ -40,7 +40,13 @@ type PermissionPromptInput struct {
 	RecentTranscript      hookctx.RecentTranscript    `json:"recent_transcript"`
 }
 
-func callAnthropic(parent context.Context, cfg config.Config, input hookctx.HookInput, apiKey string) (PermissionLLMOutput, error) {
+// APIUsage holds token usage from the Anthropic API response.
+type APIUsage struct {
+	InputTokens  int64
+	OutputTokens int64
+}
+
+func callAnthropic(parent context.Context, cfg config.Config, input hookctx.HookInput, apiKey string) (PermissionLLMOutput, *APIUsage, error) {
 	timeout := time.Duration(cfg.Provider.TimeoutMS) * time.Millisecond
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
@@ -69,7 +75,7 @@ func callAnthropic(parent context.Context, cfg config.Config, input hookctx.Hook
 
 	userMessage, err := marshalJSON(promptInput)
 	if err != nil {
-		return PermissionLLMOutput{}, fmt.Errorf("marshal prompt input: %w", err)
+		return PermissionLLMOutput{}, nil, fmt.Errorf("marshal prompt input: %w", err)
 	}
 
 	slog.Info("anthropic request",
@@ -79,7 +85,7 @@ func callAnthropic(parent context.Context, cfg config.Config, input hookctx.Hook
 
 	schema, err := permissionOutputSchema()
 	if err != nil {
-		return PermissionLLMOutput{}, fmt.Errorf("generate output schema: %w", err)
+		return PermissionLLMOutput{}, nil, fmt.Errorf("generate output schema: %w", err)
 	}
 
 	message, err := client.Messages.New(ctx, anthropic.MessageNewParams{
@@ -101,24 +107,29 @@ func callAnthropic(parent context.Context, cfg config.Config, input hookctx.Hook
 		Temperature: anthropic.Float(0),
 	})
 	if err != nil {
-		return PermissionLLMOutput{}, fmt.Errorf("anthropic API: %w", err)
+		return PermissionLLMOutput{}, nil, fmt.Errorf("anthropic API: %w", err)
+	}
+
+	usage := &APIUsage{
+		InputTokens:  message.Usage.InputTokens,
+		OutputTokens: message.Usage.OutputTokens,
 	}
 
 	text := extractMessageText(message)
 	slog.Info("anthropic response", "raw", text)
 	if text == "" {
-		return PermissionLLMOutput{}, nil
+		return PermissionLLMOutput{}, usage, nil
 	}
 
 	var output PermissionLLMOutput
 	if err := json.Unmarshal([]byte(text), &output); err != nil {
-		return PermissionLLMOutput{}, fmt.Errorf("parse LLM response: %w", err)
+		return PermissionLLMOutput{}, usage, fmt.Errorf("parse LLM response: %w", err)
 	}
 	if output.Behavior == BehaviorDeny && strings.TrimSpace(output.DenyMessage) == "" {
 		output.DenyMessage = DefaultDenyMessage
 	}
 
-	return output, nil
+	return output, usage, nil
 }
 
 func buildSystemPrompt(cfg config.Config) string {
