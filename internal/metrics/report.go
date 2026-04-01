@@ -3,8 +3,10 @@ package metrics
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"sort"
 	"strings"
@@ -79,8 +81,26 @@ func buildReport(path string, opts ReportOptions) (FullReport, error) {
 }
 
 func readEntries(path string, cutoff time.Time) ([]Entry, error) {
+	var entries []Entry
+
+	// Read both current and rotated file.
+	for _, p := range []string{path + ".1", path} {
+		more, err := readEntriesFromFile(p, cutoff)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, more...)
+	}
+
+	return entries, nil
+}
+
+func readEntriesFromFile(path string, cutoff time.Time) ([]Entry, error) {
 	f, err := os.Open(path)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
 	defer f.Close()
@@ -94,6 +114,7 @@ func readEntries(path string, cutoff time.Time) ([]Entry, error) {
 		}
 		var e Entry
 		if err := json.Unmarshal(line, &e); err != nil {
+			slog.Warn("metrics: skipping malformed entry", "error", err)
 			continue
 		}
 		if e.Timestamp.Before(cutoff) {

@@ -35,7 +35,7 @@ func init() {
 
 type CLI struct {
 	Version kong.VersionFlag `help:"Print version and exit."`
-	Metrics MetricsCmd       `cmd:"" help:"Show usage metrics summary." default:"withargs"`
+	Metrics MetricsCmd       `cmd:"" help:"Show usage metrics summary."`
 }
 
 type MetricsCmd struct {
@@ -55,7 +55,8 @@ func _main() int {
 			kong.Vars{"version": version},
 		)
 		if kctx.Command() == "metrics" {
-			cfg, err := config.Load("")
+			cwd, _ := os.Getwd()
+			cfg, err := config.Load(cwd)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
 				return 1
@@ -159,11 +160,11 @@ func buildMetricsEntry(start time.Time, elapsed time.Duration, input hookctx.Hoo
 
 	if err != nil {
 		entry.Decision = "error"
-		entry.Error = truncateStr(err.Error(), 200)
+		entry.Error = truncateStr(err.Error(), maxTruncateLen)
 	} else if result.HasDecision {
 		entry.Decision = result.Decision.Behavior
 		entry.DenyMessage = result.Decision.Message
-		entry.Reason = truncateStr(result.LLMReason, 200)
+		entry.Reason = truncateStr(result.LLMReason, maxTruncateLen)
 	} else {
 		entry.Decision = "fallthrough"
 		entry.FallthroughKind = result.FallthroughKind
@@ -177,11 +178,14 @@ func buildMetricsEntry(start time.Time, elapsed time.Duration, input hookctx.Hoo
 	return entry
 }
 
+const maxTruncateLen = 200
+
 func truncateStr(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
 		return s
 	}
-	return s[:maxLen] + "..."
+	return string(runes[:maxLen]) + "..."
 }
 
 func initLogger(logPath string, disabled bool, maxLogSize int64) (*slog.Logger, func()) {

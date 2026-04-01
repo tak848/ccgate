@@ -50,6 +50,10 @@ func rotateIfNeeded(path string, maxSize int64) {
 		return
 	}
 	prev := path + ".1"
-	_ = os.Remove(prev)
-	_ = os.Rename(path, prev)
+	if err := os.Remove(prev); err != nil && !os.IsNotExist(err) {
+		slog.Warn("metrics: failed to remove old file", "path", prev, "error", err)
+	}
+	if err := os.Rename(path, prev); err != nil {
+		slog.Warn("metrics: failed to rotate file", "path", path, "error", err)
+	}
 }
