@@ -100,7 +100,7 @@ func runHook() int {
 		return 1
 	}
 
-	logger, cleanup := initLogger(cfg.ResolveLogPath(), cfg.LogDisabled, cfg.LogMaxSize)
+	logger, cleanup := initLogger(cfg.ResolveLogPath(), cfg.LogDisabled, cfg.GetLogMaxSize())
 	defer cleanup()
 	slog.SetDefault(logger)
 
@@ -116,7 +116,7 @@ func runHook() int {
 	// Record metrics (fire-and-forget).
 	if !cfg.MetricsDisabled {
 		entry := buildMetricsEntry(start, elapsed, input, cfg, result, err)
-		metrics.Record(cfg.ResolveMetricsPath(), cfg.MetricsMaxSize, entry)
+		metrics.Record(cfg.ResolveMetricsPath(), cfg.GetMetricsMaxSize(), entry)
 	}
 
 	if err != nil {

@@ -29,10 +29,10 @@ type Config struct {
 	Provider        ProviderConfig `json:"provider"`
 	LogPath         string         `json:"log_path"`
 	LogDisabled     bool           `json:"log_disabled"`
-	LogMaxSize      int64          `json:"log_max_size"`
+	LogMaxSize      *int64         `json:"log_max_size"`
 	MetricsPath     string         `json:"metrics_path"`
 	MetricsDisabled bool           `json:"metrics_disabled"`
-	MetricsMaxSize  int64          `json:"metrics_max_size"`
+	MetricsMaxSize  *int64         `json:"metrics_max_size"`
 	Allow           []string       `json:"allow"`
 	Deny            []string       `json:"deny"`
 	Environment     []string       `json:"environment"`
@@ -53,10 +53,30 @@ func Default() Config {
 			TimeoutMS: DefaultTimeoutMS,
 		},
 		LogPath:        filepath.Join(sd, "ccgate.log"),
-		LogMaxSize:     DefaultLogMaxSize,
+		LogMaxSize:     int64Ptr(DefaultLogMaxSize),
 		MetricsPath:    filepath.Join(sd, "metrics.jsonl"),
-		MetricsMaxSize: DefaultMetricsMaxSize,
+		MetricsMaxSize: int64Ptr(DefaultMetricsMaxSize),
 	}
+}
+
+func int64Ptr(v int64) *int64 { return &v }
+
+// GetLogMaxSize returns the log max size, defaulting to DefaultLogMaxSize.
+// 0 means no rotation.
+func (c Config) GetLogMaxSize() int64 {
+	if c.LogMaxSize == nil {
+		return DefaultLogMaxSize
+	}
+	return *c.LogMaxSize
+}
+
+// GetMetricsMaxSize returns the metrics max size, defaulting to DefaultMetricsMaxSize.
+// 0 means no rotation.
+func (c Config) GetMetricsMaxSize() int64 {
+	if c.MetricsMaxSize == nil {
+		return DefaultMetricsMaxSize
+	}
+	return *c.MetricsMaxSize
 }
 
 // stateDir returns the XDG_STATE_HOME-based directory for ccgate state (logs, metrics).
@@ -197,7 +217,7 @@ func mergeConfigFile(path string, cfg *Config) error {
 	if override.LogDisabled {
 		cfg.LogDisabled = true
 	}
-	if override.LogMaxSize > 0 {
+	if override.LogMaxSize != nil {
 		cfg.LogMaxSize = override.LogMaxSize
 	}
 	if override.MetricsPath != "" {
@@ -206,7 +226,7 @@ func mergeConfigFile(path string, cfg *Config) error {
 	if override.MetricsDisabled {
 		cfg.MetricsDisabled = true
 	}
-	if override.MetricsMaxSize > 0 {
+	if override.MetricsMaxSize != nil {
 		cfg.MetricsMaxSize = override.MetricsMaxSize
 	}
 
