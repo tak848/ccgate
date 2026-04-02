@@ -13,6 +13,9 @@ import (
 	"time"
 )
 
+// DefaultReportDays is the default number of days for metrics reports.
+const DefaultReportDays = 7
+
 // ReportOptions controls how the report is generated.
 type ReportOptions struct {
 	Days   int
@@ -67,7 +70,7 @@ func PrintReport(w io.Writer, path string, opts ReportOptions) error {
 
 func buildReport(path string, opts ReportOptions) (FullReport, error) {
 	if opts.Days <= 0 {
-		opts.Days = 7
+		opts.Days = DefaultReportDays
 	}
 
 	// Use local timezone for day boundaries (cutoff and daily grouping).

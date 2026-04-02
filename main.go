@@ -55,7 +55,10 @@ func _main() int {
 			kong.Vars{"version": version},
 		)
 		if kctx.Command() == "metrics" {
-			cwd, _ := os.Getwd()
+			cwd, err := os.Getwd()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to get working directory: %v\n", err)
+			}
 			cfg, err := config.Load(cwd)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
@@ -222,6 +225,9 @@ func (w *atomicWriter) Write(p []byte) (int, error) {
 }
 
 func rotateFile(path string, maxSize int64) {
+	if maxSize <= 0 {
+		return
+	}
 	info, err := os.Stat(path)
 	if err != nil || info.Size() < maxSize {
 		return
