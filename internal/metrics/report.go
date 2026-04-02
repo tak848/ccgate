@@ -70,7 +70,9 @@ func buildReport(path string, opts ReportOptions) (FullReport, error) {
 		opts.Days = 7
 	}
 
-	cutoff := time.Now().UTC().AddDate(0, 0, -opts.Days).Truncate(24 * time.Hour)
+	// Use local timezone for day boundaries (cutoff and daily grouping).
+	now := time.Now()
+	cutoff := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).AddDate(0, 0, -opts.Days+1)
 
 	entries, err := readEntries(path, cutoff)
 	if err != nil {
@@ -132,8 +134,9 @@ func aggregate(entries []Entry, days int) FullReport {
 	dailyMap := make(map[string]*DailySummary)
 	toolMap := make(map[string]*ToolSummary)
 
+	loc := time.Now().Location()
 	for _, e := range entries {
-		dateKey := e.Timestamp.UTC().Format("2006-01-02")
+		dateKey := e.Timestamp.In(loc).Format("2006-01-02")
 
 		ds, ok := dailyMap[dateKey]
 		if !ok {
