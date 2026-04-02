@@ -15,8 +15,14 @@ func (c Config) Validate() error {
 	if strings.TrimSpace(c.Provider.Model) == "" {
 		errs = append(errs, fmt.Errorf("provider.model must not be empty"))
 	}
-	if c.Provider.TimeoutMS <= 0 {
-		errs = append(errs, fmt.Errorf("provider.timeout_ms must be positive, got %d", c.Provider.TimeoutMS))
+	if c.Provider.TimeoutMS != nil && *c.Provider.TimeoutMS < 0 {
+		errs = append(errs, fmt.Errorf("provider.timeout_ms must not be negative, got %d", *c.Provider.TimeoutMS))
+	}
+	if c.LogMaxSize != nil && *c.LogMaxSize < 0 {
+		errs = append(errs, fmt.Errorf("log_max_size must not be negative, got %d", *c.LogMaxSize))
+	}
+	if c.MetricsMaxSize != nil && *c.MetricsMaxSize < 0 {
+		errs = append(errs, fmt.Errorf("metrics_max_size must not be negative, got %d", *c.MetricsMaxSize))
 	}
 	return errors.Join(errs...)
 }

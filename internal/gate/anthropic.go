@@ -47,7 +47,7 @@ type APIUsage struct {
 }
 
 func callAnthropic(parent context.Context, cfg config.Config, input hookctx.HookInput, apiKey string) (PermissionLLMOutput, *APIUsage, error) {
-	timeout := time.Duration(cfg.Provider.TimeoutMS) * time.Millisecond
+	timeout := time.Duration(cfg.GetTimeoutMS()) * time.Millisecond
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
@@ -113,6 +113,11 @@ func callAnthropic(parent context.Context, cfg config.Config, input hookctx.Hook
 	usage := &APIUsage{
 		InputTokens:  message.Usage.InputTokens,
 		OutputTokens: message.Usage.OutputTokens,
+	}
+
+	if message.StopReason == anthropic.StopReasonMaxTokens || message.StopReason == anthropic.StopReasonRefusal {
+		slog.Warn("anthropic response truncated or refused", "stop_reason", message.StopReason)
+		return PermissionLLMOutput{}, usage, nil // treat as fallthrough
 	}
 
 	text := extractMessageText(message)

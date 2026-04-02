@@ -100,7 +100,7 @@ func runHook() int {
 		return 1
 	}
 
-	logger, cleanup := initLogger(cfg.ResolveLogPath(), cfg.LogDisabled, cfg.GetLogMaxSize())
+	logger, cleanup := initLogger(cfg.ResolveLogPath(), cfg.IsLogDisabled(), cfg.GetLogMaxSize())
 	defer cleanup()
 	slog.SetDefault(logger)
 
@@ -114,7 +114,7 @@ func runHook() int {
 	elapsed := time.Since(start)
 
 	// Record metrics (fire-and-forget).
-	if !cfg.MetricsDisabled {
+	if !cfg.IsMetricsDisabled() {
 		entry := buildMetricsEntry(start, elapsed, input, cfg, result, err)
 		metrics.Record(cfg.ResolveMetricsPath(), cfg.GetMetricsMaxSize(), entry)
 	}
@@ -171,6 +171,7 @@ func buildMetricsEntry(start time.Time, elapsed time.Duration, input hookctx.Hoo
 	} else {
 		entry.Decision = "fallthrough"
 		entry.FallthroughKind = result.FallthroughKind
+		entry.Reason = truncateStr(result.LLMReason, maxTruncateLen)
 	}
 
 	if result.Usage != nil {
@@ -202,10 +203,11 @@ func initLogger(logPath string, disabled bool, maxLogSize int64) (*slog.Logger, 
 		return slog.New(slog.NewTextHandler(os.Stderr, nil)), func() {}
 	}
 
-	rotateFile(logPath, maxLogSize)
+	metrics.RotateIfNeeded(logPath, maxLogSize)
 
 	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to open log file %s: %v\n", logPath, err)
 		return slog.New(slog.NewTextHandler(os.Stderr, nil)), func() {}
 	}
 
@@ -222,21 +224,4 @@ func (w *atomicWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.f.Write(p)
-}
-
-func rotateFile(path string, maxSize int64) {
-	if maxSize <= 0 {
-		return
-	}
-	info, err := os.Stat(path)
-	if err != nil || info.Size() < maxSize {
-		return
-	}
-	prev := path + ".1"
-	if err := os.Remove(prev); err != nil && !os.IsNotExist(err) {
-		slog.Warn("failed to remove old file", "path", prev, "error", err)
-	}
-	if err := os.Rename(path, prev); err != nil {
-		slog.Warn("failed to rotate file", "path", path, "error", err)
-	}
 }

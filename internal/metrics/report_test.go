@@ -26,7 +26,7 @@ func TestBuildReport(t *testing.T) {
 
 	writeEntries(t, path, entries)
 
-	report, err := buildReport(path, ReportOptions{Days: 7})
+	report, _, err := buildReport(path, ReportOptions{Days: 7})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestBuildReportFiltersOldEntries(t *testing.T) {
 
 	writeEntries(t, path, entries)
 
-	report, err := buildReport(path, ReportOptions{Days: 7})
+	report, _, err := buildReport(path, ReportOptions{Days: 7})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,12 @@ func writeEntries(t *testing.T, path string, entries []Entry) {
 	}
 	defer f.Close()
 	for _, e := range entries {
-		line, _ := json.Marshal(e)
-		f.Write(append(line, '\n'))
+		line, err := json.Marshal(e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.Write(append(line, '\n')); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

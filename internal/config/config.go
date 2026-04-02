@@ -28,10 +28,10 @@ const (
 type Config struct {
 	Provider        ProviderConfig `json:"provider"`
 	LogPath         string         `json:"log_path"`
-	LogDisabled     bool           `json:"log_disabled"`
+	LogDisabled     *bool          `json:"log_disabled"`
 	LogMaxSize      *int64         `json:"log_max_size"`
 	MetricsPath     string         `json:"metrics_path"`
-	MetricsDisabled bool           `json:"metrics_disabled"`
+	MetricsDisabled *bool          `json:"metrics_disabled"`
 	MetricsMaxSize  *int64         `json:"metrics_max_size"`
 	Allow           []string       `json:"allow"`
 	Deny            []string       `json:"deny"`
@@ -41,7 +41,16 @@ type Config struct {
 type ProviderConfig struct {
 	Name      string `json:"name"`
 	Model     string `json:"model"`
-	TimeoutMS int    `json:"timeout_ms"`
+	TimeoutMS *int   `json:"timeout_ms"`
+}
+
+// GetTimeoutMS returns the timeout in milliseconds.
+// nil defaults to DefaultTimeoutMS.
+func (p ProviderConfig) GetTimeoutMS() int {
+	if p.TimeoutMS == nil {
+		return DefaultTimeoutMS
+	}
+	return *p.TimeoutMS
 }
 
 func Default() Config {
@@ -50,7 +59,7 @@ func Default() Config {
 		Provider: ProviderConfig{
 			Name:      DefaultProvider,
 			Model:     DefaultModel,
-			TimeoutMS: DefaultTimeoutMS,
+			TimeoutMS: intPtr(DefaultTimeoutMS),
 		},
 		LogPath:        filepath.Join(sd, "ccgate.log"),
 		LogMaxSize:     int64Ptr(DefaultLogMaxSize),
@@ -59,7 +68,25 @@ func Default() Config {
 	}
 }
 
+func intPtr(v int) *int       { return &v }
 func int64Ptr(v int64) *int64 { return &v }
+func boolPtr(v bool) *bool    { return &v }
+
+// GetTimeoutMS returns the provider timeout in milliseconds.
+// nil defaults to DefaultTimeoutMS.
+func (c Config) GetTimeoutMS() int {
+	return c.Provider.GetTimeoutMS()
+}
+
+// IsLogDisabled returns whether logging is disabled.
+func (c Config) IsLogDisabled() bool {
+	return c.LogDisabled != nil && *c.LogDisabled
+}
+
+// IsMetricsDisabled returns whether metrics collection is disabled.
+func (c Config) IsMetricsDisabled() bool {
+	return c.MetricsDisabled != nil && *c.MetricsDisabled
+}
 
 // GetLogMaxSize returns the log max size, defaulting to DefaultLogMaxSize.
 // 0 means no rotation.
@@ -81,7 +108,7 @@ func (c Config) GetMetricsMaxSize() int64 {
 
 // stateDir returns the XDG_STATE_HOME-based directory for ccgate state (logs, metrics).
 func stateDir() string {
-	if d := os.Getenv("XDG_STATE_HOME"); d != "" {
+	if d := os.Getenv("XDG_STATE_HOME"); d != "" && filepath.IsAbs(d) {
 		return filepath.Join(d, "ccgate")
 	}
 	if home, err := os.UserHomeDir(); err == nil {
@@ -90,7 +117,7 @@ func stateDir() string {
 	return "."
 }
 
-// resolvePath expands ~ in a path and returns the absolute path.
+// resolvePath expands ~ prefix in a path.
 func resolvePath(p string) string {
 	if after, ok := strings.CutPrefix(p, "~/"); ok {
 		if home, err := os.UserHomeDir(); err == nil {
@@ -100,7 +127,7 @@ func resolvePath(p string) string {
 	return p
 }
 
-// ResolveLogPath returns the absolute log file path.
+// ResolveLogPath returns the resolved log file path.
 func (c Config) ResolveLogPath() string {
 	if c.LogPath == "" {
 		return filepath.Join(stateDir(), "ccgate.log")
@@ -108,7 +135,7 @@ func (c Config) ResolveLogPath() string {
 	return resolvePath(c.LogPath)
 }
 
-// ResolveMetricsPath returns the absolute metrics file path.
+// ResolveMetricsPath returns the resolved metrics file path.
 func (c Config) ResolveMetricsPath() string {
 	if c.MetricsPath == "" {
 		return filepath.Join(stateDir(), "metrics.jsonl")
@@ -208,14 +235,14 @@ func mergeConfigFile(path string, cfg *Config) error {
 	if override.Provider.Model != "" {
 		cfg.Provider.Model = override.Provider.Model
 	}
-	if override.Provider.TimeoutMS > 0 {
+	if override.Provider.TimeoutMS != nil {
 		cfg.Provider.TimeoutMS = override.Provider.TimeoutMS
 	}
 	if override.LogPath != "" {
 		cfg.LogPath = override.LogPath
 	}
-	if override.LogDisabled {
-		cfg.LogDisabled = true
+	if override.LogDisabled != nil {
+		cfg.LogDisabled = override.LogDisabled
 	}
 	if override.LogMaxSize != nil {
 		cfg.LogMaxSize = override.LogMaxSize
@@ -223,8 +250,8 @@ func mergeConfigFile(path string, cfg *Config) error {
 	if override.MetricsPath != "" {
 		cfg.MetricsPath = override.MetricsPath
 	}
-	if override.MetricsDisabled {
-		cfg.MetricsDisabled = true
+	if override.MetricsDisabled != nil {
+		cfg.MetricsDisabled = override.MetricsDisabled
 	}
 	if override.MetricsMaxSize != nil {
 		cfg.MetricsMaxSize = override.MetricsMaxSize

@@ -46,14 +46,15 @@ type ToolSummary struct {
 
 // FullReport is the complete metrics report.
 type FullReport struct {
-	Period string         `json:"period"`
-	Daily  []DailySummary `json:"daily"`
-	Tools  []ToolSummary  `json:"tools"`
+	Period    string         `json:"period"`
+	DataRange string         `json:"data_range,omitempty"`
+	Daily     []DailySummary `json:"daily"`
+	Tools     []ToolSummary  `json:"tools"`
 }
 
 // PrintReport reads the metrics file and prints a report to w.
 func PrintReport(w io.Writer, path string, opts ReportOptions) error {
-	report, err := buildReport(path, opts)
+	report, cutoff, err := buildReport(path, opts)
 	if err != nil {
 		return err
 	}
@@ -64,11 +65,11 @@ func PrintReport(w io.Writer, path string, opts ReportOptions) error {
 		return enc.Encode(report)
 	}
 
-	printTable(w, report)
+	printTable(w, report, cutoff)
 	return nil
 }
 
-func buildReport(path string, opts ReportOptions) (FullReport, error) {
+func buildReport(path string, opts ReportOptions) (FullReport, time.Time, error) {
 	if opts.Days <= 0 {
 		opts.Days = DefaultReportDays
 	}
@@ -79,10 +80,10 @@ func buildReport(path string, opts ReportOptions) (FullReport, error) {
 
 	entries, err := readEntries(path, cutoff)
 	if err != nil {
-		return FullReport{}, err
+		return FullReport{}, cutoff, err
 	}
 
-	return aggregate(entries, opts.Days), nil
+	return aggregate(entries, opts.Days, cutoff), cutoff, nil
 }
 
 func readEntries(path string, cutoff time.Time) ([]Entry, error) {
@@ -133,12 +134,19 @@ func readEntriesFromFile(path string, cutoff time.Time) ([]Entry, error) {
 	return entries, nil
 }
 
-func aggregate(entries []Entry, days int) FullReport {
+func aggregate(entries []Entry, days int, cutoff time.Time) FullReport {
 	dailyMap := make(map[string]*DailySummary)
 	toolMap := make(map[string]*ToolSummary)
 
+	var minTS, maxTS time.Time
 	loc := time.Now().Location()
 	for _, e := range entries {
+		if minTS.IsZero() || e.Timestamp.Before(minTS) {
+			minTS = e.Timestamp
+		}
+		if maxTS.IsZero() || e.Timestamp.After(maxTS) {
+			maxTS = e.Timestamp
+		}
 		dateKey := e.Timestamp.In(loc).Format("2006-01-02")
 
 		ds, ok := dailyMap[dateKey]
@@ -198,19 +206,41 @@ func aggregate(entries []Entry, days int) FullReport {
 		return tools[i].Total > tools[j].Total
 	})
 
+	var dataRange string
+	if !minTS.IsZero() && !maxTS.IsZero() {
+		dataRange = fmt.Sprintf("%s ~ %s",
+			minTS.In(loc).Format("2006-01-02"),
+			maxTS.In(loc).Format("2006-01-02"))
+	}
+
 	return FullReport{
-		Period: fmt.Sprintf("last %d days", days),
-		Daily:  daily,
-		Tools:  tools,
+		Period:    fmt.Sprintf("last %d days", days),
+		DataRange: dataRange,
+		Daily:     daily,
+		Tools:     tools,
 	}
 }
 
-func printTable(w io.Writer, report FullReport) {
-	fmt.Fprintf(w, "ccgate metrics (%s)\n\n", report.Period)
+func printTable(w io.Writer, report FullReport, cutoff time.Time) {
+	fmt.Fprintf(w, "ccgate metrics (%s)\n", report.Period)
+	if report.DataRange != "" {
+		fmt.Fprintf(w, "Data range: %s\n", report.DataRange)
+	}
+	fmt.Fprintln(w)
 
 	if len(report.Daily) == 0 {
 		fmt.Fprintln(w, "No data.")
 		return
+	}
+
+	// Warn if the earliest data is newer than cutoff (data may be incomplete due to rotation).
+	if len(report.Daily) > 0 {
+		oldest := report.Daily[len(report.Daily)-1].Date
+		cutoffDate := cutoff.Format("2006-01-02")
+		if oldest > cutoffDate {
+			fmt.Fprintln(w, "Note: data limited by file rotation")
+			fmt.Fprintln(w)
+		}
 	}
 
 	fmt.Fprintf(w, "%-12s %6s %6s %6s %6s %5s %9s %16s\n",

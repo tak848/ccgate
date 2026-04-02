@@ -22,7 +22,11 @@ type PermissionDecision struct {
 	Message  string `json:"message,omitempty"`
 }
 
-// DecisionResult is the rich result from DecidePermission, carrying metrics-relevant data.
+// DecisionResult is the rich result from DecidePermission.
+// Invariants:
+//   - HasDecision=true: Decision is set, FallthroughKind is empty
+//   - HasDecision=false: Decision is zero, FallthroughKind describes why
+//   - Usage is non-nil only when an API call was made
 type DecisionResult struct {
 	Decision        PermissionDecision
 	HasDecision     bool
@@ -93,7 +97,7 @@ func DecidePermission(ctx context.Context, cfg config.Config, input hookctx.Hook
 
 	slog.Info("calling anthropic",
 		"model", cfg.Provider.Model,
-		"timeout_ms", cfg.Provider.TimeoutMS,
+		"timeout_ms", cfg.GetTimeoutMS(),
 		"tool", input.ToolName,
 	)
 

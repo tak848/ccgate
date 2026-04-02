@@ -58,7 +58,7 @@ func TestRotateIfNeeded(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rotateIfNeeded(path, 50)
+	RotateIfNeeded(path, 50)
 
 	if _, err := os.Stat(path + ".1"); err != nil {
 		t.Fatal("expected rotated file .1 to exist")
@@ -78,7 +78,7 @@ func TestRotateIfNeededUnderSize(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rotateIfNeeded(path, 100)
+	RotateIfNeeded(path, 100)
 
 	if _, err := os.Stat(path + ".1"); !os.IsNotExist(err) {
 		t.Fatal("should not rotate when under size")

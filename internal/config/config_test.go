@@ -17,8 +17,8 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Provider.Model != DefaultModel {
 		t.Fatalf("provider.model = %q, want %q", cfg.Provider.Model, DefaultModel)
 	}
-	if cfg.Provider.TimeoutMS != DefaultTimeoutMS {
-		t.Fatalf("provider.timeout_ms = %d, want %d", cfg.Provider.TimeoutMS, DefaultTimeoutMS)
+	if cfg.Provider.GetTimeoutMS() != DefaultTimeoutMS {
+		t.Fatalf("provider.timeout_ms = %d, want %d", cfg.Provider.GetTimeoutMS(), DefaultTimeoutMS)
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("default config should be valid: %v", err)
@@ -28,25 +28,22 @@ func TestDefaultConfig(t *testing.T) {
 func TestValidateErrors(t *testing.T) {
 	t.Parallel()
 
+	negTimeout := -1
 	tests := []struct {
 		name string
 		cfg  Config
 	}{
 		{
 			name: "empty provider name",
-			cfg:  Config{Provider: ProviderConfig{Name: "", Model: "m", TimeoutMS: 1000}},
+			cfg:  Config{Provider: ProviderConfig{Name: "", Model: "m", TimeoutMS: intPtr(1000)}},
 		},
 		{
 			name: "empty model",
-			cfg:  Config{Provider: ProviderConfig{Name: "anthropic", Model: "", TimeoutMS: 1000}},
-		},
-		{
-			name: "zero timeout",
-			cfg:  Config{Provider: ProviderConfig{Name: "anthropic", Model: "m", TimeoutMS: 0}},
+			cfg:  Config{Provider: ProviderConfig{Name: "anthropic", Model: "", TimeoutMS: intPtr(1000)}},
 		},
 		{
 			name: "negative timeout",
-			cfg:  Config{Provider: ProviderConfig{Name: "anthropic", Model: "m", TimeoutMS: -1}},
+			cfg:  Config{Provider: ProviderConfig{Name: "anthropic", Model: "m", TimeoutMS: &negTimeout}},
 		},
 	}
 	for _, tt := range tests {
@@ -104,8 +101,8 @@ func TestMergeConfigFileOverridesProvider(t *testing.T) {
 	if cfg.Provider.Model != "custom-model" {
 		t.Fatalf("model = %q, want %q", cfg.Provider.Model, "custom-model")
 	}
-	if cfg.Provider.TimeoutMS != 30000 {
-		t.Fatalf("timeout_ms = %d, want 30000", cfg.Provider.TimeoutMS)
+	if cfg.Provider.GetTimeoutMS() != 30000 {
+		t.Fatalf("timeout_ms = %d, want 30000", cfg.Provider.GetTimeoutMS())
 	}
 	// Name should remain default
 	if cfg.Provider.Name != DefaultProvider {
