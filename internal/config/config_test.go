@@ -56,6 +56,16 @@ func TestValidateErrors(t *testing.T) {
 	}
 }
 
+func TestValidateZeroTimeoutIsValid(t *testing.T) {
+	t.Parallel()
+
+	cfg := Default()
+	cfg.Provider.TimeoutMS = intPtr(0)
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("timeout_ms=0 should be valid (unlimited), got: %v", err)
+	}
+}
+
 func TestMergeConfigFileAppendsGuidance(t *testing.T) {
 	t.Parallel()
 

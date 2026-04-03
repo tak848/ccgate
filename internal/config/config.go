@@ -45,7 +45,7 @@ type ProviderConfig struct {
 }
 
 // GetTimeoutMS returns the timeout in milliseconds.
-// nil defaults to DefaultTimeoutMS.
+// nil defaults to DefaultTimeoutMS; 0 means no timeout.
 func (p ProviderConfig) GetTimeoutMS() int {
 	if p.TimeoutMS == nil {
 		return DefaultTimeoutMS
@@ -70,7 +70,6 @@ func Default() Config {
 
 func intPtr(v int) *int       { return &v }
 func int64Ptr(v int64) *int64 { return &v }
-func boolPtr(v bool) *bool    { return &v }
 
 // GetTimeoutMS returns the provider timeout in milliseconds.
 // nil defaults to DefaultTimeoutMS.

@@ -47,9 +47,12 @@ type APIUsage struct {
 }
 
 func callAnthropic(parent context.Context, cfg config.Config, input hookctx.HookInput, apiKey string) (PermissionLLMOutput, *APIUsage, error) {
-	timeout := time.Duration(cfg.GetTimeoutMS()) * time.Millisecond
-	ctx, cancel := context.WithTimeout(parent, timeout)
-	defer cancel()
+	ctx := parent
+	if t := cfg.GetTimeoutMS(); t > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(parent, time.Duration(t)*time.Millisecond)
+		defer cancel()
+	}
 
 	client := anthropic.NewClient(
 		option.WithAPIKey(apiKey),

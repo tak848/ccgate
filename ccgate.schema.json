@@ -18,7 +18,8 @@
         },
         "timeout_ms": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 0,
+          "description": "API timeout in milliseconds. 0 means no timeout. Default: 20000"
         }
       }
     },
