@@ -163,6 +163,93 @@ func TestSafeProjectLocalConfigPathsSkipsTrackedFile(t *testing.T) {
 	}
 }
 
+func TestMergeConfigStringAppliesDefaults(t *testing.T) {
+	t.Parallel()
+
+	cfg := Default()
+	if err := mergeConfigString(DefaultsJsonnet, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Allow) == 0 {
+		t.Fatal("expected allow rules from embedded defaults")
+	}
+	if len(cfg.Deny) == 0 {
+		t.Fatal("expected deny rules from embedded defaults")
+	}
+	if len(cfg.Environment) == 0 {
+		t.Fatal("expected environment from embedded defaults")
+	}
+}
+
+func TestEmbeddedDefaultsValidJsonnet(t *testing.T) {
+	t.Parallel()
+
+	snippets := map[string]string{
+		"defaults":         DefaultsJsonnet,
+		"defaults_project": DefaultsProjectJsonnet,
+	}
+	for name, snippet := range snippets {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			cfg := Default()
+			if err := mergeConfigString(snippet, &cfg); err != nil {
+				t.Fatalf("embedded %s is invalid jsonnet: %v", name, err)
+			}
+			if err := cfg.Validate(); err != nil {
+				t.Fatalf("config from embedded %s should be valid: %v", name, err)
+			}
+		})
+	}
+}
+
+func TestLoadFallsBackToDefaultsWhenNoGlobalConfig(t *testing.T) {
+	// t.Setenv is incompatible with t.Parallel.
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, ".claude"), 0o755)
+	t.Setenv("HOME", dir)
+
+	lr, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lr.Source != SourceEmbeddedDefaults {
+		t.Fatalf("source = %q, want %q", lr.Source, SourceEmbeddedDefaults)
+	}
+	if len(lr.Config.Allow) == 0 {
+		t.Fatal("expected allow rules from embedded defaults")
+	}
+	if len(lr.Config.Deny) == 0 {
+		t.Fatal("expected deny rules from embedded defaults")
+	}
+}
+
+func TestLoadUsesGlobalConfigWhenPresent(t *testing.T) {
+	// t.Setenv is incompatible with t.Parallel.
+	dir := t.TempDir()
+	claudeDir := filepath.Join(dir, ".claude")
+	os.MkdirAll(claudeDir, 0o755)
+	content := `{ provider: { name: 'anthropic', model: 'claude-haiku-4-5' }, allow: ['Custom allow'] }`
+	if err := os.WriteFile(filepath.Join(claudeDir, BaseConfigName), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", dir)
+
+	lr, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lr.Source != SourceGlobalConfig {
+		t.Fatalf("source = %q, want %q", lr.Source, SourceGlobalConfig)
+	}
+	if len(lr.Config.Allow) != 1 || lr.Config.Allow[0] != "Custom allow" {
+		t.Fatalf("unexpected allow: %v", lr.Config.Allow)
+	}
+	// Deny should be empty (defaults not applied).
+	if len(lr.Config.Deny) != 0 {
+		t.Fatalf("expected no deny rules (defaults not applied), got %v", lr.Config.Deny)
+	}
+}
+
 func gitRun(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", args...)

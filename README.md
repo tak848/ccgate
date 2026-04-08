@@ -45,31 +45,18 @@ Download a binary from [Releases](https://github.com/tak848/ccgate/releases) and
 
 ## Setup
 
-### 1. Create a config file
+### 1. Create a config file (optional)
 
-Write your rules in `~/.claude/ccgate.jsonnet`.
-See [example/ccgate.jsonnet](example/ccgate.jsonnet) for reference.
+ccgate ships with sensible default safety rules. Without any config file, it works out of the box.
 
-```jsonnet
-{
-  provider: {
-    name: 'anthropic',
-    model: 'claude-haiku-4-5',
-    timeout_ms: 40000,
-  },
-  allow: [
-    'Read-Only Operations: ...',
-  ],
-  deny: [
-    'Git Destructive: force push, deleting remote branches, ...',
-  ],
-  environment: [
-    '**Trusted repo**: The git repository the session started in.',
-  ],
-}
+To customize, output the defaults and edit:
+
+```bash
+ccgate init > ~/.claude/ccgate.jsonnet
 ```
 
-The `$schema` field points to the hosted JSON Schema for editor autocompletion — no local file needed.
+See [example/ccgate.jsonnet](example/ccgate.jsonnet) for reference.
+The `$schema` field points to the hosted JSON Schema for editor autocompletion.
 
 ### 2. Register as a Claude Code hook
 
@@ -101,11 +88,13 @@ Set the `CC_AUTOMODE_ANTHROPIC_API_KEY` or `ANTHROPIC_API_KEY` environment varia
 
 ### Config file loading order
 
-1. `~/.claude/ccgate.jsonnet` — Base config
-2. `{repo_root}/ccgate.local.jsonnet` — Project-local (untracked files only)
-3. `{repo_root}/.claude/ccgate.local.jsonnet` — Project-local (untracked files only)
+1. **Embedded defaults** — Built-in safety rules (fallback when no global config exists)
+2. `~/.claude/ccgate.jsonnet` — Global config (**replaces** embedded defaults entirely)
+3. `{repo_root}/ccgate.local.jsonnet` — Project-local (untracked files only, **appended**)
+4. `{repo_root}/.claude/ccgate.local.jsonnet` — Project-local (untracked files only, **appended**)
 
-Later files merge into earlier ones (allow/deny/environment are appended, provider fields are overwritten).
+If a global config file exists, embedded defaults are not used. The global config is the complete base.
+Project-local configs always append to the base (allow/deny/environment are appended, provider fields are overwritten).
 Project-local configs are only loaded if **not tracked by Git**.
 
 ### Config fields
@@ -118,9 +107,24 @@ Project-local configs are only loaded if **not tracked by Git**.
 | `log_path` | string | `"~/.claude/logs/ccgate.log"` | Log file path. Supports `~` for home directory. |
 | `log_disabled` | bool | `false` | Disable logging entirely |
 | `log_max_size` | int | `5242880` | Max log file size in bytes before rotation (default 5MB) |
-| `allow` | string[] | `[]` | Allow rules |
-| `deny` | string[] | `[]` | Deny rules (mandatory) |
-| `environment` | string[] | `[]` | Environment context |
+| `allow` | string[] | `[]` | Allow guidance rules (natural language, interpreted by the LLM) |
+| `deny` | string[] | `[]` | Deny guidance rules (mandatory). Supports inline `deny_message:` hints |
+| `environment` | string[] | `[]` | Context strings passed to the LLM (trust level, policies, etc.) |
+
+## Default Rules
+
+When no global config file exists, ccgate uses built-in default rules:
+
+**Allow:** Read-only operations, local development commands, git feature branch operations, package manager installs.
+
+**Deny:** Download-and-execute (curl|bash), direct tool invocation (npx, pnpx, etc.), git destructive operations, out-of-repo deletion, sibling checkout / worktree confusion.
+
+Run `ccgate init` to see the full default configuration. To customize, redirect to a file and edit:
+
+```bash
+ccgate init > ~/.claude/ccgate.jsonnet    # Global config (replaces defaults)
+ccgate init -p > ccgate.local.jsonnet     # Project-local template (appended)
+```
 
 ## Logging
 
