@@ -1,4 +1,6 @@
 {
+  ['$schema']: 'https://raw.githubusercontent.com/tak848/ccgate/main/ccgate.schema.json',
+
   // Project-local ccgate configuration.
   // This file adds restrictions on top of the global config.
   // Place as: {repo_root}/ccgate.local.jsonnet or {repo_root}/.claude/ccgate.local.jsonnet

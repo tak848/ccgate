@@ -153,9 +153,10 @@ func buildSystemPrompt(cfg config.Config) string {
 	b.WriteString("- fallthrough: When uncertain whether an action is planning or implementation.\n\n")
 
 	b.WriteString("Normal decision rules:\n")
-	b.WriteString("- deny: When a deny guidance rule matches. EXCEPT: if recent_transcript shows the user explicitly requested the operation, use fallthrough instead of deny to let the user confirm.\n")
-	b.WriteString("- allow: When the operation matches allow guidance. Also, if the most recent user message directly and specifically describes the exact command/tool/path being executed, allow it unless it matches a deny rule targeting dangerous patterns (download-and-execute, force push, etc.). If the user message is ambiguous (e.g. \"yes, go ahead\" without specifying the action), do NOT treat it as explicit permission.\n")
-	b.WriteString("- fallthrough: When genuinely uncertain, OR when a deny rule matches but the user explicitly requested the operation.\n\n")
+	b.WriteString("- deny: When a deny guidance rule matches. EXCEPT: if recent_transcript shows the user explicitly requested the exact operation, use fallthrough instead of deny to let the user confirm.\n")
+	b.WriteString("- allow: When the operation matches allow guidance and no deny rule matches.\n")
+	b.WriteString("- fallthrough: When genuinely uncertain, OR when a deny rule matches but the user explicitly requested the operation.\n")
+	b.WriteString("Deny rules always take priority over allow rules. Explicit user requests can only escalate deny to fallthrough, never to allow.\n\n")
 
 	b.WriteString("Always provide a brief reason for your decision.\n")
 	b.WriteString("When deny, provide a concise deny_message. If the deny rule includes a deny_message hint, adapt it to the specific situation.\n")

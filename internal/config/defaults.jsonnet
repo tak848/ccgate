@@ -1,4 +1,6 @@
 {
+  ['$schema']: 'https://raw.githubusercontent.com/tak848/ccgate/main/ccgate.schema.json',
+
   // Default safety rules for ccgate.
   // Inspired by Claude Code Auto Mode defaults.
   // Customize: ccgate init > ~/.claude/ccgate.jsonnet
