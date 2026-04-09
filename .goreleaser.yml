@@ -25,8 +25,25 @@ checksum:
   name_template: checksums.txt
 changelog:
   sort: asc
+  use: github
+  groups:
+    - title: Breaking Changes
+      regexp: '^.*!:'
+      order: 0
+    - title: Features
+      regexp: '^feat'
+      order: 1
+    - title: Bug Fixes
+      regexp: '^fix'
+      order: 2
+    - title: Refactoring
+      regexp: '^refactor'
+      order: 3
+    - title: Others
+      order: 999
   filters:
     exclude:
       - '^docs:'
       - '^test:'
       - '^ci:'
+      - '^chore:'
