@@ -43,7 +43,7 @@ changelog:
       order: 999
   filters:
     exclude:
-      - '^docs:'
-      - '^test:'
-      - '^ci:'
-      - '^chore:'
+      - '^docs'
+      - '^test'
+      - '^ci'
+      - '^chore'
