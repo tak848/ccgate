@@ -14,7 +14,7 @@ const (
 	BehaviorAllow       = "allow"
 	BehaviorDeny        = "deny"
 	BehaviorFallthrough = "fallthrough"
-	DefaultDenyMessage  = "危険な可能性が高いため、自動許可しません。"
+	DefaultDenyMessage  = "Automatically denied as potentially dangerous."
 )
 
 type PermissionDecision struct {

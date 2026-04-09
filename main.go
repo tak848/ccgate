@@ -35,7 +35,14 @@ func init() {
 
 type CLI struct {
 	Version kong.VersionFlag `help:"Print version and exit."`
+	Init    InitCmd          `cmd:"" help:"Output default configuration."`
 	Metrics MetricsCmd       `cmd:"" help:"Show usage metrics summary."`
+}
+
+type InitCmd struct {
+	Project bool   `help:"Output project-local configuration template." short:"p"`
+	Output  string `help:"Write to file instead of stdout." short:"o" type:"path"`
+	Force   bool   `help:"Overwrite existing file." short:"f"`
 }
 
 type MetricsCmd struct {
@@ -54,17 +61,20 @@ func _main() int {
 			kong.Description("Claude Code PermissionRequest hook.\nReads HookInput JSON from stdin, returns allow/deny/fallthrough to stdout."),
 			kong.Vars{"version": version},
 		)
-		if kctx.Command() == "metrics" {
+		switch kctx.Command() {
+		case "init":
+			return runInit(cli.Init)
+		case "metrics":
 			cwd, err := os.Getwd()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "warning: failed to get working directory: %v\n", err)
 			}
-			cfg, err := config.Load(cwd)
+			lr, err := config.Load(cwd)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
 				return 1
 			}
-			if err := metrics.PrintReport(os.Stdout, cfg.ResolveMetricsPath(), metrics.ReportOptions{
+			if err := metrics.PrintReport(os.Stdout, lr.Config.ResolveMetricsPath(), metrics.ReportOptions{
 				Days:   cli.Metrics.Days,
 				AsJSON: cli.Metrics.JSON,
 			}); err != nil {
@@ -77,11 +87,44 @@ func _main() int {
 
 	// No args: if tty, show usage; if pipe, run hook.
 	if term.IsTerminal(int(os.Stdin.Fd())) {
-		fmt.Fprintf(os.Stderr, "ccgate %s\n\nClaude Code PermissionRequest hook.\nReads HookInput JSON from stdin, returns allow/deny/fallthrough to stdout.\n\nCommands:\n  ccgate metrics [--days N] [--json]\n\nFlags:\n  --version    Print version and exit\n  --help       Show help\n", version)
+		fmt.Fprintf(os.Stderr, "ccgate %s\n\nClaude Code PermissionRequest hook.\nReads HookInput JSON from stdin, returns allow/deny/fallthrough to stdout.\n\nCommands:\n  ccgate init [-p] [-o FILE] [-f]   Output default configuration\n  ccgate metrics [--days N] [--json] Show usage metrics summary\n\nFlags:\n  --version    Print version and exit\n  --help       Show help\n", version)
 		return 0
 	}
 
 	return runHook()
+}
+
+func runInit(cmd InitCmd) int {
+	content := config.DefaultsJsonnet
+	if cmd.Project {
+		content = config.DefaultsProjectJsonnet
+	}
+
+	if cmd.Output == "" {
+		fmt.Print(content)
+		return 0
+	}
+
+	if !cmd.Force {
+		if _, err := os.Stat(cmd.Output); err == nil {
+			fmt.Fprintf(os.Stderr, "error: file already exists: %s (use -f to overwrite)\n", cmd.Output)
+			return 1
+		}
+	}
+
+	dir := filepath.Dir(cmd.Output)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		fmt.Fprintf(os.Stderr, "error: failed to create directory %s: %v\n", dir, err)
+		return 1
+	}
+
+	if err := os.WriteFile(cmd.Output, []byte(content), 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "error: failed to write file %s: %v\n", cmd.Output, err)
+		return 1
+	}
+
+	fmt.Fprintf(os.Stderr, "wrote %s\n", cmd.Output)
+	return 0
 }
 
 func runHook() int {
@@ -94,19 +137,25 @@ func runHook() int {
 		return 1
 	}
 
-	cfg, err := config.Load(input.Cwd)
+	lr, err := config.Load(input.Cwd)
 	if err != nil {
 		slog.Error("failed to load config", "error", err)
 		return 1
 	}
+	cfg := lr.Config
 
 	logger, cleanup := initLogger(cfg.ResolveLogPath(), cfg.IsLogDisabled(), cfg.GetLogMaxSize())
 	defer cleanup()
 	slog.SetDefault(logger)
 
+	if lr.Source == config.SourceGlobalConfig && len(cfg.Allow) == 0 && len(cfg.Deny) == 0 {
+		slog.Warn("allow and deny rules are both empty; embedded defaults were not applied because a global config exists")
+	}
+
 	slog.Info("hook invoked",
 		"tool", input.ToolName,
 		"permission_mode", input.PermissionMode,
+		"config_source", string(lr.Source),
 	)
 
 	start := time.Now()

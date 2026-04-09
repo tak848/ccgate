@@ -1,6 +1,7 @@
 package config
 
 import (
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,12 @@ import (
 
 	"github.com/tak848/ccgate/internal/gitutil"
 )
+
+//go:embed defaults.jsonnet
+var DefaultsJsonnet string
+
+//go:embed defaults_project.jsonnet
+var DefaultsProjectJsonnet string
 
 const (
 	DefaultTimeoutMS      = 20_000
@@ -142,31 +149,56 @@ func (c Config) ResolveMetricsPath() string {
 	return resolvePath(c.MetricsPath)
 }
 
+// ConfigSource indicates where the base configuration came from.
+type ConfigSource string
+
+const (
+	SourceEmbeddedDefaults ConfigSource = "embedded_defaults"
+	SourceGlobalConfig     ConfigSource = "global_config"
+)
+
+// LoadResult holds the loaded config and metadata about the loading process.
+type LoadResult struct {
+	Config Config
+	Source ConfigSource
+}
+
 // Load reads the base config from ~/.claude/ and merges project-local overrides.
-func Load(cwd string) (Config, error) {
+// If no global config exists, embedded defaults are used as fallback.
+func Load(cwd string) (LoadResult, error) {
 	cfg := Default()
 
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return cfg, fmt.Errorf("user home dir: %w", err)
+		return LoadResult{Config: cfg}, fmt.Errorf("user home dir: %w", err)
 	}
 
+	source := SourceEmbeddedDefaults
 	basePath := filepath.Join(home, ".claude", BaseConfigName)
-	if err := mergeConfigFile(basePath, &cfg); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return cfg, fmt.Errorf("base config %s: %w", basePath, err)
+	if err := mergeConfigFile(basePath, &cfg); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			// No global config: use embedded defaults as fallback.
+			if err := mergeConfigString(DefaultsJsonnet, &cfg); err != nil {
+				return LoadResult{Config: cfg}, fmt.Errorf("embedded defaults: %w", err)
+			}
+		} else {
+			return LoadResult{Config: cfg}, fmt.Errorf("base config %s: %w", basePath, err)
+		}
+	} else {
+		source = SourceGlobalConfig
 	}
 
 	for _, path := range safeProjectLocalConfigPaths(cwd) {
 		if err := mergeConfigFile(path, &cfg); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return cfg, fmt.Errorf("local config %s: %w", path, err)
+			return LoadResult{Config: cfg}, fmt.Errorf("local config %s: %w", path, err)
 		}
 	}
 
 	if err := cfg.Validate(); err != nil {
-		return cfg, fmt.Errorf("config validation: %w", err)
+		return LoadResult{Config: cfg}, fmt.Errorf("config validation: %w", err)
 	}
 
-	return cfg, nil
+	return LoadResult{Config: cfg, Source: source}, nil
 }
 
 func projectLocalConfigPaths(cwd string) []string {
@@ -222,7 +254,19 @@ func mergeConfigFile(path string, cfg *Config) error {
 		}
 		return fmt.Errorf("evaluate jsonnet: %w", err)
 	}
+	return mergeConfigJSON(data, cfg)
+}
 
+func mergeConfigString(snippet string, cfg *Config) error {
+	vm := jsonnet.MakeVM()
+	data, err := vm.EvaluateAnonymousSnippet("defaults.jsonnet", snippet)
+	if err != nil {
+		return fmt.Errorf("evaluate jsonnet snippet: %w", err)
+	}
+	return mergeConfigJSON(data, cfg)
+}
+
+func mergeConfigJSON(data string, cfg *Config) error {
 	var override Config
 	if err := json.Unmarshal([]byte(data), &override); err != nil {
 		return fmt.Errorf("unmarshal config: %w", err)
