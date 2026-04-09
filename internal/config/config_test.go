@@ -205,7 +205,9 @@ func TestEmbeddedDefaultsValidJsonnet(t *testing.T) {
 func TestLoadFallsBackToDefaultsWhenNoGlobalConfig(t *testing.T) {
 	// t.Setenv is incompatible with t.Parallel.
 	dir := t.TempDir()
-	os.MkdirAll(filepath.Join(dir, ".claude"), 0o755)
+	if err := os.MkdirAll(filepath.Join(dir, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("HOME", dir)
 
 	lr, err := Load("")
@@ -227,7 +229,9 @@ func TestLoadUsesGlobalConfigWhenPresent(t *testing.T) {
 	// t.Setenv is incompatible with t.Parallel.
 	dir := t.TempDir()
 	claudeDir := filepath.Join(dir, ".claude")
-	os.MkdirAll(claudeDir, 0o755)
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	content := `{ provider: { name: 'anthropic', model: 'claude-haiku-4-5' }, allow: ['Custom allow'] }`
 	if err := os.WriteFile(filepath.Join(claudeDir, BaseConfigName), []byte(content), 0o644); err != nil {
 		t.Fatal(err)

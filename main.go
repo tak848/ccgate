@@ -64,8 +64,7 @@ func _main() int {
 		switch kctx.Command() {
 		case "init":
 			return runInit(cli.Init)
-		}
-		if kctx.Command() == "metrics" {
+		case "metrics":
 			cwd, err := os.Getwd()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "warning: failed to get working directory: %v\n", err)
