@@ -91,7 +91,7 @@ func DecidePermission(ctx context.Context, cfg config.Config, input hookctx.Hook
 
 	apiKey, ok := resolveAPIKey()
 	if !ok {
-		slog.Warn("no API key found (CC_AUTOMODE_ANTHROPIC_API_KEY / ANTHROPIC_API_KEY)")
+		slog.Warn("no API key found (CCGATE_ANTHROPIC_API_KEY / ANTHROPIC_API_KEY)")
 		return DecisionResult{FallthroughKind: "no_apikey"}, nil
 	}
 
@@ -143,7 +143,7 @@ func DecidePermission(ctx context.Context, cfg config.Config, input hookctx.Hook
 }
 
 func resolveAPIKey() (string, bool) {
-	if key := strings.TrimSpace(os.Getenv("CC_AUTOMODE_ANTHROPIC_API_KEY")); key != "" {
+	if key := strings.TrimSpace(os.Getenv("CCGATE_ANTHROPIC_API_KEY")); key != "" {
 		return key, true
 	}
 	if key := strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")); key != "" {
