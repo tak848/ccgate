@@ -78,7 +78,7 @@ ccgate init > ~/.claude/ccgate.jsonnet
 
 ### 3. API キー
 
-環境変数 `CC_AUTOMODE_ANTHROPIC_API_KEY` または `ANTHROPIC_API_KEY` を設定してください。
+環境変数 `CCGATE_ANTHROPIC_API_KEY` または `ANTHROPIC_API_KEY` を設定してください。
 
 ## 設定
 

@@ -82,7 +82,7 @@ The `$schema` field points to the hosted JSON Schema for editor autocompletion.
 
 ### 3. API key
 
-Set the `CC_AUTOMODE_ANTHROPIC_API_KEY` or `ANTHROPIC_API_KEY` environment variable.
+Set the `CCGATE_ANTHROPIC_API_KEY` or `ANTHROPIC_API_KEY` environment variable.
 
 ## Configuration
 
