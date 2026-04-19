@@ -12,6 +12,13 @@
     // Uncomment to override: timeout_ms: 40000,
   },
 
+  // What to do when the LLM is uncertain (returns "fallthrough"):
+  //   'ask'   (default): defer to Claude Code's permission prompt
+  //   'allow': auto-allow uncertain operations (use with care; intended for fully autonomous runs)
+  //   'deny':  auto-deny uncertain operations (safer default for unattended automation)
+  // Only LLM uncertainty is affected; bypassPermissions / dontAsk / missing API key still defer.
+  // fallthrough_strategy: 'ask',
+
   allow: [
     'Read-Only Operations: Read, Glob, Grep, and other read-only tools that do not modify state.',
     'Local Development: Build, test, lint, format commands in the current repository.',

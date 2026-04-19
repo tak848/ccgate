@@ -6,6 +6,11 @@
   // Place as: {repo_root}/ccgate.local.jsonnet or {repo_root}/.claude/ccgate.local.jsonnet
   // IMPORTANT: Must NOT be tracked by git (add to .gitignore).
 
+  // Force the LLM's "fallthrough" decisions to a fixed allow/deny.
+  // Useful for fully autonomous runs (schedulers, bots) that cannot block on a prompt.
+  //   fallthrough_strategy: 'deny',  // safer: refuse anything the LLM is unsure about
+  //   fallthrough_strategy: 'allow', // riskier: auto-approve everything the LLM is unsure about
+
   deny: [
     // Add project-specific deny rules here.
     // Examples:
