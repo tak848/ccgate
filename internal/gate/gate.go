@@ -20,6 +20,12 @@ const (
 // FallthroughKind* values are stored verbatim in metrics entries.
 // Only FallthroughKindLLM is promotable via permission rules — the other
 // kinds indicate runtime-mode or configuration conditions.
+//
+// FallthroughKindAPIUnusable means the API truncated/refused the response
+// or returned no parseable text. It is intentionally NOT subject to
+// fallthrough_strategy because the LLM never actually expressed an
+// uncertain decision — auto-allowing on a refused/truncated response
+// would silently weaken security.
 const (
 	FallthroughKindUserInteraction = "user_interaction"
 	FallthroughKindBypass          = "bypass"
@@ -27,6 +33,7 @@ const (
 	FallthroughKindNonAnthropic    = "non_anthropic"
 	FallthroughKindNoAPIKey        = "no_apikey"
 	FallthroughKindLLM             = "llm"
+	FallthroughKindAPIUnusable     = "api_unusable"
 )
 
 type PermissionDecision struct {
@@ -114,21 +121,41 @@ func DecidePermission(ctx context.Context, cfg config.Config, input hookctx.Hook
 		"tool", input.ToolName,
 	)
 
-	output, usage, err := callAnthropic(ctx, cfg, input, apiKey)
+	callResult, err := callAnthropic(ctx, cfg, input, apiKey)
 	if err != nil {
 		slog.Error("anthropic API call failed", "error", err, "tool", input.ToolName)
-		return DecisionResult{Usage: usage}, err
+		return DecisionResult{Usage: callResult.Usage}, err
 	}
 
-	slog.Info("LLM decision",
-		"behavior", output.Behavior,
-		"reason", output.Reason,
-		"deny_message", output.DenyMessage,
-		"tool", input.ToolName,
-	)
+	if !callResult.Unusable {
+		slog.Info("LLM decision",
+			"behavior", callResult.Output.Behavior,
+			"reason", callResult.Output.Reason,
+			"deny_message", callResult.Output.DenyMessage,
+			"tool", input.ToolName,
+		)
+	}
 
+	return decideFromLLMResult(cfg, callResult), nil
+}
+
+// decideFromLLMResult turns a single LLM call result into the final
+// DecisionResult. Split out from DecidePermission so that the
+// fallthrough_strategy promotion rules can be exercised by tests
+// without spinning up the Anthropic client.
+func decideFromLLMResult(cfg config.Config, callResult LLMCallResult) DecisionResult {
+	// API truncated/refused: NOT an LLM uncertainty signal, so
+	// fallthrough_strategy must not promote it to allow/deny.
+	if callResult.Unusable {
+		return DecisionResult{
+			Usage:           callResult.Usage,
+			FallthroughKind: FallthroughKindAPIUnusable,
+		}
+	}
+
+	output := callResult.Output
 	base := DecisionResult{
-		Usage:     usage,
+		Usage:     callResult.Usage,
 		LLMReason: output.Reason,
 	}
 
@@ -136,7 +163,7 @@ func DecidePermission(ctx context.Context, cfg config.Config, input hookctx.Hook
 	case BehaviorAllow:
 		base.Decision = PermissionDecision{Behavior: BehaviorAllow}
 		base.HasDecision = true
-		return base, nil
+		return base
 	case BehaviorDeny:
 		message := strings.TrimSpace(output.DenyMessage)
 		if message == "" {
@@ -144,14 +171,14 @@ func DecidePermission(ctx context.Context, cfg config.Config, input hookctx.Hook
 		}
 		base.Decision = PermissionDecision{Behavior: BehaviorDeny, Message: message}
 		base.HasDecision = true
-		return base, nil
+		return base
 	case BehaviorFallthrough, "":
 		base.FallthroughKind = FallthroughKindLLM
 		if d, ok := applyForcedStrategy(cfg, output.Reason); ok {
 			base.Decision = d
 			base.HasDecision = true
 		}
-		return base, nil
+		return base
 	default:
 		slog.Warn("unexpected LLM behavior", "behavior", output.Behavior)
 		base.FallthroughKind = FallthroughKindLLM
@@ -159,7 +186,7 @@ func DecidePermission(ctx context.Context, cfg config.Config, input hookctx.Hook
 			base.Decision = d
 			base.HasDecision = true
 		}
-		return base, nil
+		return base
 	}
 }
 

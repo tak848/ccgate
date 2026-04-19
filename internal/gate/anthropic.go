@@ -46,7 +46,18 @@ type APIUsage struct {
 	OutputTokens int64
 }
 
-func callAnthropic(parent context.Context, cfg config.Config, input hookctx.HookInput, apiKey string) (PermissionLLMOutput, *APIUsage, error) {
+// LLMCallResult is the internal result of a single LLM call. When
+// Unusable is true the API truncated/refused the response or returned
+// no parseable text; Output is zero in that case and callers MUST NOT
+// treat it as a real LLM "fallthrough" (the LLM never actually
+// expressed uncertainty about the request).
+type LLMCallResult struct {
+	Output   PermissionLLMOutput
+	Usage    *APIUsage
+	Unusable bool
+}
+
+func callAnthropic(parent context.Context, cfg config.Config, input hookctx.HookInput, apiKey string) (LLMCallResult, error) {
 	ctx := parent
 	if t := cfg.GetTimeoutMS(); t > 0 {
 		var cancel context.CancelFunc
@@ -78,7 +89,7 @@ func callAnthropic(parent context.Context, cfg config.Config, input hookctx.Hook
 
 	userMessage, err := marshalJSON(promptInput)
 	if err != nil {
-		return PermissionLLMOutput{}, nil, fmt.Errorf("marshal prompt input: %w", err)
+		return LLMCallResult{}, fmt.Errorf("marshal prompt input: %w", err)
 	}
 
 	slog.Info("anthropic request",
@@ -88,7 +99,7 @@ func callAnthropic(parent context.Context, cfg config.Config, input hookctx.Hook
 
 	schema, err := permissionOutputSchema()
 	if err != nil {
-		return PermissionLLMOutput{}, nil, fmt.Errorf("generate output schema: %w", err)
+		return LLMCallResult{}, fmt.Errorf("generate output schema: %w", err)
 	}
 
 	message, err := client.Messages.New(ctx, anthropic.MessageNewParams{
@@ -110,7 +121,7 @@ func callAnthropic(parent context.Context, cfg config.Config, input hookctx.Hook
 		Temperature: anthropic.Float(0),
 	})
 	if err != nil {
-		return PermissionLLMOutput{}, nil, fmt.Errorf("anthropic API: %w", err)
+		return LLMCallResult{}, fmt.Errorf("anthropic API: %w", err)
 	}
 
 	usage := &APIUsage{
@@ -120,24 +131,25 @@ func callAnthropic(parent context.Context, cfg config.Config, input hookctx.Hook
 
 	if message.StopReason == anthropic.StopReasonMaxTokens || message.StopReason == anthropic.StopReasonRefusal {
 		slog.Warn("anthropic response truncated or refused", "stop_reason", message.StopReason)
-		return PermissionLLMOutput{}, usage, nil // treat as fallthrough
+		return LLMCallResult{Usage: usage, Unusable: true}, nil
 	}
 
 	text := extractMessageText(message)
 	slog.Info("anthropic response", "raw", text)
 	if text == "" {
-		return PermissionLLMOutput{}, usage, nil
+		slog.Warn("anthropic response had no text content")
+		return LLMCallResult{Usage: usage, Unusable: true}, nil
 	}
 
 	var output PermissionLLMOutput
 	if err := json.Unmarshal([]byte(text), &output); err != nil {
-		return PermissionLLMOutput{}, usage, fmt.Errorf("parse LLM response: %w", err)
+		return LLMCallResult{Usage: usage}, fmt.Errorf("parse LLM response: %w", err)
 	}
 	if output.Behavior == BehaviorDeny && strings.TrimSpace(output.DenyMessage) == "" {
 		output.DenyMessage = DefaultDenyMessage
 	}
 
-	return output, usage, nil
+	return LLMCallResult{Output: output, Usage: usage}, nil
 }
 
 func buildSystemPrompt(cfg config.Config) string {

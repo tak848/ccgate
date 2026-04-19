@@ -9,6 +9,101 @@ import (
 
 func strPtr(s string) *string { return &s }
 
+func TestDecideFromLLMResult(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		strategy            *string
+		callResult          LLMCallResult
+		wantHasDecision     bool
+		wantBehavior        string
+		wantFallthroughKind string
+		wantMessageHas      []string
+	}{
+		"clear allow passes through": {
+			callResult:      LLMCallResult{Output: PermissionLLMOutput{Behavior: BehaviorAllow, Reason: "obviously safe"}},
+			wantHasDecision: true,
+			wantBehavior:    BehaviorAllow,
+		},
+		"clear deny passes through with reason": {
+			callResult:      LLMCallResult{Output: PermissionLLMOutput{Behavior: BehaviorDeny, Reason: "dangerous", DenyMessage: "Dangerous operation"}},
+			wantHasDecision: true,
+			wantBehavior:    BehaviorDeny,
+			wantMessageHas:  []string{"Dangerous operation"},
+		},
+		"llm fallthrough with default ask preserves fallthrough": {
+			callResult:          LLMCallResult{Output: PermissionLLMOutput{Behavior: BehaviorFallthrough, Reason: "unsure"}},
+			wantHasDecision:     false,
+			wantFallthroughKind: FallthroughKindLLM,
+		},
+		"llm fallthrough with strategy=deny is forced to deny with message": {
+			strategy:            strPtr(config.FallthroughStrategyDeny),
+			callResult:          LLMCallResult{Output: PermissionLLMOutput{Behavior: BehaviorFallthrough, Reason: "unsure"}},
+			wantHasDecision:     true,
+			wantBehavior:        BehaviorDeny,
+			wantFallthroughKind: FallthroughKindLLM,
+			wantMessageHas:      []string{"Auto-denied for safety", `LLM reason: "unsure"`},
+		},
+		"llm fallthrough with strategy=allow is forced to allow with message": {
+			strategy:            strPtr(config.FallthroughStrategyAllow),
+			callResult:          LLMCallResult{Output: PermissionLLMOutput{Behavior: BehaviorFallthrough, Reason: "unsure"}},
+			wantHasDecision:     true,
+			wantBehavior:        BehaviorAllow,
+			wantFallthroughKind: FallthroughKindLLM,
+			wantMessageHas:      []string{"Auto-approved", "proceed with care"},
+		},
+		"empty behavior is treated as fallthrough and forceable": {
+			strategy:            strPtr(config.FallthroughStrategyDeny),
+			callResult:          LLMCallResult{Output: PermissionLLMOutput{Behavior: "", Reason: "blank"}},
+			wantHasDecision:     true,
+			wantBehavior:        BehaviorDeny,
+			wantFallthroughKind: FallthroughKindLLM,
+			wantMessageHas:      []string{"Auto-denied for safety"},
+		},
+		"unusable api with default ask falls through with api_unusable": {
+			callResult:          LLMCallResult{Unusable: true},
+			wantHasDecision:     false,
+			wantFallthroughKind: FallthroughKindAPIUnusable,
+		},
+		"unusable api with strategy=allow stays a fallthrough (not forced)": {
+			strategy:            strPtr(config.FallthroughStrategyAllow),
+			callResult:          LLMCallResult{Unusable: true},
+			wantHasDecision:     false,
+			wantFallthroughKind: FallthroughKindAPIUnusable,
+		},
+		"unusable api with strategy=deny stays a fallthrough (not forced)": {
+			strategy:            strPtr(config.FallthroughStrategyDeny),
+			callResult:          LLMCallResult{Unusable: true},
+			wantHasDecision:     false,
+			wantFallthroughKind: FallthroughKindAPIUnusable,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			cfg := config.Default()
+			cfg.FallthroughStrategy = tc.strategy
+
+			got := decideFromLLMResult(cfg, tc.callResult)
+
+			if got.HasDecision != tc.wantHasDecision {
+				t.Fatalf("HasDecision = %v, want %v", got.HasDecision, tc.wantHasDecision)
+			}
+			if got.HasDecision && got.Decision.Behavior != tc.wantBehavior {
+				t.Fatalf("Behavior = %q, want %q", got.Decision.Behavior, tc.wantBehavior)
+			}
+			if got.FallthroughKind != tc.wantFallthroughKind {
+				t.Fatalf("FallthroughKind = %q, want %q", got.FallthroughKind, tc.wantFallthroughKind)
+			}
+			for _, sub := range tc.wantMessageHas {
+				if !strings.Contains(got.Decision.Message, sub) {
+					t.Errorf("Decision.Message %q missing substring %q", got.Decision.Message, sub)
+				}
+			}
+		})
+	}
+}
+
 func TestApplyForcedStrategy(t *testing.T) {
 	t.Parallel()
 
