@@ -33,14 +33,14 @@ func TestApplyForcedStrategy(t *testing.T) {
 			llmReason:      "tool seems read-only but unsure",
 			wantOK:         true,
 			wantBehavior:   BehaviorAllow,
-			wantMessageHas: []string{"[ccgate]", "Auto-ALLOWED", "fallthrough_strategy=allow", "tool seems read-only"},
+			wantMessageHas: []string{"LLM-based permission hook returned fallthrough", `LLM reason: "tool seems read-only but unsure"`, "Auto-approved", "unattended automation", "proceed with care"},
 		},
 		"allow without reason omits LLM reason suffix": {
 			strategy:        strPtr(config.FallthroughStrategyAllow),
 			llmReason:       "   ",
 			wantOK:          true,
 			wantBehavior:    BehaviorAllow,
-			wantMessageHas:  []string{"[ccgate]", "Auto-ALLOWED", "fallthrough_strategy=allow"},
+			wantMessageHas:  []string{"LLM-based permission hook returned fallthrough.", "Auto-approved", "proceed with care"},
 			wantMessageMiss: []string{"LLM reason:"},
 		},
 		"deny forces deny with reason": {
@@ -48,7 +48,7 @@ func TestApplyForcedStrategy(t *testing.T) {
 			llmReason:      "could be destructive",
 			wantOK:         true,
 			wantBehavior:   BehaviorDeny,
-			wantMessageHas: []string{"[ccgate]", "Auto-denied", "fallthrough_strategy=deny", "could be destructive"},
+			wantMessageHas: []string{"LLM-based permission hook returned fallthrough", `LLM reason: "could be destructive"`, "Auto-denied for safety", "do not ask the user", "do not attempt to bypass"},
 		},
 	}
 	for name, tc := range cases {

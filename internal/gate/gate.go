@@ -166,6 +166,14 @@ func DecidePermission(ctx context.Context, cfg config.Config, input hookctx.Hook
 // applyForcedStrategy converts an LLM fallthrough into a forced allow/deny
 // based on cfg.FallthroughStrategy. Returns ok=false when the strategy is
 // "ask" (or unset), preserving the original fallthrough behavior.
+//
+// On the message field: Claude Code's PermissionRequest spec only delivers
+// decision.message to Claude when behavior is "deny" (allow-side message is
+// silently ignored as of 2026-04-20, see
+// https://code.claude.com/docs/en/hooks). We still populate the allow
+// message so that (a) it shows up in our own logs / metrics for auditing
+// and (b) it works as a forward-compatible hint if Claude Code ever starts
+// delivering allow-side messages.
 func applyForcedStrategy(cfg config.Config, llmReason string) (PermissionDecision, bool) {
 	switch cfg.GetFallthroughStrategy() {
 	case config.FallthroughStrategyAllow:
@@ -183,19 +191,28 @@ func applyForcedStrategy(cfg config.Config, llmReason string) (PermissionDecisio
 	}
 }
 
+// buildForcedMessage explains to Claude that the hook auto-decided what
+// would normally have prompted the user. The wording covers: who decided
+// (an LLM-based permission hook), what the hook actually returned
+// (fallthrough), why that became a fixed decision (to keep unattended
+// automation running), and — for deny — that Claude must not ask the user
+// or work around the restriction.
 func buildForcedMessage(behavior, llmReason string) string {
-	var label string
+	reason := strings.TrimSpace(llmReason)
+	var head string
+	if reason == "" {
+		head = "LLM-based permission hook returned fallthrough."
+	} else {
+		head = `LLM-based permission hook returned fallthrough; LLM reason: "` + reason + `".`
+	}
+
 	switch behavior {
 	case BehaviorAllow:
-		label = "Auto-ALLOWED despite LLM uncertainty (fallthrough_strategy=allow). Review carefully — this would normally prompt the user."
+		return head + " Auto-approved to keep unattended automation running — proceed with care."
 	case BehaviorDeny:
-		label = "Auto-denied because LLM was uncertain (fallthrough_strategy=deny). Normally this would prompt the user."
+		return head + " Auto-denied for safety to keep unattended automation running — do not ask the user, and do not attempt to bypass this decision via alternative commands or workarounds."
 	}
-	reason := strings.TrimSpace(llmReason)
-	if reason == "" {
-		return "[ccgate] " + label
-	}
-	return "[ccgate] " + label + " LLM reason: " + reason
+	return head
 }
 
 func resolveAPIKey() (string, bool) {
