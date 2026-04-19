@@ -57,12 +57,18 @@ type ReportOptions struct {
 //
 // AutomationRate is (Allow+Deny)/Total. Total counts every entry on the
 // day including errors, so error bursts drag the rate down rather than up.
+//
+// Forced counts entries where fallthrough_strategy converted an LLM
+// fallthrough into an allow/deny. It is a subset of Allow+Deny, surfaced
+// separately so the operator can see how often automation was kept moving
+// by the override (vs. how often the LLM actually decided on its own).
 type DailySummary struct {
 	Date              string  `json:"date"`
 	Total             int     `json:"total"`
 	Allow             int     `json:"allow"`
 	Deny              int     `json:"deny"`
 	Fallthrough       int     `json:"fallthrough"`
+	Forced            int     `json:"forced"`
 	Errors            int     `json:"errors"`
 	AutomationRate    float64 `json:"automation_rate"`
 	AvgElapsedMS      float64 `json:"avg_elapsed_ms"`
@@ -93,7 +99,11 @@ type ToolInputSummary struct {
 //
 // AutomationRate is computed across all entries in the range.
 // FallthroughTop is restricted to entries whose FallthroughKind is "llm"
-// because only those are promotable by adding permission rules.
+// (both natural fallthroughs and forced allow/deny that started life as
+// an LLM fallthrough), because both are signals that a permission rule
+// could remove the LLM round-trip.
+// DenyTop excludes forced denies — those stem from LLM uncertainty and
+// belong in FallthroughTop, not the "rule-driven deny" surface.
 type FullReport struct {
 	Period         string             `json:"period"`
 	DataRange      string             `json:"data_range,omitempty"`
@@ -235,6 +245,9 @@ func aggregate(entries []Entry, days int, detailsTop int) FullReport {
 		case "fallthrough":
 			ds.Fallthrough++
 		}
+		if e.Forced {
+			ds.Forced++
+		}
 		if e.Error != "" {
 			ds.Errors++
 		}
@@ -254,12 +267,19 @@ func aggregate(entries []Entry, days int, detailsTop int) FullReport {
 			ts.Fallthrough++
 		}
 
-		// Top fallthrough commands: only the LLM-driven ones, since those
-		// are the fallthroughs that a new permission rule could eliminate.
-		if e.Decision == "fallthrough" && e.FallthroughKind == gate.FallthroughKindLLM {
+		// Top fallthrough commands: anything driven by LLM uncertainty.
+		// Includes natural fallthroughs (Decision="fallthrough", ft_kind="llm")
+		// AND forced allow/deny that started as an LLM fallthrough
+		// (Decision="allow"|"deny", ft_kind="llm", Forced=true). Both share
+		// the same root cause and the same remediation — adding a permission
+		// rule would let ccgate skip the LLM round-trip entirely.
+		if e.FallthroughKind == gate.FallthroughKindLLM {
 			bumpToolInputSummary(fallthroughMap, e)
 		}
-		if e.Decision == "deny" {
+		// Top deny commands: only "rule-driven" denies (LLM was confident
+		// or a deny rule matched). Forced denies belong in the fallthrough
+		// section above, not here.
+		if e.Decision == "deny" && !e.Forced {
 			bumpToolInputSummary(denyMap, e)
 		}
 	}
@@ -417,7 +437,7 @@ func formatToolInputLine(tif ToolInputFields) string {
 // columnWidths tracks the formatted (humanInt) width of each numeric column
 // so the table can be aligned without any column running over its header.
 type columnWidths struct {
-	date, total, allow, deny, fall, err, avg, inTok, outTok int
+	date, total, allow, deny, fall, forced, err, avg, inTok, outTok int
 }
 
 func computeColumnWidths(daily []DailySummary) columnWidths {
@@ -427,6 +447,7 @@ func computeColumnWidths(daily []DailySummary) columnWidths {
 		allow:  len("Allow"),
 		deny:   len("Deny"),
 		fall:   len("Fall"),
+		forced: len("Forced"),
 		err:    len("Err"),
 		avg:    len("Avg(ms)"),
 		inTok:  len("Tokens(in"),
@@ -438,6 +459,7 @@ func computeColumnWidths(daily []DailySummary) columnWidths {
 		cw.allow = maxInt(cw.allow, len(humanInt(int64(ds.Allow))))
 		cw.deny = maxInt(cw.deny, len(humanInt(int64(ds.Deny))))
 		cw.fall = maxInt(cw.fall, len(humanInt(int64(ds.Fallthrough))))
+		cw.forced = maxInt(cw.forced, len(humanInt(int64(ds.Forced))))
 		cw.err = maxInt(cw.err, len(humanInt(int64(ds.Errors))))
 		cw.avg = maxInt(cw.avg, len(humanInt(int64(math.Round(ds.AvgElapsedMS)))))
 		cw.inTok = maxInt(cw.inTok, len(humanInt(ds.TotalInputTokens)))
@@ -478,24 +500,26 @@ func printTable(w io.Writer, report FullReport, cutoff time.Time) {
 	cw := computeColumnWidths(report.Daily)
 
 	const autoColWidth = 6 // e.g. " 88.4%"
-	fmt.Fprintf(w, "%-*s %*s %*s %*s %*s %*s %*s %*s %*s / %*s\n",
+	fmt.Fprintf(w, "%-*s %*s %*s %*s %*s %*s %*s %*s %*s %*s / %*s\n",
 		cw.date, "Date",
 		cw.total, "Total",
 		cw.allow, "Allow",
 		cw.deny, "Deny",
 		cw.fall, "Fall",
+		cw.forced, "Forced",
 		cw.err, "Err",
 		autoColWidth, "Auto%",
 		cw.avg, "Avg(ms)",
 		cw.inTok, "Tokens(in",
 		cw.outTok, "out)")
 	for _, ds := range report.Daily {
-		fmt.Fprintf(w, "%-*s %*s %*s %*s %*s %*s %*s %*s %*s / %*s\n",
+		fmt.Fprintf(w, "%-*s %*s %*s %*s %*s %*s %*s %*s %*s %*s / %*s\n",
 			cw.date, ds.Date,
 			cw.total, humanInt(int64(ds.Total)),
 			cw.allow, humanInt(int64(ds.Allow)),
 			cw.deny, humanInt(int64(ds.Deny)),
 			cw.fall, humanInt(int64(ds.Fallthrough)),
+			cw.forced, humanInt(int64(ds.Forced)),
 			cw.err, humanInt(int64(ds.Errors)),
 			autoColWidth, fmt.Sprintf("%.1f%%", ds.AutomationRate*100),
 			cw.avg, humanInt(int64(math.Round(ds.AvgElapsedMS))),
