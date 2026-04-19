@@ -46,8 +46,9 @@ type InitCmd struct {
 }
 
 type MetricsCmd struct {
-	Days int  `help:"Show last N days." default:"7"`
-	JSON bool `help:"Output as JSON." name:"json"`
+	Days    int  `help:"Show last N days." default:"7"`
+	JSON    bool `help:"Output as JSON." name:"json"`
+	Details int  `help:"Show top-N fallthrough/deny commands per section (0 to hide both, negative falls back to default)." default:"10"`
 }
 
 func main() { os.Exit(_main()) }
@@ -75,8 +76,9 @@ func _main() int {
 				return 1
 			}
 			if err := metrics.PrintReport(os.Stdout, lr.Config.ResolveMetricsPath(), metrics.ReportOptions{
-				Days:   cli.Metrics.Days,
-				AsJSON: cli.Metrics.JSON,
+				Days:       cli.Metrics.Days,
+				AsJSON:     cli.Metrics.JSON,
+				DetailsTop: cli.Metrics.Details,
 			}); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				return 1
@@ -87,7 +89,7 @@ func _main() int {
 
 	// No args: if tty, show usage; if pipe, run hook.
 	if term.IsTerminal(int(os.Stdin.Fd())) {
-		fmt.Fprintf(os.Stderr, "ccgate %s\n\nClaude Code PermissionRequest hook.\nReads HookInput JSON from stdin, returns allow/deny/fallthrough to stdout.\n\nCommands:\n  ccgate init [-p] [-o FILE] [-f]   Output default configuration\n  ccgate metrics [--days N] [--json] Show usage metrics summary\n\nFlags:\n  --version    Print version and exit\n  --help       Show help\n", version)
+		fmt.Fprintf(os.Stderr, "ccgate %s\n\nClaude Code PermissionRequest hook.\nReads HookInput JSON from stdin, returns allow/deny/fallthrough to stdout.\n\nCommands:\n  ccgate init [-p] [-o FILE] [-f]                        Output default configuration\n  ccgate metrics [--days N] [--json] [--details N]       Show usage metrics summary\n                                                         (also prints top fallthrough/deny commands)\n\nFlags:\n  --version    Print version and exit\n  --help       Show help\n", version)
 		return 0
 	}
 
