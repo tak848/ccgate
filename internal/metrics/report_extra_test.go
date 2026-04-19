@@ -12,54 +12,62 @@ import (
 
 func TestHumanInt(t *testing.T) {
 	t.Parallel()
-	tests := []struct {
+	tests := map[string]struct {
 		in   int64
 		want string
 	}{
-		{0, "0"},
-		{1, "1"},
-		{999, "999"},
-		{1000, "1,000"},
-		{12345, "12,345"},
-		{1234567, "1,234,567"},
-		{-1, "-1"},
-		{-999, "-999"},
-		{-1000, "-1,000"},
-		{-1234, "-1,234"},
-		{math.MaxInt64, "9,223,372,036,854,775,807"},
-		{math.MinInt64, "-9,223,372,036,854,775,808"},
+		"zero":                {in: 0, want: "0"},
+		"single digit":        {in: 1, want: "1"},
+		"max 3-digit":         {in: 999, want: "999"},
+		"four digits":         {in: 1000, want: "1,000"},
+		"five digits":         {in: 12345, want: "12,345"},
+		"seven digits":        {in: 1234567, want: "1,234,567"},
+		"negative single":     {in: -1, want: "-1"},
+		"negative 3-digit":    {in: -999, want: "-999"},
+		"negative four":       {in: -1000, want: "-1,000"},
+		"negative four alt":   {in: -1234, want: "-1,234"},
+		"int64 max":           {in: math.MaxInt64, want: "9,223,372,036,854,775,807"},
+		"int64 min overflows": {in: math.MinInt64, want: "-9,223,372,036,854,775,808"},
 	}
-	for _, tc := range tests {
-		got := humanInt(tc.in)
-		if got != tc.want {
-			t.Errorf("humanInt(%d) = %q, want %q", tc.in, got, tc.want)
-		}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			got := humanInt(tc.in)
+			if got != tc.want {
+				t.Errorf("humanInt(%d) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
 	}
 }
 
 func TestFormatToolInputLine(t *testing.T) {
 	t.Parallel()
-	tests := []struct {
-		name string
+	tests := map[string]struct {
 		in   ToolInputFields
 		want string
 	}{
-		{"all empty", ToolInputFields{}, "(no input)"},
-		{"command only", ToolInputFields{Command: "gh pr list"}, "gh pr list"},
-		{"file_path only", ToolInputFields{FilePath: "/tmp/foo"}, "/tmp/foo"},
-		{"path and pattern", ToolInputFields{Path: "internal/", Pattern: "TODO"}, "TODO @ internal/"},
-		{"path only", ToolInputFields{Path: "**/*.go"}, "**/*.go"},
-		{"pattern only", ToolInputFields{Pattern: "fnord"}, "fnord"},
-		{"command wins over file_path", ToolInputFields{Command: "c", FilePath: "fp"}, "c"},
-		{"command newline collapsed to space", ToolInputFields{Command: "line1\nline2"}, "line1 line2"},
-		{"command tab and carriage return collapsed",
-			ToolInputFields{Command: "a\tb\rc"}, "a b c"},
-		{"long command truncated at display limit",
-			ToolInputFields{Command: strings.Repeat("x", maxDisplayToolInput+10)},
-			strings.Repeat("x", maxDisplayToolInput)},
+		"all empty":                   {in: ToolInputFields{}, want: "(no input)"},
+		"command only":                {in: ToolInputFields{Command: "gh pr list"}, want: "gh pr list"},
+		"file_path only":              {in: ToolInputFields{FilePath: "/tmp/foo"}, want: "/tmp/foo"},
+		"path and pattern":            {in: ToolInputFields{Path: "internal/", Pattern: "TODO"}, want: "TODO @ internal/"},
+		"path only":                   {in: ToolInputFields{Path: "**/*.go"}, want: "**/*.go"},
+		"pattern only":                {in: ToolInputFields{Pattern: "fnord"}, want: "fnord"},
+		"command wins over file_path": {in: ToolInputFields{Command: "c", FilePath: "fp"}, want: "c"},
+		"command newline collapsed to space": {
+			in:   ToolInputFields{Command: "line1\nline2"},
+			want: "line1 line2",
+		},
+		"command tab and carriage return collapsed": {
+			in:   ToolInputFields{Command: "a\tb\rc"},
+			want: "a b c",
+		},
+		"long command truncated at display limit": {
+			in:   ToolInputFields{Command: strings.Repeat("x", maxDisplayToolInput+10)},
+			want: strings.Repeat("x", maxDisplayToolInput),
+		},
 	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			got := formatToolInputLine(tc.in)
 			if got != tc.want {
@@ -138,17 +146,16 @@ func TestBuildReportDetailsTopFallback(t *testing.T) {
 	}
 	writeEntries(t, path, entries)
 
-	cases := []struct {
-		name      string
+	cases := map[string]struct {
 		detailsIn int
 		wantLen   int
 	}{
-		{"negative falls back to default 10", -5, 10},
-		{"zero suppresses section", 0, 0},
-		{"positive limits to N", 3, 3},
+		"negative falls back to default 10": {detailsIn: -5, wantLen: 10},
+		"zero suppresses section":           {detailsIn: 0, wantLen: 0},
+		"positive limits to N":              {detailsIn: 3, wantLen: 3},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			report, _, err := buildReport(path, ReportOptions{Days: 7, DetailsTop: tc.detailsIn})
 			if err != nil {
 				t.Fatal(err)

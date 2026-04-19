@@ -15,18 +15,15 @@ func TestCapToolInput(t *testing.T) {
 	longMixed := strings.Repeat("あ", maxToolInputFieldLen+1) // each rune is 3 bytes
 	longMixedExpectedRunes := maxToolInputFieldLen
 
-	tests := []struct {
-		name string
+	tests := map[string]struct {
 		in   ToolInputFields
 		want ToolInputFields
 	}{
-		{
-			name: "all empty",
+		"all empty": {
 			in:   ToolInputFields{},
 			want: ToolInputFields{},
 		},
-		{
-			name: "whitespace is preserved verbatim (no normalization)",
+		"whitespace is preserved verbatim (no normalization)": {
 			in: ToolInputFields{
 				Command:  "echo \"a   b\"\nline2\t",
 				FilePath: "  /path with  space  ",
@@ -40,20 +37,18 @@ func TestCapToolInput(t *testing.T) {
 				Pattern:  "\tfoo\t",
 			},
 		},
-		{
-			name: "short ascii under cap is unchanged",
+		"short ascii under cap is unchanged": {
 			in:   ToolInputFields{Command: "gh pr list"},
 			want: ToolInputFields{Command: "gh pr list"},
 		},
-		{
-			name: "ascii over cap is rune-truncated",
+		"ascii over cap is rune-truncated": {
 			in:   ToolInputFields{Command: longASCII},
 			want: ToolInputFields{Command: longASCIIExpected},
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			got := CapToolInput(tc.in)
 			if got != tc.want {

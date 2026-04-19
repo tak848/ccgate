@@ -5,38 +5,31 @@ import "testing"
 func TestMetricsFields(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name                             string
+	tests := map[string]struct {
 		input                            HookToolInput
 		wantCmd, wantFP, wantPath, wantP string
 	}{
-		{
-			name:  "all empty",
+		"all empty": {
 			input: HookToolInput{},
 		},
-		{
-			name:    "bash command",
+		"bash command": {
 			input:   HookToolInput{Command: "gh pr list"},
 			wantCmd: "gh pr list",
 		},
-		{
-			name:   "write file_path",
+		"write file_path": {
 			input:  HookToolInput{FilePath: "/tmp/foo.ts"},
 			wantFP: "/tmp/foo.ts",
 		},
-		{
-			name:     "grep pattern and path",
+		"grep pattern and path": {
 			input:    HookToolInput{Path: "internal/", Pattern: "TODO"},
 			wantPath: "internal/",
 			wantP:    "TODO",
 		},
-		{
-			name:     "glob path only",
+		"glob path only": {
 			input:    HookToolInput{Path: "**/*.go"},
 			wantPath: "**/*.go",
 		},
-		{
-			name: "content and content_updates are ignored",
+		"content and content_updates are ignored": {
 			input: HookToolInput{
 				Command: "echo hi",
 				Content: "secret contents that should not leak",
@@ -46,8 +39,7 @@ func TestMetricsFields(t *testing.T) {
 			},
 			wantCmd: "echo hi",
 		},
-		{
-			name: "all fields populated returns all four verbatim",
+		"all fields populated returns all four verbatim": {
 			input: HookToolInput{
 				Command:  "c",
 				FilePath: "fp",
@@ -61,8 +53,8 @@ func TestMetricsFields(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			h := HookInput{ToolInput: tc.input}
 			cmd, fp, path, pat := h.MetricsFields()
