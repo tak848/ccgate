@@ -52,6 +52,13 @@ func (h *HookInput) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// MetricsFields returns the subset of tool_input recorded in metrics.
+// Only command/file_path/path/pattern are exposed; content/content_updates
+// and the raw JSON are intentionally omitted.
+func (h HookInput) MetricsFields() (command, filePath, path, pattern string) {
+	return h.ToolInput.Command, h.ToolInput.FilePath, h.ToolInput.Path, h.ToolInput.Pattern
+}
+
 // ToolInputText returns a textual representation of the tool input for path extraction.
 func (h HookInput) ToolInputText() string {
 	var parts []string

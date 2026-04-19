@@ -228,6 +228,14 @@ func buildMetricsEntry(start time.Time, elapsed time.Duration, input hookctx.Hoo
 		entry.OutputTokens = result.Usage.OutputTokens
 	}
 
+	cmd, fp, path, pattern := input.MetricsFields()
+	entry.ToolInput = metrics.CapToolInput(metrics.ToolInputFields{
+		Command:  cmd,
+		FilePath: fp,
+		Path:     path,
+		Pattern:  pattern,
+	})
+
 	return entry
 }
 
