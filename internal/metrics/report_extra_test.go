@@ -233,9 +233,85 @@ func TestToolInputTop(t *testing.T) {
 		t.Errorf("whitespace variant was not kept as its own group")
 	}
 
-	// DenyTop should have one group with count=2.
+	// DenyTop: one group "rm -rf /" aggregated from 2 entries.
 	if len(report.DenyTop) != 1 || report.DenyTop[0].Count != 2 {
 		t.Fatalf("DenyTop = %+v, want 1 group with count 2", report.DenyTop)
+	}
+
+	// DetailsTop=2 must slice the ranked list to the top 2 entries.
+	rep2, _, err := buildReport(path, ReportOptions{Days: 7, DetailsTop: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep2.FallthroughTop) != 2 {
+		t.Errorf("DetailsTop=2: len(FallthroughTop) = %d, want 2", len(rep2.FallthroughTop))
+	}
+	if len(rep2.DenyTop) != 1 {
+		// only one deny group exists overall, so DetailsTop=2 still gives 1.
+		t.Errorf("DetailsTop=2: len(DenyTop) = %d, want 1", len(rep2.DenyTop))
+	}
+}
+
+// TestToolInputTopTieBreaker pins down the full tie-breaker ordering
+// (count desc → tool asc → command asc → file_path asc → path asc →
+// pattern asc). All entries below share count=1, so ordering is
+// determined purely by the later keys.
+func TestToolInputTopTieBreaker(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.jsonl")
+	now := time.Now().UTC()
+
+	// Construct entries across every tie-breaker key. All same count=1,
+	// all Decision="deny" so the LLM filter is irrelevant. Expected order
+	// reflects empty-string sorting before any non-empty value: entries
+	// where an earlier key is empty come first, so Pattern-only rows
+	// precede Command-only rows (Command:"" < Command:"a").
+	entries := []Entry{
+		{Timestamp: now, ToolName: "Bash", Decision: "deny", ElapsedMS: 1, ToolInput: ToolInputFields{Command: "a"}},
+		{Timestamp: now, ToolName: "Bash", Decision: "deny", ElapsedMS: 1, ToolInput: ToolInputFields{Command: "b"}},
+		{Timestamp: now, ToolName: "Bash", Decision: "deny", ElapsedMS: 1, ToolInput: ToolInputFields{FilePath: "a"}},
+		{Timestamp: now, ToolName: "Bash", Decision: "deny", ElapsedMS: 1, ToolInput: ToolInputFields{FilePath: "b"}},
+		{Timestamp: now, ToolName: "Bash", Decision: "deny", ElapsedMS: 1, ToolInput: ToolInputFields{Path: "a"}},
+		// {Path:"b"} alone exercises the Path-only tie-breaker branch so that
+		// removing it from the comparator cannot silently pass this test.
+		{Timestamp: now, ToolName: "Bash", Decision: "deny", ElapsedMS: 1, ToolInput: ToolInputFields{Path: "b"}},
+		{Timestamp: now, ToolName: "Bash", Decision: "deny", ElapsedMS: 1, ToolInput: ToolInputFields{Path: "a", Pattern: "a"}},
+		{Timestamp: now, ToolName: "Bash", Decision: "deny", ElapsedMS: 1, ToolInput: ToolInputFields{Pattern: "a"}},
+		{Timestamp: now, ToolName: "Bash", Decision: "deny", ElapsedMS: 1, ToolInput: ToolInputFields{Pattern: "b"}},
+		{Timestamp: now, ToolName: "Write", Decision: "deny", ElapsedMS: 1, ToolInput: ToolInputFields{Command: "a"}},
+	}
+	writeEntries(t, path, entries)
+
+	report, _, err := buildReport(path, ReportOptions{Days: 7, DetailsTop: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.DenyTop) != len(entries) {
+		t.Fatalf("len(DenyTop) = %d, want %d; content: %+v",
+			len(report.DenyTop), len(entries), report.DenyTop)
+	}
+
+	// Sort order: tool asc, then by command / file_path / path / pattern in
+	// ascending order, where "" (empty) sorts before any non-empty value.
+	want := []ToolInputFields{
+		{Pattern: "a"},            // command="" file_path="" path=""  pattern="a"
+		{Pattern: "b"},            // command="" file_path="" path=""  pattern="b"
+		{Path: "a"},               // command="" file_path="" path="a" pattern=""
+		{Path: "a", Pattern: "a"}, // command="" file_path="" path="a" pattern="a"
+		{Path: "b"},               // command="" file_path="" path="b" pattern=""  (exercises path-only branch)
+		{FilePath: "a"},           // command="" file_path="a"
+		{FilePath: "b"},           // command="" file_path="b"
+		{Command: "a"},            // command="a" (Bash)
+		{Command: "b"},            // command="b" (Bash)
+		{Command: "a"},            // Write (tool asc: Bash < Write)
+	}
+	wantTools := []string{"Bash", "Bash", "Bash", "Bash", "Bash", "Bash", "Bash", "Bash", "Bash", "Write"}
+	for i, s := range report.DenyTop {
+		if s.ToolName != wantTools[i] || s.ToolInput != want[i] {
+			t.Errorf("DenyTop[%d] = (%s, %+v), want (%s, %+v)",
+				i, s.ToolName, s.ToolInput, wantTools[i], want[i])
+		}
 	}
 }
 
@@ -422,18 +498,73 @@ func TestPrintReportColumnAlignment(t *testing.T) {
 	if len(dataRows) != 2 {
 		t.Fatalf("expected 2 data rows, got %d:\n%s", len(dataRows), out)
 	}
-	// The "/" between in/out tokens is a reliable column anchor.
-	anchor := strings.Index(header, "/")
-	if anchor < 0 {
+	// ASCII-only assertion: every row must be plain ASCII so byte indices
+	// equal display columns. If this ever needs to cover non-ASCII output,
+	// switch to rune-width measurement instead.
+	for i, r := range append([]string{header}, dataRows...) {
+		for j := 0; j < len(r); j++ {
+			if r[j] >= 0x80 {
+				t.Fatalf("row %d contains non-ASCII byte at offset %d: %q", i, j, r)
+			}
+		}
+	}
+
+	// All right-aligned columns share the same width between header and
+	// data rows, so the last character of each header label and the last
+	// character of the column value must land at the same byte offset, and
+	// the column separator space sits at that offset + 1. Verifying this
+	// catches any regression in the pre-computed column widths.
+	// "Tokens(in" is the right-aligned header for the input-tokens column
+	// (directly before the literal "/"). Including it here catches regressions
+	// where that column alone is flipped to %-*s (left-align) and values are
+	// padded on the wrong side.
+	rightAlignedLabels := []string{"Total", "Allow", "Deny", "Fall", "Err", "Auto%", "Avg(ms)", "Tokens(in"}
+	for _, label := range rightAlignedLabels {
+		anchor := strings.Index(header, label)
+		if anchor < 0 {
+			t.Fatalf("header missing label %q: %q", label, header)
+		}
+		endOffset := anchor + len(label) - 1
+		for _, r := range dataRows {
+			if endOffset+1 >= len(r) {
+				t.Errorf("label %q: row shorter than header anchor; end=%d row len=%d\nrow: %q",
+					label, endOffset, len(r), r)
+				continue
+			}
+			if r[endOffset] == ' ' {
+				t.Errorf("label %q: expected value char at col %d, got space. row: %q",
+					label, endOffset, r)
+			}
+			if r[endOffset+1] != ' ' {
+				t.Errorf("label %q: expected column separator space at col %d, got %q. row: %q",
+					label, endOffset+1, r[endOffset+1], r)
+			}
+		}
+	}
+	// The literal `/` separator between in/out token columns must sit at
+	// exactly the same byte offset in header and every data row.
+	slashAnchor := strings.Index(header, "/")
+	if slashAnchor < 0 {
 		t.Fatalf("header has no '/': %q", header)
 	}
 	for _, r := range dataRows {
-		if idx := strings.Index(r, "/"); idx != anchor {
+		if idx := strings.Index(r, "/"); idx != slashAnchor {
 			t.Errorf("data row '/' column at %d, header at %d\nheader: %q\nrow: %q",
-				idx, anchor, header, r)
+				idx, slashAnchor, header, r)
 		}
 	}
-	// "1,234,567" should appear somewhere with comma grouping.
+	// The final "out)" column is right-aligned with cw.outTok, so the line
+	// ends at the exact same byte offset for header and every data row.
+	// Comparing total row length catches any cw.outTok desync that the
+	// `/` anchor alone would miss (it only locks columns up to `/`).
+	for _, r := range dataRows {
+		if len(r) != len(header) {
+			t.Errorf("row length = %d, header length = %d (final column desync)\nheader: %q\nrow: %q",
+				len(r), len(header), header, r)
+		}
+	}
+
+	// Comma-grouped big number must appear verbatim.
 	if !strings.Contains(out, "1,234,567") {
 		t.Errorf("expected grouped number 1,234,567 in output:\n%s", out)
 	}

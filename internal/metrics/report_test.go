@@ -129,21 +129,33 @@ func TestPrintReportTable(t *testing.T) {
 	path := filepath.Join(dir, "test.jsonl")
 
 	now := time.Now().UTC()
+	// Mix allow/deny/fallthrough(llm) so every top section and every
+	// automation-rate branch is exercised in the same rendering.
 	writeEntries(t, path, []Entry{
 		{Timestamp: now, ToolName: "Bash", Decision: "allow", ElapsedMS: 100},
+		{Timestamp: now, ToolName: "Bash", Decision: "deny", ElapsedMS: 100,
+			ToolInput: ToolInputFields{Command: "rm -rf /"}},
+		{Timestamp: now, ToolName: "Bash", Decision: "fallthrough", FallthroughKind: "llm",
+			ToolInput: ToolInputFields{Command: "gh pr list"}, ElapsedMS: 100},
 	})
 
 	var buf bytes.Buffer
-	if err := PrintReport(&buf, path, ReportOptions{Days: 7}); err != nil {
+	if err := PrintReport(&buf, path, ReportOptions{Days: 7, DetailsTop: 10}); err != nil {
 		t.Fatal(err)
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "ccgate metrics") {
-		t.Fatal("expected header in table output")
-	}
-	if !strings.Contains(output, "Bash") {
-		t.Fatal("expected Bash in table output")
+	for _, want := range []string{
+		"ccgate metrics",
+		"Bash",
+		"Auto%",
+		"Automation rate:",
+		"Top fallthrough commands",
+		"Top deny commands",
+	} {
+		if !strings.Contains(output, want) {
+			t.Errorf("expected %q in table output; got:\n%s", want, output)
+		}
 	}
 }
 
