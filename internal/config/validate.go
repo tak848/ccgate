@@ -24,5 +24,13 @@ func (c Config) Validate() error {
 	if c.MetricsMaxSize != nil && *c.MetricsMaxSize < 0 {
 		errs = append(errs, fmt.Errorf("metrics_max_size must not be negative, got %d", *c.MetricsMaxSize))
 	}
+	if c.FallthroughStrategy != nil {
+		switch *c.FallthroughStrategy {
+		case FallthroughStrategyAsk, FallthroughStrategyAllow, FallthroughStrategyDeny:
+		default:
+			errs = append(errs, fmt.Errorf("fallthrough_strategy must be one of %q, %q, %q, got %q",
+				FallthroughStrategyAsk, FallthroughStrategyAllow, FallthroughStrategyDeny, *c.FallthroughStrategy))
+		}
+	}
 	return errors.Join(errs...)
 }

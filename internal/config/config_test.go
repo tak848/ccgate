@@ -29,6 +29,7 @@ func TestValidateErrors(t *testing.T) {
 	t.Parallel()
 
 	negTimeout := -1
+	bogusStrategy := "block"
 	tests := []struct {
 		name string
 		cfg  Config
@@ -45,12 +46,62 @@ func TestValidateErrors(t *testing.T) {
 			name: "negative timeout",
 			cfg:  Config{Provider: ProviderConfig{Name: "anthropic", Model: "m", TimeoutMS: &negTimeout}},
 		},
+		{
+			name: "invalid fallthrough_strategy",
+			cfg: Config{
+				Provider:            ProviderConfig{Name: "anthropic", Model: "m", TimeoutMS: intPtr(1000)},
+				FallthroughStrategy: &bogusStrategy,
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if err := tt.cfg.Validate(); err == nil {
 				t.Fatal("expected validation error")
+			}
+		})
+	}
+}
+
+func TestFallthroughStrategy(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		jsonnet string
+		want    string
+		wantNil bool
+	}{
+		"unset returns ask default": {
+			jsonnet: `{}`,
+			want:    FallthroughStrategyAsk,
+			wantNil: true,
+		},
+		"explicit ask": {
+			jsonnet: `{ fallthrough_strategy: 'ask' }`,
+			want:    FallthroughStrategyAsk,
+		},
+		"explicit allow": {
+			jsonnet: `{ fallthrough_strategy: 'allow' }`,
+			want:    FallthroughStrategyAllow,
+		},
+		"explicit deny": {
+			jsonnet: `{ fallthrough_strategy: 'deny' }`,
+			want:    FallthroughStrategyDeny,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			cfg := Default()
+			if err := mergeConfigString(tc.jsonnet, &cfg); err != nil {
+				t.Fatalf("merge: %v", err)
+			}
+			if tc.wantNil && cfg.FallthroughStrategy != nil {
+				t.Fatalf("expected nil pointer, got %q", *cfg.FallthroughStrategy)
+			}
+			if got := cfg.GetFallthroughStrategy(); got != tc.want {
+				t.Fatalf("GetFallthroughStrategy = %q, want %q", got, tc.want)
 			}
 		})
 	}

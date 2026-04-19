@@ -32,17 +32,37 @@ const (
 	LocalConfigName       = "ccgate.local.jsonnet"
 )
 
+// FallthroughStrategy values control what ccgate does when the LLM returns
+// "fallthrough" (or an empty/unexpected behavior). Only the LLM kind is
+// affected — runtime-mode fallthroughs (bypass, dontAsk, no_apikey, etc.)
+// always defer to Claude Code's prompt regardless of this setting.
+const (
+	FallthroughStrategyAsk   = "ask"
+	FallthroughStrategyAllow = "allow"
+	FallthroughStrategyDeny  = "deny"
+)
+
 type Config struct {
-	Provider        ProviderConfig `json:"provider"`
-	LogPath         string         `json:"log_path"`
-	LogDisabled     *bool          `json:"log_disabled"`
-	LogMaxSize      *int64         `json:"log_max_size"`
-	MetricsPath     string         `json:"metrics_path"`
-	MetricsDisabled *bool          `json:"metrics_disabled"`
-	MetricsMaxSize  *int64         `json:"metrics_max_size"`
-	Allow           []string       `json:"allow"`
-	Deny            []string       `json:"deny"`
-	Environment     []string       `json:"environment"`
+	Provider            ProviderConfig `json:"provider"`
+	LogPath             string         `json:"log_path"`
+	LogDisabled         *bool          `json:"log_disabled"`
+	LogMaxSize          *int64         `json:"log_max_size"`
+	MetricsPath         string         `json:"metrics_path"`
+	MetricsDisabled     *bool          `json:"metrics_disabled"`
+	MetricsMaxSize      *int64         `json:"metrics_max_size"`
+	FallthroughStrategy *string        `json:"fallthrough_strategy"`
+	Allow               []string       `json:"allow"`
+	Deny                []string       `json:"deny"`
+	Environment         []string       `json:"environment"`
+}
+
+// GetFallthroughStrategy returns the configured strategy for LLM fallthrough,
+// defaulting to FallthroughStrategyAsk (current behavior: defer to Claude Code).
+func (c Config) GetFallthroughStrategy() string {
+	if c.FallthroughStrategy == nil {
+		return FallthroughStrategyAsk
+	}
+	return *c.FallthroughStrategy
 }
 
 type ProviderConfig struct {
@@ -298,6 +318,9 @@ func mergeConfigJSON(data string, cfg *Config) error {
 	}
 	if override.MetricsMaxSize != nil {
 		cfg.MetricsMaxSize = override.MetricsMaxSize
+	}
+	if override.FallthroughStrategy != nil {
+		cfg.FallthroughStrategy = override.FallthroughStrategy
 	}
 
 	cfg.Allow = append(cfg.Allow, override.Allow...)
