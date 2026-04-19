@@ -58,17 +58,19 @@ type ReportOptions struct {
 // AutomationRate is (Allow+Deny)/Total. Total counts every entry on the
 // day including errors, so error bursts drag the rate down rather than up.
 //
-// Forced counts entries where fallthrough_strategy converted an LLM
-// fallthrough into an allow/deny. It is a subset of Allow+Deny, surfaced
-// separately so the operator can see how often automation was kept moving
-// by the override (vs. how often the LLM actually decided on its own).
+// ForcedAllow / ForcedDeny count entries where fallthrough_strategy
+// converted an LLM fallthrough into an allow / deny respectively. They are
+// reported as two separate numbers because their risk profile is opposite:
+// ForcedAllow auto-approves an uncertain operation (riskier), ForcedDeny
+// auto-refuses one (safer). Both are subsets of Allow / Deny.
 type DailySummary struct {
 	Date              string  `json:"date"`
 	Total             int     `json:"total"`
 	Allow             int     `json:"allow"`
 	Deny              int     `json:"deny"`
 	Fallthrough       int     `json:"fallthrough"`
-	Forced            int     `json:"forced"`
+	ForcedAllow       int     `json:"forced_allow"`
+	ForcedDeny        int     `json:"forced_deny"`
 	Errors            int     `json:"errors"`
 	AutomationRate    float64 `json:"automation_rate"`
 	AvgElapsedMS      float64 `json:"avg_elapsed_ms"`
@@ -246,7 +248,12 @@ func aggregate(entries []Entry, days int, detailsTop int) FullReport {
 			ds.Fallthrough++
 		}
 		if e.Forced {
-			ds.Forced++
+			switch e.Decision {
+			case "allow":
+				ds.ForcedAllow++
+			case "deny":
+				ds.ForcedDeny++
+			}
 		}
 		if e.Error != "" {
 			ds.Errors++
@@ -437,21 +444,22 @@ func formatToolInputLine(tif ToolInputFields) string {
 // columnWidths tracks the formatted (humanInt) width of each numeric column
 // so the table can be aligned without any column running over its header.
 type columnWidths struct {
-	date, total, allow, deny, fall, forced, err, avg, inTok, outTok int
+	date, total, allow, deny, fall, forcedAllow, forcedDeny, err, avg, inTok, outTok int
 }
 
 func computeColumnWidths(daily []DailySummary) columnWidths {
 	cw := columnWidths{
-		date:   len("Date"),
-		total:  len("Total"),
-		allow:  len("Allow"),
-		deny:   len("Deny"),
-		fall:   len("Fall"),
-		forced: len("Forced"),
-		err:    len("Err"),
-		avg:    len("Avg(ms)"),
-		inTok:  len("Tokens(in"),
-		outTok: len("out)"),
+		date:        len("Date"),
+		total:       len("Total"),
+		allow:       len("Allow"),
+		deny:        len("Deny"),
+		fall:        len("Fall"),
+		forcedAllow: len("F.Allow"),
+		forcedDeny:  len("F.Deny"),
+		err:         len("Err"),
+		avg:         len("Avg(ms)"),
+		inTok:       len("Tokens(in"),
+		outTok:      len("out)"),
 	}
 	for _, ds := range daily {
 		cw.date = maxInt(cw.date, len(ds.Date))
@@ -459,7 +467,8 @@ func computeColumnWidths(daily []DailySummary) columnWidths {
 		cw.allow = maxInt(cw.allow, len(humanInt(int64(ds.Allow))))
 		cw.deny = maxInt(cw.deny, len(humanInt(int64(ds.Deny))))
 		cw.fall = maxInt(cw.fall, len(humanInt(int64(ds.Fallthrough))))
-		cw.forced = maxInt(cw.forced, len(humanInt(int64(ds.Forced))))
+		cw.forcedAllow = maxInt(cw.forcedAllow, len(humanInt(int64(ds.ForcedAllow))))
+		cw.forcedDeny = maxInt(cw.forcedDeny, len(humanInt(int64(ds.ForcedDeny))))
 		cw.err = maxInt(cw.err, len(humanInt(int64(ds.Errors))))
 		cw.avg = maxInt(cw.avg, len(humanInt(int64(math.Round(ds.AvgElapsedMS)))))
 		cw.inTok = maxInt(cw.inTok, len(humanInt(ds.TotalInputTokens)))
@@ -500,26 +509,28 @@ func printTable(w io.Writer, report FullReport, cutoff time.Time) {
 	cw := computeColumnWidths(report.Daily)
 
 	const autoColWidth = 6 // e.g. " 88.4%"
-	fmt.Fprintf(w, "%-*s %*s %*s %*s %*s %*s %*s %*s %*s %*s / %*s\n",
+	fmt.Fprintf(w, "%-*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s / %*s\n",
 		cw.date, "Date",
 		cw.total, "Total",
 		cw.allow, "Allow",
 		cw.deny, "Deny",
 		cw.fall, "Fall",
-		cw.forced, "Forced",
+		cw.forcedAllow, "F.Allow",
+		cw.forcedDeny, "F.Deny",
 		cw.err, "Err",
 		autoColWidth, "Auto%",
 		cw.avg, "Avg(ms)",
 		cw.inTok, "Tokens(in",
 		cw.outTok, "out)")
 	for _, ds := range report.Daily {
-		fmt.Fprintf(w, "%-*s %*s %*s %*s %*s %*s %*s %*s %*s %*s / %*s\n",
+		fmt.Fprintf(w, "%-*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s / %*s\n",
 			cw.date, ds.Date,
 			cw.total, humanInt(int64(ds.Total)),
 			cw.allow, humanInt(int64(ds.Allow)),
 			cw.deny, humanInt(int64(ds.Deny)),
 			cw.fall, humanInt(int64(ds.Fallthrough)),
-			cw.forced, humanInt(int64(ds.Forced)),
+			cw.forcedAllow, humanInt(int64(ds.ForcedAllow)),
+			cw.forcedDeny, humanInt(int64(ds.ForcedDeny)),
 			cw.err, humanInt(int64(ds.Errors)),
 			autoColWidth, fmt.Sprintf("%.1f%%", ds.AutomationRate*100),
 			cw.avg, humanInt(int64(math.Round(ds.AvgElapsedMS))),

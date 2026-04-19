@@ -491,8 +491,11 @@ func TestBuildReportForcedAggregation(t *testing.T) {
 		t.Fatalf("expected 1 daily, got %d", len(report.Daily))
 	}
 	ds := report.Daily[0]
-	if ds.Forced != 2 {
-		t.Errorf("Daily.Forced = %d, want 2 (forced deny + forced allow)", ds.Forced)
+	if ds.ForcedAllow != 1 {
+		t.Errorf("Daily.ForcedAllow = %d, want 1", ds.ForcedAllow)
+	}
+	if ds.ForcedDeny != 1 {
+		t.Errorf("Daily.ForcedDeny = %d, want 1", ds.ForcedDeny)
 	}
 
 	// FallthroughTop must include all three LLM-uncertainty entries
@@ -580,7 +583,7 @@ func TestPrintReportColumnAlignment(t *testing.T) {
 	// (directly before the literal "/"). Including it here catches regressions
 	// where that column alone is flipped to %-*s (left-align) and values are
 	// padded on the wrong side.
-	rightAlignedLabels := []string{"Total", "Allow", "Deny", "Fall", "Forced", "Err", "Auto%", "Avg(ms)", "Tokens(in"}
+	rightAlignedLabels := []string{"Total", "Allow", "Deny", "Fall", "F.Allow", "F.Deny", "Err", "Auto%", "Avg(ms)", "Tokens(in"}
 	for _, label := range rightAlignedLabels {
 		anchor := strings.Index(header, label)
 		if anchor < 0 {
