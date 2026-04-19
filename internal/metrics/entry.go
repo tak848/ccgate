@@ -13,6 +13,11 @@ type ToolInputFields struct {
 }
 
 // Entry represents a single ccgate invocation for metrics.
+//
+// Forced is true when an LLM fallthrough was overridden by
+// fallthrough_strategy=allow|deny. In that case Decision holds the forced
+// allow/deny while FallthroughKind retains "llm" so that audits can recover
+// the original uncertainty signal.
 type Entry struct {
 	Timestamp       time.Time       `json:"ts"`
 	SessionID       string          `json:"sid,omitempty"`
@@ -20,6 +25,7 @@ type Entry struct {
 	PermissionMode  string          `json:"perm_mode"`
 	Decision        string          `json:"decision"`
 	FallthroughKind string          `json:"ft_kind,omitempty"`
+	Forced          bool            `json:"forced,omitempty"`
 	Reason          string          `json:"reason,omitempty"`
 	DenyMessage     string          `json:"deny_msg,omitempty"`
 	Model           string          `json:"model,omitempty"`

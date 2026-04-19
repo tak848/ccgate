@@ -219,6 +219,11 @@ func buildMetricsEntry(start time.Time, elapsed time.Duration, input hookctx.Hoo
 		entry.Decision = result.Decision.Behavior
 		entry.DenyMessage = result.Decision.Message
 		entry.Reason = truncateStr(result.LLMReason, maxTruncateLen)
+		// LLM was uncertain but fallthrough_strategy forced a decision.
+		if result.FallthroughKind == gate.FallthroughKindLLM {
+			entry.FallthroughKind = result.FallthroughKind
+			entry.Forced = true
+		}
 	} else {
 		entry.Decision = "fallthrough"
 		entry.FallthroughKind = result.FallthroughKind
