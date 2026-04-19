@@ -10,6 +10,8 @@
   // Useful for fully autonomous runs (schedulers, bots) that cannot block on a prompt.
   //   fallthrough_strategy: 'deny',  // safer: refuse anything the LLM is unsure about
   //   fallthrough_strategy: 'allow', // riskier: auto-approve everything the LLM is unsure about
+  //                                  // (Claude Code only delivers hook messages on deny, so
+  //                                  //  Claude will not see any warning when this fires.)
 
   deny: [
     // Add project-specific deny rules here.

@@ -64,7 +64,7 @@
     "fallthrough_strategy": {
       "type": "string",
       "enum": ["ask", "allow", "deny"],
-      "description": "How to resolve LLM-driven fallthrough decisions. 'ask' (default): defer to Claude Code's prompt. 'allow' / 'deny': override the LLM's uncertainty with a fixed decision; the hook message flags the override and includes the LLM's reason. Only LLM fallthrough is affected (bypassPermissions, dontAsk, missing API key, non-Anthropic provider, and ExitPlanMode/AskUserQuestion still defer to Claude Code regardless)."
+      "description": "How to resolve LLM-driven fallthrough decisions. 'ask' (default): defer to Claude Code's prompt. 'deny': auto-deny uncertain requests; the hook message tells Claude that the decision was forced for safety and that it must not ask the user or bypass the restriction. 'allow': auto-approve uncertain requests; note that Claude Code's hook spec only delivers decision.message on deny, so Claude will NOT see any warning that an uncertain request was auto-approved — choose this only when you are comfortable with that. Only LLM fallthrough is affected (bypassPermissions, dontAsk, missing API key, non-Anthropic provider, and ExitPlanMode/AskUserQuestion still defer to Claude Code regardless)."
     },
     "environment": {
       "type": "array",
