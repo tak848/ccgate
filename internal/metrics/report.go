@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"sort"
 	"strconv"
@@ -37,6 +38,15 @@ const noInputPlaceholder = "(no input)"
 // configuration conditions and are excluded from the top section.
 
 // ReportOptions controls how the report is generated.
+//
+// DetailsTop semantics:
+//   - == 0: both fallthrough/deny detail sections are suppressed.
+//   - < 0:  falls back to defaultDetailsTop (10) as an internal safety net.
+//   - > 0:  the top N rows are shown in each section.
+//
+// The Go zero value (0) is "suppress", not "use default", which differs
+// from how the kong CLI flag defaults to 10. Programmatic callers that
+// want the default behavior must set DetailsTop explicitly (e.g. 10).
 type ReportOptions struct {
 	Days       int
 	AsJSON     bool
@@ -429,7 +439,7 @@ func computeColumnWidths(daily []DailySummary) columnWidths {
 		cw.deny = maxInt(cw.deny, len(humanInt(int64(ds.Deny))))
 		cw.fall = maxInt(cw.fall, len(humanInt(int64(ds.Fallthrough))))
 		cw.err = maxInt(cw.err, len(humanInt(int64(ds.Errors))))
-		cw.avg = maxInt(cw.avg, len(humanInt(int64(ds.AvgElapsedMS))))
+		cw.avg = maxInt(cw.avg, len(humanInt(int64(math.Round(ds.AvgElapsedMS)))))
 		cw.inTok = maxInt(cw.inTok, len(humanInt(ds.TotalInputTokens)))
 		cw.outTok = maxInt(cw.outTok, len(humanInt(ds.TotalOutputTokens)))
 	}
@@ -488,7 +498,7 @@ func printTable(w io.Writer, report FullReport, cutoff time.Time) {
 			cw.fall, humanInt(int64(ds.Fallthrough)),
 			cw.err, humanInt(int64(ds.Errors)),
 			autoColWidth, fmt.Sprintf("%.1f%%", ds.AutomationRate*100),
-			cw.avg, humanInt(int64(ds.AvgElapsedMS)),
+			cw.avg, humanInt(int64(math.Round(ds.AvgElapsedMS))),
 			cw.inTok, humanInt(ds.TotalInputTokens),
 			cw.outTok, humanInt(ds.TotalOutputTokens))
 	}
