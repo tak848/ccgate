@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -16,13 +17,36 @@ import (
 // DefaultReportDays is the default number of days for metrics reports.
 const DefaultReportDays = 7
 
+// defaultDetailsTop is the default number of rows shown in the
+// "Top fallthrough/deny commands" sections.
+const defaultDetailsTop = 10
+
+// maxDisplayToolInput caps the rune length of tool_input displayed in
+// the TTY details sections. Aggregation keys use the full raw value;
+// this limit only affects what is printed.
+const maxDisplayToolInput = 200
+
+// noInputPlaceholder is the TTY-only sentinel rendered for entries whose
+// ToolInput is entirely empty. JSON output keeps the empty object instead.
+const noInputPlaceholder = "(no input)"
+
+// llmFallthroughKind is the FallthroughKind value that represents
+// "the LLM decided not to decide". Only fallthroughs of this kind are
+// promotable via permission rule additions, so the "Top fallthrough
+// commands" section filters on it.
+const llmFallthroughKind = "llm"
+
 // ReportOptions controls how the report is generated.
 type ReportOptions struct {
-	Days   int
-	AsJSON bool
+	Days       int
+	AsJSON     bool
+	DetailsTop int
 }
 
 // DailySummary aggregates metrics for a single calendar day.
+//
+// AutomationRate is (Allow+Deny)/Total. Total counts every entry on the
+// day including errors, so error bursts drag the rate down rather than up.
 type DailySummary struct {
 	Date              string  `json:"date"`
 	Total             int     `json:"total"`
@@ -30,6 +54,7 @@ type DailySummary struct {
 	Deny              int     `json:"deny"`
 	Fallthrough       int     `json:"fallthrough"`
 	Errors            int     `json:"errors"`
+	AutomationRate    float64 `json:"automation_rate"`
 	AvgElapsedMS      float64 `json:"avg_elapsed_ms"`
 	TotalInputTokens  int64   `json:"total_input_tokens"`
 	TotalOutputTokens int64   `json:"total_output_tokens"`
@@ -44,12 +69,29 @@ type ToolSummary struct {
 	Fallthrough int    `json:"fallthrough"`
 }
 
+// ToolInputSummary aggregates entries sharing the same tool name and
+// structured tool_input. Used for "Top fallthrough commands" / "Top deny
+// commands" sections. ToolInput is emitted verbatim (no omitempty) so
+// consumers can distinguish "all fields empty" from "a literal (no input)".
+type ToolInputSummary struct {
+	ToolName  string          `json:"tool"`
+	ToolInput ToolInputFields `json:"tool_input"`
+	Count     int             `json:"count"`
+}
+
 // FullReport is the complete metrics report.
+//
+// AutomationRate is computed across all entries in the range.
+// FallthroughTop is restricted to entries whose FallthroughKind is "llm"
+// because only those are promotable by adding permission rules.
 type FullReport struct {
-	Period    string         `json:"period"`
-	DataRange string         `json:"data_range,omitempty"`
-	Daily     []DailySummary `json:"daily"`
-	Tools     []ToolSummary  `json:"tools"`
+	Period         string             `json:"period"`
+	DataRange      string             `json:"data_range,omitempty"`
+	AutomationRate float64            `json:"automation_rate"`
+	Daily          []DailySummary     `json:"daily"`
+	Tools          []ToolSummary      `json:"tools"`
+	FallthroughTop []ToolInputSummary `json:"fallthrough_top"`
+	DenyTop        []ToolInputSummary `json:"deny_top"`
 }
 
 // PrintReport reads the metrics file and prints a report to w.
@@ -73,6 +115,11 @@ func buildReport(path string, opts ReportOptions) (FullReport, time.Time, error)
 	if opts.Days <= 0 {
 		opts.Days = DefaultReportDays
 	}
+	// Normalize DetailsTop: negative falls back to default, zero/positive kept as-is.
+	detailsTop := opts.DetailsTop
+	if detailsTop < 0 {
+		detailsTop = defaultDetailsTop
+	}
 
 	// Use local timezone for day boundaries (cutoff and daily grouping).
 	now := time.Now()
@@ -83,7 +130,7 @@ func buildReport(path string, opts ReportOptions) (FullReport, time.Time, error)
 		return FullReport{}, cutoff, err
 	}
 
-	return aggregate(entries, opts.Days, cutoff), cutoff, nil
+	return aggregate(entries, opts.Days, detailsTop), cutoff, nil
 }
 
 func readEntries(path string, cutoff time.Time) ([]Entry, error) {
@@ -134,12 +181,20 @@ func readEntriesFromFile(path string, cutoff time.Time) ([]Entry, error) {
 	return entries, nil
 }
 
-func aggregate(entries []Entry, days int, cutoff time.Time) FullReport {
+type aggKey struct {
+	Tool  string
+	Input ToolInputFields
+}
+
+func aggregate(entries []Entry, days int, detailsTop int) FullReport {
 	dailyMap := make(map[string]*DailySummary)
 	toolMap := make(map[string]*ToolSummary)
+	fallthroughMap := make(map[aggKey]*ToolInputSummary)
+	denyMap := make(map[aggKey]*ToolInputSummary)
 
 	var minTS, maxTS time.Time
 	loc := time.Now().Location()
+	var totalAll, totalAllowDeny int
 	for _, e := range entries {
 		if minTS.IsZero() || e.Timestamp.Before(minTS) {
 			minTS = e.Timestamp
@@ -155,6 +210,7 @@ func aggregate(entries []Entry, days int, cutoff time.Time) FullReport {
 			dailyMap[dateKey] = ds
 		}
 		ds.Total++
+		totalAll++
 		ds.TotalInputTokens += e.InputTokens
 		ds.TotalOutputTokens += e.OutputTokens
 		ds.AvgElapsedMS += float64(e.ElapsedMS)
@@ -162,8 +218,10 @@ func aggregate(entries []Entry, days int, cutoff time.Time) FullReport {
 		switch e.Decision {
 		case "allow":
 			ds.Allow++
+			totalAllowDeny++
 		case "deny":
 			ds.Deny++
+			totalAllowDeny++
 		case "fallthrough":
 			ds.Fallthrough++
 		}
@@ -185,12 +243,22 @@ func aggregate(entries []Entry, days int, cutoff time.Time) FullReport {
 		case "fallthrough":
 			ts.Fallthrough++
 		}
+
+		// Top fallthrough commands: only the LLM-driven ones, since those
+		// are the fallthroughs that a new permission rule could eliminate.
+		if e.Decision == "fallthrough" && e.FallthroughKind == llmFallthroughKind {
+			bumpToolInputSummary(fallthroughMap, e)
+		}
+		if e.Decision == "deny" {
+			bumpToolInputSummary(denyMap, e)
+		}
 	}
 
 	daily := make([]DailySummary, 0, len(dailyMap))
 	for _, ds := range dailyMap {
 		if ds.Total > 0 {
 			ds.AvgElapsedMS = ds.AvgElapsedMS / float64(ds.Total)
+			ds.AutomationRate = float64(ds.Allow+ds.Deny) / float64(ds.Total)
 		}
 		daily = append(daily, *ds)
 	}
@@ -203,8 +271,19 @@ func aggregate(entries []Entry, days int, cutoff time.Time) FullReport {
 		tools = append(tools, *ts)
 	}
 	sort.Slice(tools, func(i, j int) bool {
-		return tools[i].Total > tools[j].Total
+		if tools[i].Total != tools[j].Total {
+			return tools[i].Total > tools[j].Total
+		}
+		return tools[i].ToolName < tools[j].ToolName
 	})
+
+	fallthroughTop := rankToolInputSummaries(fallthroughMap, detailsTop)
+	denyTop := rankToolInputSummaries(denyMap, detailsTop)
+
+	var overallRate float64
+	if totalAll > 0 {
+		overallRate = float64(totalAllowDeny) / float64(totalAll)
+	}
 
 	var dataRange string
 	if !minTS.IsZero() && !maxTS.IsZero() {
@@ -214,11 +293,154 @@ func aggregate(entries []Entry, days int, cutoff time.Time) FullReport {
 	}
 
 	return FullReport{
-		Period:    fmt.Sprintf("last %d days", days),
-		DataRange: dataRange,
-		Daily:     daily,
-		Tools:     tools,
+		Period:         fmt.Sprintf("last %d days", days),
+		DataRange:      dataRange,
+		AutomationRate: overallRate,
+		Daily:          daily,
+		Tools:          tools,
+		FallthroughTop: fallthroughTop,
+		DenyTop:        denyTop,
 	}
+}
+
+func bumpToolInputSummary(m map[aggKey]*ToolInputSummary, e Entry) {
+	k := aggKey{Tool: e.ToolName, Input: e.ToolInput}
+	s, ok := m[k]
+	if !ok {
+		s = &ToolInputSummary{ToolName: e.ToolName, ToolInput: e.ToolInput}
+		m[k] = s
+	}
+	s.Count++
+}
+
+// rankToolInputSummaries sorts with a deterministic tie-breaker so the
+// output is stable across runs and CI, independent of map iteration order.
+func rankToolInputSummaries(m map[aggKey]*ToolInputSummary, top int) []ToolInputSummary {
+	if top <= 0 {
+		return []ToolInputSummary{}
+	}
+	out := make([]ToolInputSummary, 0, len(m))
+	for _, s := range m {
+		out = append(out, *s)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Count != out[j].Count {
+			return out[i].Count > out[j].Count
+		}
+		if out[i].ToolName != out[j].ToolName {
+			return out[i].ToolName < out[j].ToolName
+		}
+		if out[i].ToolInput.Command != out[j].ToolInput.Command {
+			return out[i].ToolInput.Command < out[j].ToolInput.Command
+		}
+		if out[i].ToolInput.FilePath != out[j].ToolInput.FilePath {
+			return out[i].ToolInput.FilePath < out[j].ToolInput.FilePath
+		}
+		if out[i].ToolInput.Path != out[j].ToolInput.Path {
+			return out[i].ToolInput.Path < out[j].ToolInput.Path
+		}
+		return out[i].ToolInput.Pattern < out[j].ToolInput.Pattern
+	})
+	if len(out) > top {
+		out = out[:top]
+	}
+	return out
+}
+
+// humanInt formats an integer with thousands separators.
+// Works correctly for math.MinInt64 by operating on the string representation
+// rather than negating the numeric value.
+func humanInt(n int64) string {
+	s := strconv.FormatInt(n, 10)
+	negative := strings.HasPrefix(s, "-")
+	if negative {
+		s = s[1:]
+	}
+	if len(s) <= 3 {
+		if negative {
+			return "-" + s
+		}
+		return s
+	}
+	// Insert commas from the right in groups of 3.
+	var b strings.Builder
+	firstGroup := len(s) % 3
+	if firstGroup == 0 {
+		firstGroup = 3
+	}
+	b.WriteString(s[:firstGroup])
+	for i := firstGroup; i < len(s); i += 3 {
+		b.WriteByte(',')
+		b.WriteString(s[i : i+3])
+	}
+	if negative {
+		return "-" + b.String()
+	}
+	return b.String()
+}
+
+// formatToolInputLine renders a ToolInputFields value as a single line of
+// text for the details section. It is display-only: it collapses newlines
+// and tabs to spaces so the table never breaks a row, and never mutates
+// the stored value (which stays verbatim for JSON output).
+func formatToolInputLine(tif ToolInputFields) string {
+	var s string
+	switch {
+	case tif.Command != "":
+		s = tif.Command
+	case tif.FilePath != "":
+		s = tif.FilePath
+	case tif.Path != "" && tif.Pattern != "":
+		s = tif.Pattern + " @ " + tif.Path
+	case tif.Path != "":
+		s = tif.Path
+	case tif.Pattern != "":
+		s = tif.Pattern
+	default:
+		return noInputPlaceholder
+	}
+	// Collapse line-breaking whitespace for table rendering only.
+	s = strings.NewReplacer("\n", " ", "\r", " ", "\t", " ").Replace(s)
+	return truncateRunes(s, maxDisplayToolInput)
+}
+
+// columnWidths tracks the formatted (humanInt) width of each numeric column
+// so the table can be aligned without any column running over its header.
+type columnWidths struct {
+	date, total, allow, deny, fall, err, avg, inTok, outTok int
+}
+
+func computeColumnWidths(daily []DailySummary) columnWidths {
+	cw := columnWidths{
+		date:   len("Date"),
+		total:  len("Total"),
+		allow:  len("Allow"),
+		deny:   len("Deny"),
+		fall:   len("Fall"),
+		err:    len("Err"),
+		avg:    len("Avg(ms)"),
+		inTok:  len("Tokens(in"),
+		outTok: len("out)"),
+	}
+	for _, ds := range daily {
+		cw.date = maxInt(cw.date, len(ds.Date))
+		cw.total = maxInt(cw.total, len(humanInt(int64(ds.Total))))
+		cw.allow = maxInt(cw.allow, len(humanInt(int64(ds.Allow))))
+		cw.deny = maxInt(cw.deny, len(humanInt(int64(ds.Deny))))
+		cw.fall = maxInt(cw.fall, len(humanInt(int64(ds.Fallthrough))))
+		cw.err = maxInt(cw.err, len(humanInt(int64(ds.Errors))))
+		cw.avg = maxInt(cw.avg, len(humanInt(int64(ds.AvgElapsedMS))))
+		cw.inTok = maxInt(cw.inTok, len(humanInt(ds.TotalInputTokens)))
+		cw.outTok = maxInt(cw.outTok, len(humanInt(ds.TotalOutputTokens)))
+	}
+	return cw
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func printTable(w io.Writer, report FullReport, cutoff time.Time) {
@@ -243,20 +465,66 @@ func printTable(w io.Writer, report FullReport, cutoff time.Time) {
 		}
 	}
 
-	fmt.Fprintf(w, "%-12s %6s %6s %6s %6s %5s %9s %16s\n",
-		"Date", "Total", "Allow", "Deny", "Fall", "Err", "Avg(ms)", "Tokens(in/out)")
+	cw := computeColumnWidths(report.Daily)
+
+	const autoColWidth = 6 // e.g. " 88.4%"
+	fmt.Fprintf(w, "%-*s %*s %*s %*s %*s %*s %*s %*s %*s / %*s\n",
+		cw.date, "Date",
+		cw.total, "Total",
+		cw.allow, "Allow",
+		cw.deny, "Deny",
+		cw.fall, "Fall",
+		cw.err, "Err",
+		autoColWidth, "Auto%",
+		cw.avg, "Avg(ms)",
+		cw.inTok, "Tokens(in",
+		cw.outTok, "out)")
 	for _, ds := range report.Daily {
-		fmt.Fprintf(w, "%-12s %6d %6d %6d %6d %5d %9.0f %7d / %-7d\n",
-			ds.Date, ds.Total, ds.Allow, ds.Deny, ds.Fallthrough, ds.Errors,
-			ds.AvgElapsedMS, ds.TotalInputTokens, ds.TotalOutputTokens)
+		fmt.Fprintf(w, "%-*s %*s %*s %*s %*s %*s %*s %*s %*s / %*s\n",
+			cw.date, ds.Date,
+			cw.total, humanInt(int64(ds.Total)),
+			cw.allow, humanInt(int64(ds.Allow)),
+			cw.deny, humanInt(int64(ds.Deny)),
+			cw.fall, humanInt(int64(ds.Fallthrough)),
+			cw.err, humanInt(int64(ds.Errors)),
+			autoColWidth, fmt.Sprintf("%.1f%%", ds.AutomationRate*100),
+			cw.avg, humanInt(int64(ds.AvgElapsedMS)),
+			cw.inTok, humanInt(ds.TotalInputTokens),
+			cw.outTok, humanInt(ds.TotalOutputTokens))
 	}
+
+	fmt.Fprintf(w, "\nAutomation rate: %.1f%% ((allow+deny) / total)\n", report.AutomationRate*100)
 
 	if len(report.Tools) > 0 {
 		fmt.Fprintln(w)
 		var parts []string
 		for _, ts := range report.Tools {
-			parts = append(parts, fmt.Sprintf("%s:%d", ts.ToolName, ts.Total))
+			parts = append(parts, fmt.Sprintf("%s:%s", ts.ToolName, humanInt(int64(ts.Total))))
 		}
 		fmt.Fprintf(w, "Top tools: %s\n", strings.Join(parts, " "))
+	}
+
+	printTopSection(w, "Top fallthrough commands", report.FallthroughTop)
+	printTopSection(w, "Top deny commands", report.DenyTop)
+}
+
+func printTopSection(w io.Writer, title string, summaries []ToolInputSummary) {
+	if len(summaries) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "\n%s (top %d):\n", title, len(summaries))
+	toolWidth := 0
+	countWidth := 0
+	formatted := make([]string, len(summaries))
+	for i, s := range summaries {
+		toolWidth = maxInt(toolWidth, len(s.ToolName))
+		countWidth = maxInt(countWidth, len(humanInt(int64(s.Count))))
+		formatted[i] = formatToolInputLine(s.ToolInput)
+	}
+	for i, s := range summaries {
+		fmt.Fprintf(w, "  %-*s  %*s  %s\n",
+			toolWidth, s.ToolName,
+			countWidth, humanInt(int64(s.Count)),
+			formatted[i])
 	}
 }

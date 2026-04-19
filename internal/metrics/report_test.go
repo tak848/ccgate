@@ -51,6 +51,13 @@ func TestBuildReport(t *testing.T) {
 	if ds.TotalInputTokens != 350 {
 		t.Fatalf("input_tokens = %d, want 350", ds.TotalInputTokens)
 	}
+	// (allow=2 + deny=1) / total=4 = 0.75
+	if ds.AutomationRate != 0.75 {
+		t.Fatalf("AutomationRate = %v, want 0.75", ds.AutomationRate)
+	}
+	if report.AutomationRate != 0.75 {
+		t.Fatalf("report.AutomationRate = %v, want 0.75", report.AutomationRate)
+	}
 
 	if len(report.Tools) != 2 {
 		t.Fatalf("expected 2 tools, got %d", len(report.Tools))
@@ -153,6 +160,23 @@ func writeEntries(t *testing.T, path string, entries []Entry) {
 			t.Fatal(err)
 		}
 		if _, err := f.Write(append(line, '\n')); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// writeRawJSONLines writes pre-constructed JSONL lines without going through
+// Entry serialization. Used to simulate entries written by an older binary
+// that didn't know about tool_input.
+func writeRawJSONLines(t *testing.T, path string, lines []string) {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	for _, line := range lines {
+		if _, err := f.WriteString(line + "\n"); err != nil {
 			t.Fatal(err)
 		}
 	}
