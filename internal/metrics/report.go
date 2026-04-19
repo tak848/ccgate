@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/tak848/ccgate/internal/gate"
 )
 
 // DefaultReportDays is the default number of days for metrics reports.
@@ -30,11 +32,9 @@ const maxDisplayToolInput = 200
 // ToolInput is entirely empty. JSON output keeps the empty object instead.
 const noInputPlaceholder = "(no input)"
 
-// llmFallthroughKind is the FallthroughKind value that represents
-// "the LLM decided not to decide". Only fallthroughs of this kind are
-// promotable via permission rule additions, so the "Top fallthrough
-// commands" section filters on it.
-const llmFallthroughKind = "llm"
+// Only fallthroughs with gate.FallthroughKindLLM are promotable via
+// permission rule additions; the other kinds indicate runtime-mode or
+// configuration conditions and are excluded from the top section.
 
 // ReportOptions controls how the report is generated.
 type ReportOptions struct {
@@ -246,7 +246,7 @@ func aggregate(entries []Entry, days int, detailsTop int) FullReport {
 
 		// Top fallthrough commands: only the LLM-driven ones, since those
 		// are the fallthroughs that a new permission rule could eliminate.
-		if e.Decision == "fallthrough" && e.FallthroughKind == llmFallthroughKind {
+		if e.Decision == "fallthrough" && e.FallthroughKind == gate.FallthroughKindLLM {
 			bumpToolInputSummary(fallthroughMap, e)
 		}
 		if e.Decision == "deny" {

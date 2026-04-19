@@ -17,6 +17,18 @@ const (
 	DefaultDenyMessage  = "Automatically denied as potentially dangerous."
 )
 
+// FallthroughKind* values are stored verbatim in metrics entries.
+// Only FallthroughKindLLM is promotable via permission rules — the other
+// kinds indicate runtime-mode or configuration conditions.
+const (
+	FallthroughKindUserInteraction = "user_interaction"
+	FallthroughKindBypass          = "bypass"
+	FallthroughKindDontAsk         = "dontask"
+	FallthroughKindNonAnthropic    = "non_anthropic"
+	FallthroughKindNoAPIKey        = "no_apikey"
+	FallthroughKindLLM             = "llm"
+)
+
 type PermissionDecision struct {
 	Behavior string `json:"behavior"`
 	Message  string `json:"message,omitempty"`
@@ -69,7 +81,7 @@ func DecidePermission(ctx context.Context, cfg config.Config, input hookctx.Hook
 	switch input.ToolName {
 	case "ExitPlanMode", "AskUserQuestion":
 		slog.Info("user interaction tool: falling through", "tool", input.ToolName)
-		return DecisionResult{FallthroughKind: "user_interaction"}, nil
+		return DecisionResult{FallthroughKind: FallthroughKindUserInteraction}, nil
 	}
 
 	// Some permission modes should not be overridden by the hook.
@@ -78,21 +90,21 @@ func DecidePermission(ctx context.Context, cfg config.Config, input hookctx.Hook
 		// In plan mode, let the LLM decide for non-interaction tools.
 	case "bypassPermissions":
 		slog.Info("bypass mode: falling through", "tool", input.ToolName)
-		return DecisionResult{FallthroughKind: "bypass"}, nil
+		return DecisionResult{FallthroughKind: FallthroughKindBypass}, nil
 	case "dontAsk":
 		slog.Info("dontAsk mode: falling through", "tool", input.ToolName)
-		return DecisionResult{FallthroughKind: "dontask"}, nil
+		return DecisionResult{FallthroughKind: FallthroughKindDontAsk}, nil
 	}
 
 	if strings.ToLower(cfg.Provider.Name) != "anthropic" {
 		slog.Info("provider not anthropic, skipping", "provider", cfg.Provider.Name)
-		return DecisionResult{FallthroughKind: "non_anthropic"}, nil
+		return DecisionResult{FallthroughKind: FallthroughKindNonAnthropic}, nil
 	}
 
 	apiKey, ok := resolveAPIKey()
 	if !ok {
 		slog.Warn("no API key found (CCGATE_ANTHROPIC_API_KEY / ANTHROPIC_API_KEY)")
-		return DecisionResult{FallthroughKind: "no_apikey"}, nil
+		return DecisionResult{FallthroughKind: FallthroughKindNoAPIKey}, nil
 	}
 
 	slog.Info("calling anthropic",
@@ -133,11 +145,11 @@ func DecidePermission(ctx context.Context, cfg config.Config, input hookctx.Hook
 		base.HasDecision = true
 		return base, nil
 	case BehaviorFallthrough, "":
-		base.FallthroughKind = "llm"
+		base.FallthroughKind = FallthroughKindLLM
 		return base, nil
 	default:
 		slog.Warn("unexpected LLM behavior", "behavior", output.Behavior)
-		base.FallthroughKind = "llm"
+		base.FallthroughKind = FallthroughKindLLM
 		return base, nil
 	}
 }
