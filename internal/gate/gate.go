@@ -36,8 +36,9 @@ type PermissionDecision struct {
 
 // DecisionResult is the rich result from DecidePermission.
 // Invariants:
-//   - HasDecision=true: Decision is set, FallthroughKind is empty
-//   - HasDecision=false: Decision is zero, FallthroughKind describes why
+//   - HasDecision=true && FallthroughKind=="": LLM (or upstream) returned a clear allow/deny
+//   - HasDecision=true && FallthroughKind=="llm": LLM was uncertain but fallthrough_strategy forced a decision
+//   - HasDecision=false: real fallthrough; FallthroughKind describes why
 //   - Usage is non-nil only when an API call was made
 type DecisionResult struct {
 	Decision        PermissionDecision
@@ -146,12 +147,55 @@ func DecidePermission(ctx context.Context, cfg config.Config, input hookctx.Hook
 		return base, nil
 	case BehaviorFallthrough, "":
 		base.FallthroughKind = FallthroughKindLLM
+		if d, ok := applyForcedStrategy(cfg, output.Reason); ok {
+			base.Decision = d
+			base.HasDecision = true
+		}
 		return base, nil
 	default:
 		slog.Warn("unexpected LLM behavior", "behavior", output.Behavior)
 		base.FallthroughKind = FallthroughKindLLM
+		if d, ok := applyForcedStrategy(cfg, output.Reason); ok {
+			base.Decision = d
+			base.HasDecision = true
+		}
 		return base, nil
 	}
+}
+
+// applyForcedStrategy converts an LLM fallthrough into a forced allow/deny
+// based on cfg.FallthroughStrategy. Returns ok=false when the strategy is
+// "ask" (or unset), preserving the original fallthrough behavior.
+func applyForcedStrategy(cfg config.Config, llmReason string) (PermissionDecision, bool) {
+	switch cfg.GetFallthroughStrategy() {
+	case config.FallthroughStrategyAllow:
+		return PermissionDecision{
+			Behavior: BehaviorAllow,
+			Message:  buildForcedMessage(BehaviorAllow, llmReason),
+		}, true
+	case config.FallthroughStrategyDeny:
+		return PermissionDecision{
+			Behavior: BehaviorDeny,
+			Message:  buildForcedMessage(BehaviorDeny, llmReason),
+		}, true
+	default:
+		return PermissionDecision{}, false
+	}
+}
+
+func buildForcedMessage(behavior, llmReason string) string {
+	var label string
+	switch behavior {
+	case BehaviorAllow:
+		label = "Auto-ALLOWED despite LLM uncertainty (fallthrough_strategy=allow). Review carefully — this would normally prompt the user."
+	case BehaviorDeny:
+		label = "Auto-denied because LLM was uncertain (fallthrough_strategy=deny). Normally this would prompt the user."
+	}
+	reason := strings.TrimSpace(llmReason)
+	if reason == "" {
+		return "[ccgate] " + label
+	}
+	return "[ccgate] " + label + " LLM reason: " + reason
 }
 
 func resolveAPIKey() (string, bool) {
