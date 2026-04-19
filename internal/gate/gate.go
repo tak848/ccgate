@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/tak848/ccgate/internal/config"
@@ -230,7 +231,9 @@ func buildForcedMessage(behavior, llmReason string) string {
 	if reason == "" {
 		head = "LLM-based permission hook returned fallthrough."
 	} else {
-		head = `LLM-based permission hook returned fallthrough; LLM reason: "` + reason + `".`
+		// strconv.Quote escapes embedded quotes/newlines so the message
+		// stays unambiguous regardless of what the LLM emitted.
+		head = "LLM-based permission hook returned fallthrough; LLM reason: " + strconv.Quote(reason) + "."
 	}
 
 	switch behavior {

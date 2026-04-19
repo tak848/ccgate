@@ -145,6 +145,16 @@ func TestApplyForcedStrategy(t *testing.T) {
 			wantBehavior:   BehaviorDeny,
 			wantMessageHas: []string{"LLM-based permission hook returned fallthrough", `LLM reason: "could be destructive"`, "Auto-denied for safety", "do not ask the user", "do not attempt to bypass"},
 		},
+		"reason containing quotes is escaped (no broken quoting)": {
+			strategy:     strPtr(config.FallthroughStrategyDeny),
+			llmReason:    `the user said "yes"` + "\nbut also no",
+			wantOK:       true,
+			wantBehavior: BehaviorDeny,
+			wantMessageHas: []string{
+				`LLM reason: "the user said \"yes\"\nbut also no".`,
+				"Auto-denied for safety",
+			},
+		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
