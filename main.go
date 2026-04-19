@@ -48,7 +48,7 @@ type InitCmd struct {
 type MetricsCmd struct {
 	Days    int  `help:"Show last N days." default:"7"`
 	JSON    bool `help:"Output as JSON." name:"json"`
-	Details int  `help:"Show top-N fallthrough/deny commands per section (0 to hide both, negative falls back to default)." default:"10"`
+	Details int  `help:"Show top-N fallthrough/deny commands per section. Use 0 to hide both sections." default:"10"`
 }
 
 func main() { os.Exit(_main()) }
