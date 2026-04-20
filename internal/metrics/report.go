@@ -62,7 +62,10 @@ type ReportOptions struct {
 // converted an LLM fallthrough into an allow / deny respectively. They are
 // reported as two separate numbers because their risk profile is opposite:
 // ForcedAllow auto-approves an uncertain operation (riskier), ForcedDeny
-// auto-refuses one (safer). Both are subsets of Allow / Deny.
+// auto-refuses one (safer). Both are subsets of Allow / Deny and are
+// therefore ALSO counted in AutomationRate — a high rate combined with a
+// non-trivial ForcedAllow/ForcedDeny does not mean the LLM was confident
+// about those operations; check the F.Allow / F.Deny columns separately.
 type DailySummary struct {
 	Date              string  `json:"date"`
 	Total             int     `json:"total"`
