@@ -51,7 +51,7 @@ type PermissionDecision struct {
 type DecisionResult struct {
 	Decision        PermissionDecision
 	HasDecision     bool
-	FallthroughKind string    // why fallthrough: user_interaction, bypass, dontask, no_apikey, non_anthropic, llm
+	FallthroughKind string    // why fallthrough: user_interaction, bypass, dontask, no_apikey, non_anthropic, llm, api_unusable
 	Usage           *APIUsage // nil if no API call
 	LLMReason       string
 }
