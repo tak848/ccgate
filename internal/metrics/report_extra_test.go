@@ -498,6 +498,19 @@ func TestBuildReportForcedAggregation(t *testing.T) {
 		t.Errorf("Daily.ForcedDeny = %d, want 1", ds.ForcedDeny)
 	}
 
+	// Per-tool ToolSummary should mirror the daily forced split for Bash
+	// (the only tool present in this fixture).
+	if len(report.Tools) != 1 || report.Tools[0].ToolName != "Bash" {
+		t.Fatalf("expected single Bash tool summary, got %+v", report.Tools)
+	}
+	ts := report.Tools[0]
+	if ts.ForcedAllow != 1 {
+		t.Errorf("Tools[0].ForcedAllow = %d, want 1", ts.ForcedAllow)
+	}
+	if ts.ForcedDeny != 1 {
+		t.Errorf("Tools[0].ForcedDeny = %d, want 1", ts.ForcedDeny)
+	}
+
 	// FallthroughTop must include all three LLM-uncertainty entries
 	// (natural ft + forced deny + forced allow), each in its own group.
 	wantFTCommands := map[string]bool{
@@ -583,12 +596,18 @@ func TestPrintReportColumnAlignment(t *testing.T) {
 	// (directly before the literal "/"). Including it here catches regressions
 	// where that column alone is flipped to %-*s (left-align) and values are
 	// padded on the wrong side.
+	// Anchor each label by searching for " "+label, never the bare label.
+	// This avoids the substring trap where strings.Index(header, "Allow")
+	// would silently latch onto "F.Allow" if the column order ever changes
+	// (currently safe only because "Allow" precedes "F.Allow" in header).
 	rightAlignedLabels := []string{"Total", "Allow", "Deny", "Fall", "F.Allow", "F.Deny", "Err", "Auto%", "Avg(ms)", "Tokens(in"}
 	for _, label := range rightAlignedLabels {
-		anchor := strings.Index(header, label)
+		needle := " " + label
+		anchor := strings.Index(header, needle)
 		if anchor < 0 {
 			t.Fatalf("header missing label %q: %q", label, header)
 		}
+		anchor++ // step past the leading space so anchor points at label start
 		endOffset := anchor + len(label) - 1
 		for _, r := range dataRows {
 			if endOffset+1 >= len(r) {

@@ -82,12 +82,18 @@ type DailySummary struct {
 }
 
 // ToolSummary aggregates metrics per tool.
+//
+// ForcedAllow / ForcedDeny mirror the same fields on DailySummary so per-tool
+// inspection can tell whether a high deny count comes from rule-driven denies
+// or from fallthrough_strategy=deny overriding LLM uncertainty.
 type ToolSummary struct {
 	ToolName    string `json:"tool"`
 	Total       int    `json:"total"`
 	Allow       int    `json:"allow"`
 	Deny        int    `json:"deny"`
 	Fallthrough int    `json:"fallthrough"`
+	ForcedAllow int    `json:"forced_allow"`
+	ForcedDeny  int    `json:"forced_deny"`
 }
 
 // ToolInputSummary aggregates entries sharing the same tool name and
@@ -275,6 +281,14 @@ func aggregate(entries []Entry, days int, detailsTop int) FullReport {
 			ts.Deny++
 		case "fallthrough":
 			ts.Fallthrough++
+		}
+		if e.Forced {
+			switch e.Decision {
+			case "allow":
+				ts.ForcedAllow++
+			case "deny":
+				ts.ForcedDeny++
+			}
 		}
 
 		// Top fallthrough commands: anything driven by LLM uncertainty.
