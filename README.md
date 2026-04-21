@@ -97,6 +97,8 @@ If a global config file exists, embedded defaults are not used. The global confi
 Project-local configs always append to the base (allow/deny/environment are appended, provider fields are overwritten).
 Project-local configs are only loaded if **not tracked by Git**.
 
+> **Note:** This "global replaces defaults, project-local only appends" asymmetry is a known wart — users cannot narrow or override rules from the project layer today. Tracked as a breaking-change refactor in [#38](https://github.com/tak848/ccgate/issues/38).
+
 ### Config fields
 
 | Field | Type | Default | Description |
@@ -107,6 +109,9 @@ Project-local configs are only loaded if **not tracked by Git**.
 | `log_path` | string | `"~/.claude/logs/ccgate.log"` | Log file path. Supports `~` for home directory. |
 | `log_disabled` | bool | `false` | Disable logging entirely |
 | `log_max_size` | int | `5242880` | Max log file size in bytes before rotation (default 5MB) |
+| `metrics_path` | string | `"$XDG_STATE_HOME/ccgate/metrics.jsonl"` | Metrics JSONL file path. Supports `~` for home directory. |
+| `metrics_disabled` | bool | `false` | Disable metrics collection entirely |
+| `metrics_max_size` | int | `2097152` | Max metrics file size in bytes before rotation (default 2MB) |
 | `fallthrough_strategy` | `"ask"` / `"allow"` / `"deny"` | `"ask"` | How to resolve LLM uncertainty (`fallthrough`). See [Unattended automation](#unattended-automation-fallthrough_strategy). |
 | `allow` | string[] | `[]` | Allow guidance rules (natural language, interpreted by the LLM) |
 | `deny` | string[] | `[]` | Deny guidance rules (mandatory). Supports inline `deny_message:` hints |
@@ -162,6 +167,34 @@ To change the log path or disable logging:
   // log_disabled: true,
 }
 ```
+
+## Metrics
+
+Every invocation is recorded as a JSONL entry (`$XDG_STATE_HOME/ccgate/metrics.jsonl` by default, 2 MB rotation). To summarize:
+
+```bash
+ccgate metrics                     # last 7 days, TTY table
+ccgate metrics --days 30           # wider window
+ccgate metrics --json              # machine-readable output
+ccgate metrics --details 5         # top-5 fallthrough / deny commands
+ccgate metrics --details 0         # suppress the drill-down sections
+```
+
+The daily table shows per-day counts (Allow, Deny, Fall, F.Allow, F.Deny, Err), automation rate, average latency, and token usage. The "Top fallthrough commands" / "Top deny commands" drill-downs surface which operations you could eliminate by adding a permission rule.
+
+To move or disable the metrics file:
+
+```jsonnet
+{
+  metrics_path: '~/my-state/ccgate-metrics.jsonl',
+  // metrics_disabled: true,
+}
+```
+
+## Known limitations
+
+- **Plan mode does not fully prevent implementation writes.** ccgate currently relies on the LLM plus prose in the system prompt to be stricter under `permission_mode == "plan"`, which still lets some "safe-looking" writes slip through. Tracked in [#37](https://github.com/tak848/ccgate/issues/37).
+- **Config file layering is asymmetric.** `~/.claude/ccgate.jsonnet` *replaces* embedded defaults while project-local files only *append*. Narrowing / overriding rules from the project layer is not supported today. Tracked as a breaking-change refactor in [#38](https://github.com/tak848/ccgate/issues/38).
 
 ## Development
 

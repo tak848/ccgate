@@ -93,6 +93,8 @@ ccgate init > ~/.claude/ccgate.jsonnet
 プロジェクトローカル設定は常にベースに追加されます (allow/deny/environment は追加、provider は上書き)。
 プロジェクトローカル設定は **Git に追跡されていないファイルのみ** 読み込まれます。
 
+> **Note:** 「グローバルはデフォルトを置換、プロジェクトローカルは追加のみ」という非対称仕様は既知の課題です (プロジェクト層からルールを狭める/上書きする手段がない)。互換性を壊す破壊的リファクタとして [#38](https://github.com/tak848/ccgate/issues/38) で追跡しています。
+
 ### 設定項目
 
 | フィールド | 型 | デフォルト | 説明 |
@@ -103,6 +105,9 @@ ccgate init > ~/.claude/ccgate.jsonnet
 | `log_path` | string | `"~/.claude/logs/ccgate.log"` | ログファイルパス。`~` でホームディレクトリ展開 |
 | `log_disabled` | bool | `false` | ログ出力を完全に無効化 |
 | `log_max_size` | int | `5242880` | ローテーション閾値 (bytes, デフォルト 5MB) |
+| `metrics_path` | string | `"$XDG_STATE_HOME/ccgate/metrics.jsonl"` | メトリクス JSONL のパス。`~` でホームディレクトリ展開 |
+| `metrics_disabled` | bool | `false` | メトリクス収集を完全に無効化 |
+| `metrics_max_size` | int | `2097152` | ローテーション閾値 (bytes, デフォルト 2MB) |
 | `fallthrough_strategy` | `"ask"` / `"allow"` / `"deny"` | `"ask"` | LLM が判定に迷った (`fallthrough`) 際の扱い。[完全自動運転モード](#完全自動運転モード-fallthrough_strategy) 参照 |
 | `allow` | string[] | `[]` | 許可ルール (自然言語、LLM が解釈) |
 | `deny` | string[] | `[]` | 拒否ルール (mandatory)。`deny_message:` ヒント対応 |
@@ -158,6 +163,34 @@ ccgate init -p > ccgate.local.jsonnet     # プロジェクトローカルテン
   // log_disabled: true,
 }
 ```
+
+## メトリクス
+
+呼び出しごとに JSONL レコードを記録します (デフォルトは `$XDG_STATE_HOME/ccgate/metrics.jsonl`、2MB でローテーション)。集計表示は:
+
+```bash
+ccgate metrics                     # 直近 7 日間、TTY テーブル
+ccgate metrics --days 30           # 集計範囲を拡張
+ccgate metrics --json              # JSON 出力 (機械可読)
+ccgate metrics --details 5         # 上位 5 件の fallthrough / deny コマンドを表示
+ccgate metrics --details 0         # ドリルダウン節を非表示
+```
+
+日次テーブルには Allow / Deny / Fall / F.Allow / F.Deny / Err、自動化率、平均レイテンシ、トークン使用量が並びます。「Top fallthrough commands」「Top deny commands」のドリルダウンを見ると、ルール追加で削減できる操作が特定できます。
+
+メトリクスファイルの移動・無効化:
+
+```jsonnet
+{
+  metrics_path: '~/my-state/ccgate-metrics.jsonl',
+  // metrics_disabled: true,
+}
+```
+
+## 既知の制約
+
+- **Plan mode でも実装系 write が漏れる場合がある。** 現状は LLM とシステムプロンプトの指示文で `permission_mode == "plan"` の挙動を絞っているだけなので、「一見安全」な write が通ってしまうケースがあります。[#37](https://github.com/tak848/ccgate/issues/37) で追跡しています。
+- **設定ファイル layering の非対称。** `~/.claude/ccgate.jsonnet` は組み込みデフォルトを*置換*するのに対し、プロジェクトローカルは*追加のみ*。プロジェクト層からルールを狭める/上書きする手段がありません。互換性を壊す破壊的リファクタとして [#38](https://github.com/tak848/ccgate/issues/38) で追跡しています。
 
 ## 開発
 
