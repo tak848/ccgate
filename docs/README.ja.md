@@ -189,7 +189,7 @@ ccgate metrics --details 0         # ドリルダウン節を非表示
 
 ## 既知の制約
 
-- **Plan mode でも実装系 write が漏れる場合がある。** 現状は LLM とシステムプロンプトの指示文で `permission_mode == "plan"` の挙動を絞っているだけなので、「一見安全」な write が通ってしまうケースがあります。[#37](https://github.com/tak848/ccgate/issues/37) で追跡しています。
+- **Plan mode の正しさはプロンプトのみに依存。** `permission_mode == "plan"` では、(a) 実装系 write を拒絶する判定と (b) allow guidance に載っていない read-only クエリを許可する判定の両方を、LLM とシステムプロンプトの指示文に委ねています。プロンプトで記述する以上、どちらの方向にも誤判定の余地があり、「一見安全」な write が通ってしまうケース、および新規の read-only コマンドが fallthrough してしまうケースが残ります。[#37](https://github.com/tak848/ccgate/issues/37) で追跡しています。
 - **設定ファイル layering の非対称。** `~/.claude/ccgate.jsonnet` は組み込みデフォルトを*置換*するのに対し、プロジェクトローカルは*追加のみ*。プロジェクト層からルールを狭める/上書きする手段がありません。互換性を壊す破壊的リファクタとして [#38](https://github.com/tak848/ccgate/issues/38) で追跡しています。
 
 ## 開発

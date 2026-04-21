@@ -193,7 +193,7 @@ To move or disable the metrics file:
 
 ## Known limitations
 
-- **Plan mode does not fully prevent implementation writes.** ccgate currently relies on the LLM plus prose in the system prompt to be stricter under `permission_mode == "plan"`, which still lets some "safe-looking" writes slip through. Tracked in [#37](https://github.com/tak848/ccgate/issues/37).
+- **Plan mode correctness is prompt-only.** Under `permission_mode == "plan"`, ccgate relies on the LLM plus prose in the system prompt both to (a) reject implementation-side writes and (b) allow read-only queries without requiring an allow-guidance match. Since it is prose, either side can misfire — some "safe-looking" writes may slip through, and some novel read-only commands may fall through to the user. Tracked in [#37](https://github.com/tak848/ccgate/issues/37).
 - **Config file layering is asymmetric.** `~/.claude/ccgate.jsonnet` *replaces* embedded defaults while project-local files only *append*. Narrowing / overriding rules from the project layer is not supported today. Tracked as a breaking-change refactor in [#38](https://github.com/tak848/ccgate/issues/38).
 
 ## Development
