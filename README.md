@@ -107,6 +107,7 @@ Project-local configs are only loaded if **not tracked by Git**.
 | `log_path` | string | `"~/.claude/logs/ccgate.log"` | Log file path. Supports `~` for home directory. |
 | `log_disabled` | bool | `false` | Disable logging entirely |
 | `log_max_size` | int | `5242880` | Max log file size in bytes before rotation (default 5MB) |
+| `fallthrough_strategy` | `"ask"` / `"allow"` / `"deny"` | `"ask"` | How to resolve LLM uncertainty (`fallthrough`). See [Unattended automation](#unattended-automation-fallthrough_strategy). |
 | `allow` | string[] | `[]` | Allow guidance rules (natural language, interpreted by the LLM) |
 | `deny` | string[] | `[]` | Deny guidance rules (mandatory). Supports inline `deny_message:` hints |
 | `environment` | string[] | `[]` | Context strings passed to the LLM (trust level, policies, etc.) |
@@ -125,6 +126,29 @@ Run `ccgate init` to see the full default configuration. To customize, redirect 
 ccgate init > ~/.claude/ccgate.jsonnet    # Global config (replaces defaults)
 ccgate init -p > ccgate.local.jsonnet     # Project-local template (appended)
 ```
+
+## Unattended automation (`fallthrough_strategy`)
+
+By default, when the LLM is not confident enough to decide, ccgate returns `fallthrough` and Claude Code shows its interactive permission prompt. That is the right behavior for a human-in-the-loop session but blocks schedulers, bots, and any unattended run that has no one to click "approve".
+
+Set `fallthrough_strategy` to force a fixed verdict on LLM uncertainty:
+
+```jsonnet
+{
+  // Safer: when the LLM is unsure, refuse. Recommended for anything that runs unattended.
+  fallthrough_strategy: 'deny',
+}
+```
+
+Values:
+
+- `ask` (default) — defer to Claude Code's prompt. No behavior change.
+- `deny` — auto-refuse uncertain operations. The deny message tells Claude not to re-ask and not to work around the restriction, so the run keeps moving instead of stalling.
+- `allow` — auto-approve uncertain operations. **Riskier**: you are letting ccgate green-light operations the LLM itself was unsure about. Also note that Claude Code's hook spec only delivers `decision.message` on `deny`, so Claude never sees a warning on forced-allow. Pick this only if that trade-off is acceptable.
+
+Only LLM-driven uncertainty is affected. Truncated/refused API responses, missing API keys, `bypassPermissions`/`dontAsk` mode, and `ExitPlanMode` / `AskUserQuestion` continue to defer to Claude Code regardless — so `fallthrough_strategy=allow` cannot silently auto-approve a request the LLM never actually classified.
+
+`ccgate metrics` surfaces how often the override fired through the `F.Allow` / `F.Deny` columns in the daily table (and `forced_allow` / `forced_deny` in JSON output), so you can audit whether the strategy you chose is making decisions you are comfortable with.
 
 ## Logging
 

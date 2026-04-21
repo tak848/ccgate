@@ -103,6 +103,7 @@ ccgate init > ~/.claude/ccgate.jsonnet
 | `log_path` | string | `"~/.claude/logs/ccgate.log"` | ログファイルパス。`~` でホームディレクトリ展開 |
 | `log_disabled` | bool | `false` | ログ出力を完全に無効化 |
 | `log_max_size` | int | `5242880` | ローテーション閾値 (bytes, デフォルト 5MB) |
+| `fallthrough_strategy` | `"ask"` / `"allow"` / `"deny"` | `"ask"` | LLM が判定に迷った (`fallthrough`) 際の扱い。[完全自動運転モード](#完全自動運転モード-fallthrough_strategy) 参照 |
 | `allow` | string[] | `[]` | 許可ルール (自然言語、LLM が解釈) |
 | `deny` | string[] | `[]` | 拒否ルール (mandatory)。`deny_message:` ヒント対応 |
 | `environment` | string[] | `[]` | LLM に渡すコンテキスト (信頼レベル、ポリシー等) |
@@ -121,6 +122,29 @@ ccgate init > ~/.claude/ccgate.jsonnet
 ccgate init > ~/.claude/ccgate.jsonnet    # グローバル設定 (デフォルトを置換)
 ccgate init -p > ccgate.local.jsonnet     # プロジェクトローカルテンプレート (追加)
 ```
+
+## 完全自動運転モード (`fallthrough_strategy`)
+
+デフォルトでは、LLM が判定に自信を持てない場合 ccgate は `fallthrough` を返し、Claude Code のインタラクティブ確認画面にフォールバックします。対話セッションでは妥当ですが、スケジューラやボットなど人間が「許可」を押せない環境では処理が止まります。
+
+`fallthrough_strategy` を設定すると、LLM の判定迷いを allow/deny に強制変換できます:
+
+```jsonnet
+{
+  // 安全側: 迷ったら拒否。無人実行ではこちらを推奨
+  fallthrough_strategy: 'deny',
+}
+```
+
+値:
+
+- `ask` (デフォルト) — Claude Code の確認画面に委ねる (既存の挙動)
+- `deny` — 迷ったら自動拒否。deny メッセージには「user に聞くな、別コマンドで回避するな」という指示が含まれるため、実行が止まらず前に進む
+- `allow` — 迷ったら自動許可。**危険側**: LLM 自身が判断に迷った操作を無条件に通すことになります。加えて Claude Code の hook 仕様上 `decision.message` は `deny` のときしか Claude に届かないため、強制 allow の際 Claude には警告が渡りません。このトレードオフを理解した上で選択してください
+
+対象は **LLM 判定の fallthrough に限定** です。API 応答の打ち切り/拒否、API キー欠損、`bypassPermissions`/`dontAsk` モード、`ExitPlanMode` / `AskUserQuestion` はいずれも従来通り Claude Code へフォールスルーされます (LLM が呼ばれないケースを `fallthrough_strategy=allow` が黙って自動承認することはありません)。
+
+強制発火した回数は `ccgate metrics` の `F.Allow` / `F.Deny` 列 (JSON では `forced_allow` / `forced_deny`) で確認できるため、選んだ戦略が妥当に機能しているか後から監査できます。
 
 ## ログ
 
