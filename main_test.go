@@ -15,53 +15,63 @@ func TestShouldRecordMetrics(t *testing.T) {
 
 	cases := map[string]struct {
 		result gate.DecisionResult
+		err    error
 		want   bool
 	}{
 		"user_interaction is skipped": {
-			gate.DecisionResult{FallthroughKind: gate.FallthroughKindUserInteraction},
-			false,
+			result: gate.DecisionResult{FallthroughKind: gate.FallthroughKindUserInteraction},
+			want:   false,
 		},
 		"llm fallthrough is recorded": {
-			gate.DecisionResult{FallthroughKind: gate.FallthroughKindLLM},
-			true,
+			result: gate.DecisionResult{FallthroughKind: gate.FallthroughKindLLM},
+			want:   true,
 		},
 		"api_unusable is recorded": {
-			gate.DecisionResult{FallthroughKind: gate.FallthroughKindAPIUnusable},
-			true,
+			result: gate.DecisionResult{FallthroughKind: gate.FallthroughKindAPIUnusable},
+			want:   true,
 		},
 		"bypass is recorded": {
-			gate.DecisionResult{FallthroughKind: gate.FallthroughKindBypass},
-			true,
+			result: gate.DecisionResult{FallthroughKind: gate.FallthroughKindBypass},
+			want:   true,
 		},
 		"dontask is recorded": {
-			gate.DecisionResult{FallthroughKind: gate.FallthroughKindDontAsk},
-			true,
+			result: gate.DecisionResult{FallthroughKind: gate.FallthroughKindDontAsk},
+			want:   true,
 		},
 		"non_anthropic is recorded": {
-			gate.DecisionResult{FallthroughKind: gate.FallthroughKindNonAnthropic},
-			true,
+			result: gate.DecisionResult{FallthroughKind: gate.FallthroughKindNonAnthropic},
+			want:   true,
 		},
 		"no_apikey is recorded": {
-			gate.DecisionResult{FallthroughKind: gate.FallthroughKindNoAPIKey},
-			true,
+			result: gate.DecisionResult{FallthroughKind: gate.FallthroughKindNoAPIKey},
+			want:   true,
 		},
 		"clear allow is recorded": {
-			gate.DecisionResult{HasDecision: true, Decision: gate.PermissionDecision{Behavior: gate.BehaviorAllow}},
-			true,
+			result: gate.DecisionResult{HasDecision: true, Decision: gate.PermissionDecision{Behavior: gate.BehaviorAllow}},
+			want:   true,
 		},
 		"clear deny is recorded": {
-			gate.DecisionResult{HasDecision: true, Decision: gate.PermissionDecision{Behavior: gate.BehaviorDeny, Message: "no"}},
-			true,
+			result: gate.DecisionResult{HasDecision: true, Decision: gate.PermissionDecision{Behavior: gate.BehaviorDeny, Message: "no"}},
+			want:   true,
 		},
 		"forced llm allow is recorded": {
-			gate.DecisionResult{HasDecision: true, FallthroughKind: gate.FallthroughKindLLM, Decision: gate.PermissionDecision{Behavior: gate.BehaviorAllow}},
-			true,
+			result: gate.DecisionResult{HasDecision: true, FallthroughKind: gate.FallthroughKindLLM, Decision: gate.PermissionDecision{Behavior: gate.BehaviorAllow}},
+			want:   true,
+		},
+		"error is recorded even with user_interaction (defensive)": {
+			result: gate.DecisionResult{FallthroughKind: gate.FallthroughKindUserInteraction},
+			err:    errors.New("boom"),
+			want:   true,
+		},
+		"error with empty result is recorded": {
+			err:  errors.New("boom"),
+			want: true,
 		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			if got := shouldRecordMetrics(tc.result); got != tc.want {
+			if got := shouldRecordMetrics(tc.result, tc.err); got != tc.want {
 				t.Errorf("shouldRecordMetrics = %v, want %v", got, tc.want)
 			}
 		})

@@ -165,7 +165,7 @@ func runHook() int {
 	elapsed := time.Since(start)
 
 	// Record metrics (fire-and-forget).
-	if !cfg.IsMetricsDisabled() && shouldRecordMetrics(result) {
+	if !cfg.IsMetricsDisabled() && shouldRecordMetrics(result, err) {
 		entry := buildMetricsEntry(start, elapsed, input, cfg, result, err)
 		metrics.Record(cfg.ResolveMetricsPath(), cfg.GetMetricsMaxSize(), entry)
 	}
@@ -209,8 +209,13 @@ func runHook() int {
 // automation_rate. Every other outcome — including other fallthrough kinds that
 // depend on the user's config / environment (bypass, dontAsk, no_apikey,
 // non_anthropic), API-unusable responses, LLM fallthroughs, and explicit
-// allow/deny/error — carries useful signal and is recorded.
-func shouldRecordMetrics(result gate.DecisionResult) bool {
+// allow/deny — carries useful signal and is recorded. Errors are also always
+// recorded regardless of FallthroughKind so that a future code path that
+// ever pairs an error with user_interaction cannot silently disappear.
+func shouldRecordMetrics(result gate.DecisionResult, err error) bool {
+	if err != nil {
+		return true
+	}
 	return result.FallthroughKind != gate.FallthroughKindUserInteraction
 }
 
