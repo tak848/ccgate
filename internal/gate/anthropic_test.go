@@ -14,15 +14,17 @@ func TestBuildSystemPromptRemovedHardcodedContent(t *testing.T) {
 	cfg := config.Default()
 	cfg.Allow = []string{"Test allow"}
 	cfg.Deny = []string{"Test deny"}
-	prompt := buildSystemPrompt(cfg)
 
-	for _, banned := range []string{
-		"Japanese",
-		"Built-in deny rules",
-		"routine development operation",
-	} {
-		if strings.Contains(prompt, banned) {
-			t.Errorf("system prompt should not contain %q", banned)
+	for _, mode := range []string{"", PermissionModePlan} {
+		prompt := buildSystemPrompt(cfg, mode)
+		for _, banned := range []string{
+			"Japanese",
+			"Built-in deny rules",
+			"routine development operation",
+		} {
+			if strings.Contains(prompt, banned) {
+				t.Errorf("mode=%q: system prompt should not contain %q", mode, banned)
+			}
 		}
 	}
 }
@@ -34,16 +36,17 @@ func TestBuildSystemPromptInjectsConfigRules(t *testing.T) {
 	cfg.Allow = []string{"Custom allow rule"}
 	cfg.Deny = []string{"Custom deny rule"}
 	cfg.Environment = []string{"Custom env"}
-	prompt := buildSystemPrompt(cfg)
 
-	for _, expected := range []string{
-		"Custom allow rule",
-		"Custom deny rule",
-		"Custom env",
-		"Plan mode override",
-	} {
-		if !strings.Contains(prompt, expected) {
-			t.Errorf("system prompt should contain %q", expected)
+	for _, mode := range []string{"", PermissionModePlan} {
+		prompt := buildSystemPrompt(cfg, mode)
+		for _, expected := range []string{
+			"Custom allow rule",
+			"Custom deny rule",
+			"Custom env",
+		} {
+			if !strings.Contains(prompt, expected) {
+				t.Errorf("mode=%q: system prompt should contain %q", mode, expected)
+			}
 		}
 	}
 }
