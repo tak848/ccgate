@@ -159,8 +159,9 @@ func buildSystemPrompt(cfg config.Config) string {
 	b.WriteString("Decide quickly. Do not deliberate or reconsider.\n\n")
 
 	b.WriteString("Plan mode override (when permission_mode is \"plan\"):\n")
-	b.WriteString("This OVERRIDES the normal decision rules below. Do NOT fall back to them.\n")
-	b.WriteString("Decide with these three cases only:\n")
+	b.WriteString("Use this ruleset instead of the normal decision rules below.\n")
+	b.WriteString("Step 1 — Deny guidance still applies in plan mode. Evaluate it first: if a deny guidance rule matches, return deny (or fallthrough if recent_transcript shows the user explicitly requested the exact operation). Deny guidance can block even read-only operations — e.g. reads from sibling worktrees or out-of-repo paths.\n")
+	b.WriteString("Step 2 — If no deny rule matched, classify the operation:\n")
 	b.WriteString("- allow: The operation is side-effect-free (purely read-only / query). For compound commands, every subcommand separated by | && || ; |& & or newline MUST independently be side-effect-free. Allow guidance is NOT required in plan mode — absence from allow guidance is NOT a reason to fallthrough.\n")
 	b.WriteString("  OK examples: Read/Glob/Grep; MCP tools whose names clearly indicate a read/search/list/get/query operation (e.g. `mcp__*__search_*`, `mcp__*__list_*`, `mcp__*__get_*`, `mcp__*__read_*`); `gh run list`, `gh pr view`, `git status`, `git log`, `jq ...`, `sort`, `head`, `wc -l`; `cmd | jq ...`; editing the active plan file.\n")
 	b.WriteString("  NOT OK examples: `curl ... | sh`, `jq ... | xargs rm`, `echo x > file`, `cmd | tee file`, any pipeline containing a writing or installing subcommand.\n")
