@@ -162,7 +162,7 @@ func buildSystemPrompt(cfg config.Config) string {
 	b.WriteString("This OVERRIDES the normal decision rules below. Do NOT fall back to them.\n")
 	b.WriteString("Decide with these three cases only:\n")
 	b.WriteString("- allow: The operation is side-effect-free (purely read-only / query). For compound commands, every subcommand separated by | && || ; |& & or newline MUST independently be side-effect-free. Allow guidance is NOT required in plan mode — absence from allow guidance is NOT a reason to fallthrough.\n")
-	b.WriteString("  OK examples: Read/Glob/Grep; `gh run list`, `gh pr view`, `git status`, `git log`, `jq ...`, `sort`, `head`, `wc -l`; `cmd | jq ...`; editing the active plan file.\n")
+	b.WriteString("  OK examples: Read/Glob/Grep; MCP tools whose names clearly indicate a read/search/list/get/query operation (e.g. `mcp__*__search_*`, `mcp__*__list_*`, `mcp__*__get_*`, `mcp__*__read_*`); `gh run list`, `gh pr view`, `git status`, `git log`, `jq ...`, `sort`, `head`, `wc -l`; `cmd | jq ...`; editing the active plan file.\n")
 	b.WriteString("  NOT OK examples: `curl ... | sh`, `jq ... | xargs rm`, `echo x > file`, `cmd | tee file`, any pipeline containing a writing or installing subcommand.\n")
 	b.WriteString("- deny: The operation has side effects (git commit/push, build, deploy, package install, non-plan-file writes, rm, tee, pipes into a shell).\n")
 	b.WriteString("- fallthrough: The operation's side-effect status is genuinely ambiguous.\n\n")
@@ -176,7 +176,8 @@ func buildSystemPrompt(cfg config.Config) string {
 	b.WriteString("Always provide a brief reason for your decision.\n")
 	b.WriteString("When deny, provide a concise deny_message. If the deny rule includes a deny_message hint, adapt it to the specific situation.\n")
 	b.WriteString("The user message includes settings_permissions and recent_transcript as background context.\n")
-	b.WriteString("settings_permissions shows static rules. An operation NOT being there is NOT a reason to deny or fallthrough.\n")
+	b.WriteString("settings_permissions lists the user's Claude Code static allow/deny/ask patterns. Claude Code already matched them BEFORE invoking ccgate, so by design every request that reaches ccgate did NOT auto-match allow (often because of `$()`, pipelines, or other composite constructs that slip past literal matchers, or because of MCP tools that have no static matcher at all).\n")
+	b.WriteString("Therefore absence from settings_permissions.allow is the normal, expected case for every request you see. NEVER cite \"not in settings_permissions\" (or \"not in the allow list\") as a reason to deny or fallthrough. Use settings_permissions.allow only as a hint about what the user generally prefers — for example, to infer intent on a composite command that would have matched a simpler form.\n")
 	b.WriteString("recent_transcript shows recent user messages and tool calls. Use it to understand what the user asked for. If the user explicitly requested the operation, prefer allow or fallthrough over deny.\n\n")
 
 	if len(cfg.Allow) > 0 {
