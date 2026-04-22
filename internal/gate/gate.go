@@ -95,7 +95,7 @@ func DecidePermission(ctx context.Context, cfg config.Config, input hookctx.Hook
 
 	// Some permission modes should not be overridden by the hook.
 	switch input.PermissionMode {
-	case "plan":
+	case PermissionModePlan:
 		// In plan mode, let the LLM decide for non-interaction tools.
 	case "bypassPermissions":
 		slog.Info("bypass mode: falling through", "tool", input.ToolName)
