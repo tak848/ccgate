@@ -167,6 +167,57 @@ func TestBuildReportDetailsTopFallback(t *testing.T) {
 	}
 }
 
+// user_interaction fallthrough (ExitPlanMode / AskUserQuestion) is written
+// to the raw log for audit but excluded from every aggregate so it cannot
+// pollute automation_rate / Fall / tool totals.
+func TestBuildReportExcludesUserInteractionFromAggregates(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.jsonl")
+	now := time.Now().UTC()
+
+	writeEntries(t, path, []Entry{
+		// Real decisions / LLM fallthrough.
+		{Timestamp: now, ToolName: "Bash", Decision: "allow", ElapsedMS: 100},
+		{Timestamp: now, ToolName: "Bash", Decision: "deny", ElapsedMS: 100},
+		{Timestamp: now, ToolName: "Bash", Decision: "fallthrough", FallthroughKind: "llm", ElapsedMS: 100},
+		// user_interaction: must be excluded from every aggregate.
+		{Timestamp: now, ToolName: "ExitPlanMode", Decision: "fallthrough", FallthroughKind: "user_interaction", ElapsedMS: 0},
+		{Timestamp: now, ToolName: "ExitPlanMode", Decision: "fallthrough", FallthroughKind: "user_interaction", ElapsedMS: 0},
+		{Timestamp: now, ToolName: "AskUserQuestion", Decision: "fallthrough", FallthroughKind: "user_interaction", ElapsedMS: 0},
+	})
+
+	report, _, err := buildReport(path, ReportOptions{Days: 7, DetailsTop: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(report.Daily) != 1 {
+		t.Fatalf("len(Daily) = %d, want 1", len(report.Daily))
+	}
+	ds := report.Daily[0]
+	if ds.Total != 3 {
+		t.Errorf("Total = %d, want 3 (user_interaction must not inflate Total)", ds.Total)
+	}
+	if ds.Allow != 1 || ds.Deny != 1 || ds.Fallthrough != 1 {
+		t.Errorf("Allow/Deny/Fall = %d/%d/%d, want 1/1/1", ds.Allow, ds.Deny, ds.Fallthrough)
+	}
+	// (allow=1 + deny=1) / total=3. If user_interaction leaked in, the
+	// denominator would be 6 and the rate would drop to 1/3.
+	wantRate := 2.0 / 3.0
+	if math.Abs(ds.AutomationRate-wantRate) > 1e-9 {
+		t.Errorf("AutomationRate = %v, want %v", ds.AutomationRate, wantRate)
+	}
+	if math.Abs(report.AutomationRate-wantRate) > 1e-9 {
+		t.Errorf("report.AutomationRate = %v, want %v", report.AutomationRate, wantRate)
+	}
+	for _, ts := range report.Tools {
+		if ts.ToolName == "ExitPlanMode" || ts.ToolName == "AskUserQuestion" {
+			t.Errorf("ToolSummary leaked user_interaction tool: %+v", ts)
+		}
+	}
+}
+
 func TestToolInputTop(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

@@ -166,7 +166,7 @@ ccgate init -p > ccgate.local.jsonnet     # プロジェクトローカルテン
 
 ## メトリクス
 
-判定処理まで到達した呼び出しごとに JSONL レコードを記録します (デフォルトは `$XDG_STATE_HOME/ccgate/metrics.jsonl`、2MB でローテーション)。`ExitPlanMode` と `AskUserQuestion` は ccgate が評価せずにパススルーするため記録対象外です。集計表示は:
+呼び出しごとに JSONL レコードを記録します (デフォルトは `$XDG_STATE_HOME/ccgate/metrics.jsonl`、2MB でローテーション)。`ExitPlanMode` と `AskUserQuestion` のエントリは監査用に生ログには残りますが、ccgate が評価せずにパススルーするため集計 (`automation_rate` / `Fall` / ツール別 Total / 上位セクション) からは除外されます。集計表示は:
 
 ```bash
 ccgate metrics                     # 直近 7 日間、TTY テーブル

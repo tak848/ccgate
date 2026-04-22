@@ -227,6 +227,14 @@ func aggregate(entries []Entry, days int, detailsTop int) FullReport {
 	loc := time.Now().Location()
 	var totalAll, totalAllowDeny int
 	for _, e := range entries {
+		// user_interaction fallthrough (ExitPlanMode / AskUserQuestion) is a
+		// hard-coded tool-name skip where ccgate contributed no decision. The
+		// entry is still kept in the raw log for audit, but excluded from
+		// every aggregate so it cannot pollute automation_rate, the Fall
+		// column, or tool totals.
+		if e.FallthroughKind == gate.FallthroughKindUserInteraction {
+			continue
+		}
 		if minTS.IsZero() || e.Timestamp.Before(minTS) {
 			minTS = e.Timestamp
 		}
