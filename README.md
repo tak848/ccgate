@@ -170,7 +170,7 @@ To change the log path or disable logging:
 
 ## Metrics
 
-Every invocation is recorded as a JSONL entry (`$XDG_STATE_HOME/ccgate/metrics.jsonl` by default, 2 MB rotation). To summarize:
+Every invocation that reaches the decision layer is recorded as a JSONL entry (`$XDG_STATE_HOME/ccgate/metrics.jsonl` by default, 2 MB rotation). `ExitPlanMode` and `AskUserQuestion` are excluded — ccgate passes them through without evaluating, so recording them would only add noise. To summarize:
 
 ```bash
 ccgate metrics                     # last 7 days, TTY table

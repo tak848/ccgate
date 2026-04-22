@@ -165,7 +165,7 @@ func runHook() int {
 	elapsed := time.Since(start)
 
 	// Record metrics (fire-and-forget).
-	if !cfg.IsMetricsDisabled() {
+	if !cfg.IsMetricsDisabled() && shouldRecordMetrics(result) {
 		entry := buildMetricsEntry(start, elapsed, input, cfg, result, err)
 		metrics.Record(cfg.ResolveMetricsPath(), cfg.GetMetricsMaxSize(), entry)
 	}
@@ -200,6 +200,18 @@ func runHook() int {
 		return 1
 	}
 	return 0
+}
+
+// shouldRecordMetrics decides whether a DecisionResult is worth persisting to
+// the metrics log. user_interaction fallthrough (ExitPlanMode / AskUserQuestion)
+// is a hard-coded tool-name skip where ccgate never actually evaluates anything,
+// so recording it would only inflate the Fall column and drag down
+// automation_rate. Every other outcome — including other fallthrough kinds that
+// depend on the user's config / environment (bypass, dontAsk, no_apikey,
+// non_anthropic), API-unusable responses, LLM fallthroughs, and explicit
+// allow/deny/error — carries useful signal and is recorded.
+func shouldRecordMetrics(result gate.DecisionResult) bool {
+	return result.FallthroughKind != gate.FallthroughKindUserInteraction
 }
 
 func buildMetricsEntry(start time.Time, elapsed time.Duration, input hookctx.HookInput, cfg config.Config, result gate.DecisionResult, err error) metrics.Entry {

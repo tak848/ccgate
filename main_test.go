@@ -10,6 +10,64 @@ import (
 	"github.com/tak848/ccgate/internal/hookctx"
 )
 
+func TestShouldRecordMetrics(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		result gate.DecisionResult
+		want   bool
+	}{
+		"user_interaction is skipped": {
+			gate.DecisionResult{FallthroughKind: gate.FallthroughKindUserInteraction},
+			false,
+		},
+		"llm fallthrough is recorded": {
+			gate.DecisionResult{FallthroughKind: gate.FallthroughKindLLM},
+			true,
+		},
+		"api_unusable is recorded": {
+			gate.DecisionResult{FallthroughKind: gate.FallthroughKindAPIUnusable},
+			true,
+		},
+		"bypass is recorded": {
+			gate.DecisionResult{FallthroughKind: gate.FallthroughKindBypass},
+			true,
+		},
+		"dontask is recorded": {
+			gate.DecisionResult{FallthroughKind: gate.FallthroughKindDontAsk},
+			true,
+		},
+		"non_anthropic is recorded": {
+			gate.DecisionResult{FallthroughKind: gate.FallthroughKindNonAnthropic},
+			true,
+		},
+		"no_apikey is recorded": {
+			gate.DecisionResult{FallthroughKind: gate.FallthroughKindNoAPIKey},
+			true,
+		},
+		"clear allow is recorded": {
+			gate.DecisionResult{HasDecision: true, Decision: gate.PermissionDecision{Behavior: gate.BehaviorAllow}},
+			true,
+		},
+		"clear deny is recorded": {
+			gate.DecisionResult{HasDecision: true, Decision: gate.PermissionDecision{Behavior: gate.BehaviorDeny, Message: "no"}},
+			true,
+		},
+		"forced llm allow is recorded": {
+			gate.DecisionResult{HasDecision: true, FallthroughKind: gate.FallthroughKindLLM, Decision: gate.PermissionDecision{Behavior: gate.BehaviorAllow}},
+			true,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if got := shouldRecordMetrics(tc.result); got != tc.want {
+				t.Errorf("shouldRecordMetrics = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestBuildMetricsEntry(t *testing.T) {
 	t.Parallel()
 
