@@ -1,7 +1,9 @@
 package hookctx
 
 import (
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 )
 
@@ -177,17 +179,26 @@ func TestExtractBashPaths(t *testing.T) {
 func TestExpandPaths(t *testing.T) {
 	t.Parallel()
 
+	// "absolute path" depends on OS semantics: filepath.IsAbs returns false
+	// for "/usr/bin/foo" on Windows, so we feed an OS-native absolute path
+	// instead (mirrors Go stdlib's TestClean / TestJoin approach of swapping
+	// winXxxtests for OS-specific cases).
+	absIn, absWant := "/usr/bin/foo", "/usr/bin/foo"
+	if runtime.GOOS == "windows" {
+		absIn, absWant = `C:\usr\bin\foo`, `C:\usr\bin\foo`
+	}
+
 	tests := []struct {
 		name   string
 		cwd    string
 		values []string
-		want   []string
+		want   []string // forward-slash form; converted to OS-native via filepath.FromSlash below
 	}{
 		{
 			name:   "absolute path",
 			cwd:    "/cwd",
-			values: []string{"/usr/bin/foo"},
-			want:   []string{"/usr/bin/foo"},
+			values: []string{absIn},
+			want:   []string{absWant},
 		},
 		{
 			name:   "relative path",
@@ -212,8 +223,12 @@ func TestExpandPaths(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			got := expandPaths(tt.cwd, tt.values...)
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Fatalf("expandPaths(%q, %v) = %v, want %v", tt.cwd, tt.values, got, tt.want)
+			want := make([]string, len(tt.want))
+			for i, w := range tt.want {
+				want[i] = filepath.FromSlash(w)
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("expandPaths(%q, %v) = %v, want %v", tt.cwd, tt.values, got, want)
 			}
 		})
 	}

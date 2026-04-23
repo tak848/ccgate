@@ -4,8 +4,26 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
+	"runtime"
 	"testing"
 )
+
+// setHomeEnv sets the env var that os.UserHomeDir consults on the current OS.
+// Mirrors homeEnvName in the Go stdlib (cmd/go/internal/vcweb/script.go) so
+// tests that need to redirect the user home dir work identically on Windows
+// (USERPROFILE), plan9 (home), and everything else (HOME).
+func setHomeEnv(t *testing.T, dir string) {
+	t.Helper()
+	switch runtime.GOOS {
+	case "windows":
+		t.Setenv("USERPROFILE", dir)
+	case "plan9":
+		t.Setenv("home", dir)
+	default:
+		t.Setenv("HOME", dir)
+	}
+}
 
 func TestDefaultConfig(t *testing.T) {
 	t.Parallel()
@@ -174,15 +192,18 @@ func TestMergeConfigFileOverridesProvider(t *testing.T) {
 func TestProjectLocalConfigPaths(t *testing.T) {
 	t.Parallel()
 
-	got := projectLocalConfigPaths("/tmp/repo/subdir")
-	if len(got) != 2 {
-		t.Fatalf("unexpected path count: %d", len(got))
+	const cwd = "/tmp/repo/subdir"
+	got := projectLocalConfigPaths(cwd)
+
+	// Contract: two candidates, cwd-direct first (higher priority), cwd/.claude/ second.
+	// Path separators are OS-native, so expected values are composed with filepath.Join
+	// (mirrors Go stdlib's cross-platform path test pattern in path/filepath/path_test.go).
+	want := []string{
+		filepath.Join(cwd, LocalConfigName),
+		filepath.Join(cwd, ".claude", LocalConfigName),
 	}
-	if got[0] != "/tmp/repo/subdir/ccgate.local.jsonnet" {
-		t.Fatalf("unexpected first path: %s", got[0])
-	}
-	if got[1] != "/tmp/repo/subdir/.claude/ccgate.local.jsonnet" {
-		t.Fatalf("unexpected second path: %s", got[1])
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("projectLocalConfigPaths(%q) = %v, want %v", cwd, got, want)
 	}
 }
 
@@ -259,7 +280,7 @@ func TestLoadFallsBackToDefaultsWhenNoGlobalConfig(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, ".claude"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("HOME", dir)
+	setHomeEnv(t, dir)
 
 	lr, err := Load("")
 	if err != nil {
@@ -287,7 +308,7 @@ func TestLoadUsesGlobalConfigWhenPresent(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(claudeDir, BaseConfigName), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("HOME", dir)
+	setHomeEnv(t, dir)
 
 	lr, err := Load("")
 	if err != nil {
