@@ -9,6 +9,7 @@ import (
 
 	"github.com/tak848/ccgate/internal/config"
 	"github.com/tak848/ccgate/internal/hookctx"
+	"github.com/tak848/ccgate/internal/llm"
 )
 
 const (
@@ -18,23 +19,17 @@ const (
 	DefaultDenyMessage  = "Automatically denied as potentially dangerous."
 )
 
-// FallthroughKind* values are stored verbatim in metrics entries.
-// Only FallthroughKindLLM is promotable via permission rules — the other
-// kinds indicate runtime-mode or configuration conditions.
-//
-// FallthroughKindAPIUnusable means the API truncated/refused the response
-// or returned no parseable text. It is intentionally NOT subject to
-// fallthrough_strategy because the LLM never actually expressed an
-// uncertain decision — auto-allowing on a refused/truncated response
-// would silently weaken security.
+// FallthroughKind* aliases re-export the canonical constants from
+// internal/llm so existing call sites and tests continue to compile.
+// New code should import internal/llm directly.
 const (
-	FallthroughKindUserInteraction = "user_interaction"
-	FallthroughKindBypass          = "bypass"
-	FallthroughKindDontAsk         = "dontask"
-	FallthroughKindNonAnthropic    = "non_anthropic"
-	FallthroughKindNoAPIKey        = "no_apikey"
-	FallthroughKindLLM             = "llm"
-	FallthroughKindAPIUnusable     = "api_unusable"
+	FallthroughKindUserInteraction = llm.FallthroughKindUserInteraction
+	FallthroughKindBypass          = llm.FallthroughKindBypass
+	FallthroughKindDontAsk         = llm.FallthroughKindDontAsk
+	FallthroughKindNonAnthropic    = llm.FallthroughKindNonAnthropic
+	FallthroughKindNoAPIKey        = llm.FallthroughKindNoAPIKey
+	FallthroughKindLLM             = llm.FallthroughKindLLM
+	FallthroughKindAPIUnusable     = llm.FallthroughKindAPIUnusable
 )
 
 type PermissionDecision struct {

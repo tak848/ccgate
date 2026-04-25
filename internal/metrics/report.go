@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tak848/ccgate/internal/gate"
+	"github.com/tak848/ccgate/internal/llm"
 )
 
 // DefaultReportDays is the default number of days for metrics reports.
@@ -33,7 +33,7 @@ const maxDisplayToolInput = 200
 // ToolInput is entirely empty. JSON output keeps the empty object instead.
 const noInputPlaceholder = "(no input)"
 
-// Only fallthroughs with gate.FallthroughKindLLM are promotable via
+// Only fallthroughs with llm.FallthroughKindLLM are promotable via
 // permission rule additions; the other kinds indicate runtime-mode or
 // configuration conditions and are excluded from the top section.
 
@@ -232,7 +232,7 @@ func aggregate(entries []Entry, days int, detailsTop int) FullReport {
 		// entry is still kept in the raw log for audit, but excluded from
 		// every aggregate so it cannot pollute automation_rate, the Fall
 		// column, or tool totals.
-		if e.FallthroughKind == gate.FallthroughKindUserInteraction {
+		if e.FallthroughKind == llm.FallthroughKindUserInteraction {
 			continue
 		}
 		if minTS.IsZero() || e.Timestamp.Before(minTS) {
@@ -305,7 +305,7 @@ func aggregate(entries []Entry, days int, detailsTop int) FullReport {
 		// (Decision="allow"|"deny", ft_kind="llm", Forced=true). Both share
 		// the same root cause and the same remediation — adding a permission
 		// rule would let ccgate skip the LLM round-trip entirely.
-		if e.FallthroughKind == gate.FallthroughKindLLM {
+		if e.FallthroughKind == llm.FallthroughKindLLM {
 			bumpToolInputSummary(fallthroughMap, e)
 		}
 		// Top deny commands: only "rule-driven" denies (LLM was confident
