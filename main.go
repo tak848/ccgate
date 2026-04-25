@@ -70,7 +70,7 @@ func _main() int {
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "warning: failed to get working directory: %v\n", err)
 			}
-			lr, err := config.Load(cwd)
+			lr, err := config.Load(config.ClaudeLoadOptions(), cwd)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
 				return 1
@@ -139,7 +139,7 @@ func runHook() int {
 		return 1
 	}
 
-	lr, err := config.Load(input.Cwd)
+	lr, err := config.Load(config.ClaudeLoadOptions(), input.Cwd)
 	if err != nil {
 		slog.Error("failed to load config", "error", err)
 		return 1

@@ -193,14 +193,20 @@ func TestProjectLocalConfigPaths(t *testing.T) {
 	t.Parallel()
 
 	const cwd = "/tmp/repo/subdir"
-	got := projectLocalConfigPaths(cwd)
+	relativePaths := []string{
+		filepath.Join(".claude", LocalConfigName),
+		filepath.Join(".codex", LocalConfigName),
+	}
+	got := projectLocalConfigPaths(cwd, relativePaths)
 
-	// Contract: two candidates, cwd-direct first (higher priority), cwd/.claude/ second.
-	// Path separators are OS-native, so expected values are composed with filepath.Join
-	// (mirrors Go stdlib's cross-platform path test pattern in path/filepath/path_test.go).
+	// Contract: each relative path is anchored at the repo root (or
+	// cwd when not in a git repo) and returned in the order given.
+	// Path separators are OS-native; expected values are composed
+	// with filepath.Join (mirrors Go stdlib's cross-platform pattern
+	// in path/filepath/path_test.go).
 	want := []string{
-		filepath.Join(cwd, LocalConfigName),
 		filepath.Join(cwd, ".claude", LocalConfigName),
+		filepath.Join(cwd, ".codex", LocalConfigName),
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("projectLocalConfigPaths(%q) = %v, want %v", cwd, got, want)
@@ -210,9 +216,11 @@ func TestProjectLocalConfigPaths(t *testing.T) {
 func TestProjectLocalConfigPathsEmpty(t *testing.T) {
 	t.Parallel()
 
-	got := projectLocalConfigPaths("")
-	if got != nil {
-		t.Fatalf("expected nil, got %v", got)
+	if got := projectLocalConfigPaths("", []string{".claude/" + LocalConfigName}); got != nil {
+		t.Fatalf("empty cwd: expected nil, got %v", got)
+	}
+	if got := projectLocalConfigPaths("/tmp/repo", nil); got != nil {
+		t.Fatalf("empty relativePaths: expected nil, got %v", got)
 	}
 }
 
@@ -220,16 +228,21 @@ func TestSafeProjectLocalConfigPathsSkipsTrackedFile(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, LocalConfigName), []byte("{}"), 0o644); err != nil {
+	claudeDir := filepath.Join(dir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	relPath := filepath.Join(".claude", LocalConfigName)
+	if err := os.WriteFile(filepath.Join(claudeDir, LocalConfigName), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	gitRun(t, dir, "init")
 	gitRun(t, dir, "config", "user.email", "test@test.com")
 	gitRun(t, dir, "config", "user.name", "test")
-	gitRun(t, dir, "add", "-f", LocalConfigName)
+	gitRun(t, dir, "add", "-f", relPath)
 
-	got := safeProjectLocalConfigPaths(dir)
+	got := safeProjectLocalConfigPaths(dir, []string{relPath})
 	if len(got) != 0 {
 		t.Fatalf("expected tracked file to be skipped, got %v", got)
 	}
@@ -282,7 +295,7 @@ func TestLoadFallsBackToDefaultsWhenNoGlobalConfig(t *testing.T) {
 	}
 	setHomeEnv(t, dir)
 
-	lr, err := Load("")
+	lr, err := Load(ClaudeLoadOptions(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +323,7 @@ func TestLoadUsesGlobalConfigWhenPresent(t *testing.T) {
 	}
 	setHomeEnv(t, dir)
 
-	lr, err := Load("")
+	lr, err := Load(ClaudeLoadOptions(), "")
 	if err != nil {
 		t.Fatal(err)
 	}

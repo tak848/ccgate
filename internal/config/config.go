@@ -182,32 +182,59 @@ type LoadResult struct {
 	Source ConfigSource
 }
 
-// Load reads the base config from ~/.claude/ and merges project-local overrides.
-// If no global config exists, embedded defaults are used as fallback.
-func Load(cwd string) (LoadResult, error) {
+// LoadOptions describes target-specific config search paths and the
+// embedded defaults snippet. Callers (cmd/claude, cmd/codex) supply
+// their own values so Load itself stays target-agnostic.
+type LoadOptions struct {
+	// GlobalConfigPath is the absolute path of the per-user config
+	// (e.g. ~/.claude/ccgate.jsonnet, ~/.codex/ccgate.jsonnet).
+	GlobalConfigPath string
+	// ProjectLocalRelativePaths lists project-local config locations
+	// relative to the repo root (or cwd when not in a git repo).
+	// Each candidate is read in order and **appended** on top of the
+	// global / embedded base. Tracked files are skipped via gitutil.
+	ProjectLocalRelativePaths []string
+	// EmbedDefaults is the embedded jsonnet snippet applied when the
+	// global config is absent. Targets ship their own defaults via
+	// //go:embed.
+	EmbedDefaults string
+}
+
+// ClaudeLoadOptions returns the LoadOptions for the Claude Code hook.
+// Kept here as a transitional helper so existing callers (main.go,
+// tests) keep working until cmd/claude takes over orchestration. New
+// callers should construct their own LoadOptions.
+func ClaudeLoadOptions() LoadOptions {
+	home, _ := os.UserHomeDir()
+	return LoadOptions{
+		GlobalConfigPath:          filepath.Join(home, ".claude", BaseConfigName),
+		ProjectLocalRelativePaths: []string{filepath.Join(".claude", LocalConfigName)},
+		EmbedDefaults:             DefaultsJsonnet,
+	}
+}
+
+// Load reads the base config from opts.GlobalConfigPath and merges
+// project-local overrides found at opts.ProjectLocalRelativePaths
+// (resolved against the git repo root, or cwd when not in a repo).
+// If no global config exists, opts.EmbedDefaults is used as fallback.
+func Load(opts LoadOptions, cwd string) (LoadResult, error) {
 	cfg := Default()
 
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return LoadResult{Config: cfg}, fmt.Errorf("user home dir: %w", err)
-	}
-
 	source := SourceEmbeddedDefaults
-	basePath := filepath.Join(home, ".claude", BaseConfigName)
-	if err := mergeConfigFile(basePath, &cfg); err != nil {
+	if err := mergeConfigFile(opts.GlobalConfigPath, &cfg); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			// No global config: use embedded defaults as fallback.
-			if err := mergeConfigString(DefaultsJsonnet, &cfg); err != nil {
+			if err := mergeConfigString(opts.EmbedDefaults, &cfg); err != nil {
 				return LoadResult{Config: cfg}, fmt.Errorf("embedded defaults: %w", err)
 			}
 		} else {
-			return LoadResult{Config: cfg}, fmt.Errorf("base config %s: %w", basePath, err)
+			return LoadResult{Config: cfg}, fmt.Errorf("base config %s: %w", opts.GlobalConfigPath, err)
 		}
 	} else {
 		source = SourceGlobalConfig
 	}
 
-	for _, path := range safeProjectLocalConfigPaths(cwd) {
+	for _, path := range safeProjectLocalConfigPaths(cwd, opts.ProjectLocalRelativePaths) {
 		if err := mergeConfigFile(path, &cfg); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return LoadResult{Config: cfg}, fmt.Errorf("local config %s: %w", path, err)
 		}
@@ -220,8 +247,8 @@ func Load(cwd string) (LoadResult, error) {
 	return LoadResult{Config: cfg, Source: source}, nil
 }
 
-func projectLocalConfigPaths(cwd string) []string {
-	if cwd == "" {
+func projectLocalConfigPaths(cwd string, relativePaths []string) []string {
+	if cwd == "" || len(relativePaths) == 0 {
 		return nil
 	}
 
@@ -230,20 +257,21 @@ func projectLocalConfigPaths(cwd string) []string {
 		root = repoRoot
 	}
 
-	return []string{
-		filepath.Join(root, LocalConfigName),
-		filepath.Join(root, ".claude", LocalConfigName),
+	out := make([]string, 0, len(relativePaths))
+	for _, rel := range relativePaths {
+		out = append(out, filepath.Join(root, rel))
 	}
+	return out
 }
 
-func safeProjectLocalConfigPaths(cwd string) []string {
+func safeProjectLocalConfigPaths(cwd string, relativePaths []string) []string {
 	root := cwd
 	if repoRoot, err := gitutil.RepoRoot(cwd); err == nil {
 		root = repoRoot
 	}
 
 	var safe []string
-	for _, path := range projectLocalConfigPaths(cwd) {
+	for _, path := range projectLocalConfigPaths(cwd, relativePaths) {
 		if _, err := os.Stat(path); err != nil {
 			continue
 		}
