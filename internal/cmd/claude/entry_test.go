@@ -1,4 +1,4 @@
-package main
+package claude
 
 import (
 	"errors"
@@ -8,6 +8,7 @@ import (
 	"github.com/tak848/ccgate/internal/config"
 	"github.com/tak848/ccgate/internal/gate"
 	"github.com/tak848/ccgate/internal/hookctx"
+	"github.com/tak848/ccgate/internal/llm"
 )
 
 func TestBuildMetricsEntry(t *testing.T) {
@@ -51,39 +52,39 @@ func TestBuildMetricsEntry(t *testing.T) {
 			result: gate.DecisionResult{
 				HasDecision:     true,
 				Decision:        gate.PermissionDecision{Behavior: gate.BehaviorDeny, Message: "Auto-denied for safety ..."},
-				FallthroughKind: gate.FallthroughKindLLM,
+				FallthroughKind: llm.FallthroughKindLLM,
 			},
 			wantDecision:        gate.BehaviorDeny,
 			wantDenyMessage:     "Auto-denied for safety ...",
-			wantFallthroughKind: gate.FallthroughKindLLM,
+			wantFallthroughKind: llm.FallthroughKindLLM,
 			wantForced:          true,
 		},
 		"forced allow: ft_kind=llm + forced=true + deny_msg empty": {
 			result: gate.DecisionResult{
 				HasDecision:     true,
 				Decision:        gate.PermissionDecision{Behavior: gate.BehaviorAllow, Message: "Auto-approved ..."},
-				FallthroughKind: gate.FallthroughKindLLM,
+				FallthroughKind: llm.FallthroughKindLLM,
 			},
 			wantDecision:        gate.BehaviorAllow,
 			wantDenyMessage:     "",
-			wantFallthroughKind: gate.FallthroughKindLLM,
+			wantFallthroughKind: llm.FallthroughKindLLM,
 			wantForced:          true,
 		},
 		"natural llm fallthrough": {
 			result: gate.DecisionResult{
 				HasDecision:     false,
-				FallthroughKind: gate.FallthroughKindLLM,
+				FallthroughKind: llm.FallthroughKindLLM,
 			},
 			wantDecision:        "fallthrough",
-			wantFallthroughKind: gate.FallthroughKindLLM,
+			wantFallthroughKind: llm.FallthroughKindLLM,
 		},
 		"api unusable fallthrough": {
 			result: gate.DecisionResult{
 				HasDecision:     false,
-				FallthroughKind: gate.FallthroughKindAPIUnusable,
+				FallthroughKind: llm.FallthroughKindAPIUnusable,
 			},
 			wantDecision:        "fallthrough",
-			wantFallthroughKind: gate.FallthroughKindAPIUnusable,
+			wantFallthroughKind: llm.FallthroughKindAPIUnusable,
 		},
 		"error": {
 			err:          errors.New("boom"),
