@@ -25,6 +25,8 @@ ccgate
 
 ### mise (推奨)
 
+mise `2026.4.20` 以降が必要です (mise はビルド時に aqua registry を埋め込み、ccgate は registry `v4.498.0` で初登録された。mise 側ではこの release で追従)。古い mise だと `registry not available: no aqua-registry found for tak848/ccgate` で失敗するので、まず `mise self-update` を実行してください。
+
 ```bash
 mise use -g aqua:tak848/ccgate
 ```
@@ -39,7 +41,7 @@ mise exec aqua:tak848/ccgate -- ccgate --version
 
 ### aqua
 
-[aqua](https://aquaproj.github.io/) 標準 registry 経由。aqua 管理下のプロジェクトで (`aqua.yaml` がない場合は `aqua init` を先に走らせる):
+[aqua](https://aquaproj.github.io/) 標準 registry 経由 (registry `v4.498.0` 以降が必要 — ccgate が初めて登録された version)。aqua 管理下のプロジェクトで (`aqua.yaml` がない場合は `aqua init` を先に走らせる):
 
 ```bash
 aqua g -i tak848/ccgate

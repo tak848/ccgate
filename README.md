@@ -29,6 +29,8 @@ ccgate
 
 ### mise (recommended)
 
+Requires mise `2026.4.20` or later (mise embeds the aqua registry at build time, and ccgate first appears in registry `v4.498.0`, which mise picked up in that release). Older versions fail with `registry not available: no aqua-registry found for tak848/ccgate`; run `mise self-update` first.
+
 ```bash
 mise use -g aqua:tak848/ccgate
 ```
@@ -43,7 +45,7 @@ If you want to keep this no-install style for the Claude Code hook itself, set t
 
 ### aqua
 
-Via the [aqua](https://aquaproj.github.io/) standard registry. In an aqua-managed project (run `aqua init` first if you don't have an `aqua.yaml` yet):
+Via the [aqua](https://aquaproj.github.io/) standard registry (requires registry `v4.498.0` or later — ccgate's first registered version). In an aqua-managed project (run `aqua init` first if you don't have an `aqua.yaml` yet):
 
 ```bash
 aqua g -i tak848/ccgate
