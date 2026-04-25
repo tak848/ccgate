@@ -14,6 +14,7 @@ import (
 
 	"github.com/tak848/ccgate/internal/config"
 	"github.com/tak848/ccgate/internal/hookctx"
+	"github.com/tak848/ccgate/internal/prompt"
 )
 
 const (
@@ -157,57 +158,24 @@ func callAnthropic(parent context.Context, cfg config.Config, input hookctx.Hook
 // empty, future additions) route through the non-plan ruleset.
 const PermissionModePlan = "plan"
 
+// claudeTargetSection is the Claude-Code-specific guidance about how
+// to read settings_permissions and recent_transcript. Once cmd/claude
+// owns its own prompt builder this lives there; for now it stays in
+// gate/ so the existing orchestrator keeps working unchanged.
+const claudeTargetSection = "The user message includes settings_permissions and recent_transcript as background context.\n" +
+	"settings_permissions lists the user's Claude Code static allow/deny/ask patterns. Claude Code already matched them BEFORE invoking ccgate, so by design every request that reaches ccgate did NOT auto-match allow (often composite constructs like `$()` or pipelines that slip past literal matchers, or MCP tools without a static matcher). Absence from settings_permissions.allow is therefore the normal, expected case — use it only as a hint about user preferences, never as a whitelist requirement.\n" +
+	"recent_transcript shows recent user messages and tool calls. Use it to understand what the user asked for. If the user explicitly requested the operation, prefer allow or fallthrough over deny.\n"
+
 func buildSystemPrompt(cfg config.Config, permissionMode string) string {
-	var b strings.Builder
-	b.WriteString("You are ccgate, a PermissionRequest hook classifier for Claude Code.\n")
-	b.WriteString("Return one of: allow, deny, fallthrough.\n")
-	b.WriteString("Decide quickly. Do not deliberate or reconsider.\n\n")
-
-	if permissionMode == PermissionModePlan {
-		writePlanModeRules(&b)
-	} else {
-		writeNormalModeRules(&b)
-	}
-
-	b.WriteString("Always provide a brief reason for your decision.\n")
-	b.WriteString("When deny, provide a concise deny_message. If the deny rule includes a deny_message hint, adapt it to the specific situation.\n")
-	b.WriteString("The user message includes settings_permissions and recent_transcript as background context.\n")
-	b.WriteString("settings_permissions lists the user's Claude Code static allow/deny/ask patterns. Claude Code already matched them BEFORE invoking ccgate, so by design every request that reaches ccgate did NOT auto-match allow (often composite constructs like `$()` or pipelines that slip past literal matchers, or MCP tools without a static matcher). Absence from settings_permissions.allow is therefore the normal, expected case — use it only as a hint about user preferences, never as a whitelist requirement.\n")
-	b.WriteString("recent_transcript shows recent user messages and tool calls. Use it to understand what the user asked for. If the user explicitly requested the operation, prefer allow or fallthrough over deny.\n\n")
-
-	if len(cfg.Allow) > 0 {
-		b.WriteString("Allow guidance:\n- ")
-		b.WriteString(strings.Join(cfg.Allow, "\n- "))
-		b.WriteString("\n\n")
-	}
-	if len(cfg.Deny) > 0 {
-		b.WriteString("Deny guidance (mandatory):\n- ")
-		b.WriteString(strings.Join(cfg.Deny, "\n- "))
-		b.WriteString("\n\n")
-	}
-	if len(cfg.Environment) > 0 {
-		b.WriteString("Environment:\n- ")
-		b.WriteString(strings.Join(cfg.Environment, "\n- "))
-	}
-
-	return strings.TrimSpace(b.String())
-}
-
-func writePlanModeRules(b *strings.Builder) {
-	b.WriteString("Decision rules (plan mode):\n")
-	b.WriteString("Deny guidance below still applies: if a deny guidance rule matches, return deny (or fallthrough when recent_transcript shows the user explicitly requested the exact operation). Deny guidance can block read-only operations too.\n")
-	b.WriteString("Otherwise classify:\n")
-	b.WriteString("- allow: The operation is (a) side-effect-free (purely read-only / query), OR (b) an edit to the active plan file that Claude Code's plan-mode workflow designated. For compound commands (`|`, `&&`, `||`, `;`, `|&`, `&`, newline), every subcommand MUST independently satisfy (a) or (b). Allow guidance does NOT override (a)/(b) in plan mode, and absence from allow guidance is NOT a reason to fallthrough.\n")
-	b.WriteString("- deny: The operation has any side effect on project / production / shared state (writes, package install, build, deploy, git commit/push, piping into a shell, etc.).\n")
-	b.WriteString("- fallthrough: Side-effect status is genuinely ambiguous.\n\n")
-}
-
-func writeNormalModeRules(b *strings.Builder) {
-	b.WriteString("Decision rules:\n")
-	b.WriteString("- deny: When a deny guidance rule matches. EXCEPT: if recent_transcript shows the user explicitly requested the exact operation, use fallthrough instead of deny to let the user confirm.\n")
-	b.WriteString("- allow: When the operation matches allow guidance and no deny rule matches.\n")
-	b.WriteString("- fallthrough: When genuinely uncertain, OR when a deny rule matches but the user explicitly requested the operation.\n")
-	b.WriteString("Deny rules always take priority over allow rules. Explicit user requests can only escalate deny to fallthrough, never to allow.\n\n")
+	p := prompt.Build(prompt.Args{
+		TargetName:    "Claude Code",
+		PlanMode:      permissionMode == PermissionModePlan,
+		TargetSection: claudeTargetSection,
+		Allow:         cfg.Allow,
+		Deny:          cfg.Deny,
+		Environment:   cfg.Environment,
+	})
+	return p.System
 }
 
 func permissionOutputSchema() (map[string]any, error) {
