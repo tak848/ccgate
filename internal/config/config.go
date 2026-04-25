@@ -14,6 +14,7 @@ import (
 	jsonnet "github.com/google/go-jsonnet"
 
 	"github.com/tak848/ccgate/internal/gitutil"
+	"github.com/tak848/ccgate/internal/llm"
 )
 
 //go:embed defaults.jsonnet
@@ -32,14 +33,12 @@ const (
 	LocalConfigName       = "ccgate.local.jsonnet"
 )
 
-// FallthroughStrategy values control what ccgate does when the LLM returns
-// "fallthrough" (or an empty/unexpected behavior). Only the LLM kind is
-// affected — runtime-mode fallthroughs (bypass, dontAsk, no_apikey, etc.)
-// always defer to Claude Code's prompt regardless of this setting.
+// FallthroughStrategy* aliases re-export the canonical values from
+// internal/llm so existing call sites continue to compile.
 const (
-	FallthroughStrategyAsk   = "ask"
-	FallthroughStrategyAllow = "allow"
-	FallthroughStrategyDeny  = "deny"
+	FallthroughStrategyAsk   = llm.FallthroughStrategyAsk
+	FallthroughStrategyAllow = llm.FallthroughStrategyAllow
+	FallthroughStrategyDeny  = llm.FallthroughStrategyDeny
 )
 
 type Config struct {

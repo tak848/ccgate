@@ -12,6 +12,11 @@
 // would silently weaken security.
 package llm
 
+import (
+	"strconv"
+	"strings"
+)
+
 const (
 	FallthroughKindUserInteraction = "user_interaction"
 	FallthroughKindBypass          = "bypass"
@@ -21,3 +26,69 @@ const (
 	FallthroughKindLLM             = "llm"
 	FallthroughKindAPIUnusable     = "api_unusable"
 )
+
+// FallthroughStrategy values control what ccgate does when the LLM
+// returns "fallthrough" (or an empty/unexpected behavior). Only the
+// LLM kind is affected — runtime-mode fallthroughs (bypass, dontAsk,
+// no_apikey, etc.) always defer to the upstream tool's prompt
+// regardless of this setting.
+const (
+	FallthroughStrategyAsk   = "ask"
+	FallthroughStrategyAllow = "allow"
+	FallthroughStrategyDeny  = "deny"
+)
+
+// ApplyStrategy converts an LLM-uncertainty fallthrough into a forced
+// allow/deny based on `strategy`. Returns ok=false when the strategy
+// is "ask" (or unrecognized), preserving the original fallthrough
+// behavior.
+//
+// On the message field: target hooks (Claude Code, Codex CLI) only
+// deliver decision.message to the AI when behavior is "deny"; the
+// allow-side message is silently ignored. We still populate it so
+// that (a) it shows up in our own logs / metrics for auditing and
+// (b) it works as a forward-compatible hint if upstreams ever start
+// delivering allow-side messages.
+func ApplyStrategy(strategy, llmReason string) (Decision, bool) {
+	switch strategy {
+	case FallthroughStrategyAllow:
+		return Decision{
+			Behavior: BehaviorAllow,
+			Message:  buildForcedMessage(BehaviorAllow, llmReason),
+		}, true
+	case FallthroughStrategyDeny:
+		return Decision{
+			Behavior: BehaviorDeny,
+			Message:  buildForcedMessage(BehaviorDeny, llmReason),
+		}, true
+	default:
+		return Decision{}, false
+	}
+}
+
+// buildForcedMessage explains to the upstream AI that the hook
+// auto-decided what would normally have prompted the user. The
+// wording covers: who decided (an LLM-based permission hook), what
+// the hook actually returned (fallthrough), why that became a fixed
+// decision (to keep unattended automation running), and — for deny —
+// that the AI must not ask the user or work around the restriction.
+func buildForcedMessage(behavior, llmReason string) string {
+	reason := strings.TrimSpace(llmReason)
+	var head string
+	if reason == "" {
+		head = "LLM-based permission hook returned fallthrough."
+	} else {
+		// strconv.Quote escapes embedded quotes/newlines so the
+		// message stays unambiguous regardless of what the LLM
+		// emitted.
+		head = "LLM-based permission hook returned fallthrough; LLM reason: " + strconv.Quote(reason) + "."
+	}
+
+	switch behavior {
+	case BehaviorAllow:
+		return head + " Auto-approved to keep unattended automation running — proceed with care."
+	case BehaviorDeny:
+		return head + " Auto-denied for safety to keep unattended automation running — do not ask the user, and do not attempt to bypass this decision via alternative commands or workarounds."
+	}
+	return head
+}

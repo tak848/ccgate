@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/tak848/ccgate/internal/config"
@@ -187,57 +186,13 @@ func decideFromLLMResult(cfg config.Config, callResult LLMCallResult) DecisionRe
 }
 
 // applyForcedStrategy converts an LLM fallthrough into a forced allow/deny
-// based on cfg.FallthroughStrategy. Returns ok=false when the strategy is
-// "ask" (or unset), preserving the original fallthrough behavior.
-//
-// On the message field: Claude Code's PermissionRequest spec only delivers
-// decision.message to Claude when behavior is "deny" (allow-side message is
-// silently ignored as of 2026-04-20, see
-// https://code.claude.com/docs/en/hooks). We still populate the allow
-// message so that (a) it shows up in our own logs / metrics for auditing
-// and (b) it works as a forward-compatible hint if Claude Code ever starts
-// delivering allow-side messages.
+// based on cfg.FallthroughStrategy via llm.ApplyStrategy.
 func applyForcedStrategy(cfg config.Config, llmReason string) (PermissionDecision, bool) {
-	switch cfg.GetFallthroughStrategy() {
-	case config.FallthroughStrategyAllow:
-		return PermissionDecision{
-			Behavior: BehaviorAllow,
-			Message:  buildForcedMessage(BehaviorAllow, llmReason),
-		}, true
-	case config.FallthroughStrategyDeny:
-		return PermissionDecision{
-			Behavior: BehaviorDeny,
-			Message:  buildForcedMessage(BehaviorDeny, llmReason),
-		}, true
-	default:
+	d, ok := llm.ApplyStrategy(cfg.GetFallthroughStrategy(), llmReason)
+	if !ok {
 		return PermissionDecision{}, false
 	}
-}
-
-// buildForcedMessage explains to Claude that the hook auto-decided what
-// would normally have prompted the user. The wording covers: who decided
-// (an LLM-based permission hook), what the hook actually returned
-// (fallthrough), why that became a fixed decision (to keep unattended
-// automation running), and — for deny — that Claude must not ask the user
-// or work around the restriction.
-func buildForcedMessage(behavior, llmReason string) string {
-	reason := strings.TrimSpace(llmReason)
-	var head string
-	if reason == "" {
-		head = "LLM-based permission hook returned fallthrough."
-	} else {
-		// strconv.Quote escapes embedded quotes/newlines so the message
-		// stays unambiguous regardless of what the LLM emitted.
-		head = "LLM-based permission hook returned fallthrough; LLM reason: " + strconv.Quote(reason) + "."
-	}
-
-	switch behavior {
-	case BehaviorAllow:
-		return head + " Auto-approved to keep unattended automation running — proceed with care."
-	case BehaviorDeny:
-		return head + " Auto-denied for safety to keep unattended automation running — do not ask the user, and do not attempt to bypass this decision via alternative commands or workarounds."
-	}
-	return head
+	return PermissionDecision{Behavior: d.Behavior, Message: d.Message}, true
 }
 
 func resolveAPIKey() (string, bool) {
