@@ -30,8 +30,27 @@ ccgate
 ### mise (recommended)
 
 ```bash
-mise use -g go:github.com/tak848/ccgate
+mise use -g aqua:tak848/ccgate
 ```
+
+To try ccgate without installing it globally (similar to `npx` / `uvx`):
+
+```bash
+mise exec aqua:tak848/ccgate -- ccgate --version
+```
+
+If you want to keep this no-install style for the Claude Code hook itself, set the hook `command` to `mise exec aqua:tak848/ccgate -- ccgate` in your `settings.json`. Each hook invocation pays the launcher startup cost; for day-to-day use, `mise use -g` above is recommended.
+
+### aqua
+
+Via the [aqua](https://aquaproj.github.io/) standard registry. In an aqua-managed project (run `aqua init` first if you don't have an `aqua.yaml` yet):
+
+```bash
+aqua g -i tak848/ccgate
+aqua i
+```
+
+For a [global aqua config](https://aquaproj.github.io/docs/tutorial/global-config), follow aqua's own tutorial.
 
 ### go install
 
@@ -79,6 +98,8 @@ The `$schema` field points to the hosted JSON Schema for editor autocompletion.
   }
 }
 ```
+
+If `ccgate` is not on your `PATH` (for example, when you rely on `mise exec` instead of a global install), set the hook `command` to the equivalent invocation, e.g. `mise exec aqua:tak848/ccgate -- ccgate`, or use an absolute path to the binary.
 
 ### 3. API key
 

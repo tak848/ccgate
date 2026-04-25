@@ -26,8 +26,27 @@ ccgate
 ### mise (推奨)
 
 ```bash
-mise use -g go:github.com/tak848/ccgate
+mise use -g aqua:tak848/ccgate
 ```
+
+ccgate をグローバルに登録せず一度だけ試したい場合 (`npx` / `uvx` 相当):
+
+```bash
+mise exec aqua:tak848/ccgate -- ccgate --version
+```
+
+そのまま Claude Code hook としても no-install で使い続けたい場合は、`settings.json` の hook `command` を `mise exec aqua:tak848/ccgate -- ccgate` に書き換えてください。hook 呼び出しごとに launcher の起動コストが乗るため、常用するなら上の `mise use -g` の方を推奨します。
+
+### aqua
+
+[aqua](https://aquaproj.github.io/) 標準 registry 経由。aqua 管理下のプロジェクトで (`aqua.yaml` がない場合は `aqua init` を先に走らせる):
+
+```bash
+aqua g -i tak848/ccgate
+aqua i
+```
+
+[グローバル aqua 設定](https://aquaproj.github.io/docs/tutorial/global-config) に入れる場合は aqua 公式チュートリアルに従ってください。
 
 ### go install
 
@@ -75,6 +94,8 @@ ccgate init > ~/.claude/ccgate.jsonnet
   }
 }
 ```
+
+`ccgate` が PATH に通っていない場合 (例: グローバルにインストールせず `mise exec` 経由で使う場合) は、hook の `command` を等価な呼び出し (例: `mise exec aqua:tak848/ccgate -- ccgate`) または絶対パスに書き換えてください。
 
 ### 3. API キー
 

@@ -5,7 +5,7 @@ Claude Code PermissionRequest hook written in Go.
 ## Install
 
 ```bash
-mise use -g go:github.com/tak848/ccgate
+mise use -g aqua:tak848/ccgate
 # or
 go install github.com/tak848/ccgate@latest
 ```
