@@ -29,7 +29,7 @@ ccgate
 
 ### mise (recommended)
 
-Requires mise `2026.4.20` or later (older versions ship an aqua registry snapshot without ccgate).
+Requires mise `2026.4.20` or later. Earlier releases bundle an aqua registry snapshot from before ccgate was added.
 
 ```bash
 mise use -g aqua:tak848/ccgate
