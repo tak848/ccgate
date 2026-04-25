@@ -1,5 +1,5 @@
 {
-  ['$schema']: 'https://raw.githubusercontent.com/tak848/ccgate/main/ccgate.schema.json',
+  ['$schema']: 'https://raw.githubusercontent.com/tak848/ccgate/main/schemas/claude.schema.json',
 
   // Project-local ccgate configuration.
   // This file adds restrictions on top of the global config.

@@ -30,3 +30,7 @@ go tool cover -html=coverage.out
 [tasks.clean]
 description = "Clean build artifacts"
 run = "rm -rf bin/ coverage.out"
+
+[tasks.schema]
+description = "Regenerate schemas/{claude,codex}.schema.json from internal/config.Config"
+run = "go run ./scripts/genschema"

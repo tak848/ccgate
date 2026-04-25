@@ -1,5 +1,5 @@
 {
-  ['$schema']: 'https://raw.githubusercontent.com/tak848/ccgate/main/ccgate.schema.json',
+  ['$schema']: 'https://raw.githubusercontent.com/tak848/ccgate/main/schemas/claude.schema.json',
 
   // Default safety rules for ccgate.
   // Inspired by Claude Code Auto Mode defaults.
