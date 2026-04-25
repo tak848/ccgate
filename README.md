@@ -29,7 +29,7 @@ ccgate
 
 ### mise (recommended)
 
-Requires mise `2026.4.20` or later — the first release whose bundled aqua registry (pinned to `v4.498.0`) includes ccgate. Older versions fail with `registry not available: no aqua-registry found for tak848/ccgate`; run `mise self-update` first.
+Requires mise `2026.4.20` or later (older versions ship an aqua registry snapshot without ccgate).
 
 ```bash
 mise use -g aqua:tak848/ccgate
