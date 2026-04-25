@@ -17,11 +17,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 
 	"github.com/alecthomas/kong"
 	"golang.org/x/term"
 
 	"github.com/tak848/ccgate/internal/cmd/claude"
+	"github.com/tak848/ccgate/internal/cmd/codex"
 )
 
 // CLI is the kong-bound root command tree.
@@ -29,6 +31,7 @@ type CLI struct {
 	Version kong.VersionFlag `help:"Print version and exit."`
 
 	Claude  ClaudeCmd            `cmd:"" help:"Run the Claude Code PermissionRequest hook (or manage its config / metrics)."`
+	Codex   CodexCmd             `cmd:"" help:"Run the OpenAI Codex CLI PermissionRequest hook (experimental, Linux/macOS only)."`
 	Init    DeprecatedInitCmd    `cmd:"" help:"[removed in v0.5] Use 'ccgate claude init' instead."`
 	Metrics DeprecatedMetricsCmd `cmd:"" help:"[removed in v0.5] Use 'ccgate claude metrics' instead."`
 }
@@ -112,6 +115,29 @@ func dispatch(kctx *kong.Context, cli *CLI, stdin io.Reader, stdout, stderr io.W
 			AsJSON:     cli.Claude.Metrics.JSON,
 			DetailsTop: cli.Claude.Metrics.Details,
 		})
+	case "codex":
+		if exit := requireCodexPlatform(stderr); exit != 0 {
+			return exit
+		}
+		return codex.Run(stdin, stdout)
+	case "codex init":
+		// init does not call into the hook runtime, so it stays
+		// available on Windows for users editing their config from
+		// there even if they later run the hook on Linux/macOS.
+		return codex.Init(stdout, stderr, codex.InitOptions{
+			Output: cli.Codex.Init.Output,
+			Force:  cli.Codex.Init.Force,
+		})
+	case "codex metrics":
+		cwd, err := os.Getwd()
+		if err != nil {
+			fmt.Fprintf(stderr, "warning: failed to get working directory: %v\n", err)
+		}
+		return codex.Metrics(stdout, stderr, cwd, codex.MetricsOptions{
+			Days:       cli.Codex.Metrics.Days,
+			AsJSON:     cli.Codex.Metrics.JSON,
+			DetailsTop: cli.Codex.Metrics.Details,
+		})
 	case "init":
 		return runDeprecatedInit(stderr)
 	case "metrics":
@@ -120,6 +146,19 @@ func dispatch(kctx *kong.Context, cli *CLI, stdin io.Reader, stdout, stderr io.W
 		fmt.Fprintf(stderr, "unknown command: %s\n", kctx.Command())
 		return 2
 	}
+}
+
+// requireCodexPlatform fails fast on Windows because Codex hooks are
+// upstream-disabled there ("temporarily disabled" per
+// developers.openai.com/codex/hooks). Returns 0 to continue, 1 to
+// abort with an explanatory message already written to stderr.
+func requireCodexPlatform(stderr io.Writer) int {
+	if runtime.GOOS == "windows" {
+		fmt.Fprintln(stderr, "ccgate codex: Codex hooks are not supported on Windows (upstream feature is currently disabled there).")
+		fmt.Fprintln(stderr, "See: https://developers.openai.com/codex/hooks")
+		return 1
+	}
+	return 0
 }
 
 func isTerminal(r io.Reader) bool {
@@ -140,7 +179,11 @@ Usage:
                                              Equivalent to 'ccgate claude'. Permanent default.
   ccgate claude                              Same as above (explicit form).
   ccgate claude init [-p] [-o FILE] [-f]     Output the embedded Claude Code defaults.
-  ccgate claude metrics [--days N] [--json]  Show usage metrics (current + legacy paths).
+  ccgate claude metrics [--days N] [--json]  Show Claude Code metrics (current + legacy paths).
+
+  ccgate codex                               Read HookInput JSON from stdin (Codex CLI hook, experimental).
+  ccgate codex init [-o FILE] [-f]           Output the embedded Codex CLI defaults.
+  ccgate codex metrics [--days N] [--json]   Show Codex CLI metrics.
 
 Flags:
   --version    Print version and exit
