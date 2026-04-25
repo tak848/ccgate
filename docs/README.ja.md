@@ -25,7 +25,7 @@ ccgate
 
 ### mise (推奨)
 
-mise `2026.4.20` 以降が必要です。これより前のリリースは aqua registry に ccgate が登録される前のスナップショットを同梱しています。
+mise `2026.4.20` 以降が必要です。このリリースから、同梱の aqua registry に ccgate が含まれます。
 
 ```bash
 mise use -g aqua:tak848/ccgate
