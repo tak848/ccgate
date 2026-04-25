@@ -1,12 +1,18 @@
 package cli
 
-// CodexCmd groups the OpenAI Codex CLI subcommands. The bare form
-// (`ccgate codex`) is the hook entry point ccgate users wire into
-// `~/.codex/hooks.json`.
+// CodexCmd groups the OpenAI Codex CLI subcommands. Bare
+// `ccgate codex` dispatches to the hidden Hook sub-sub-command via
+// kong's default mechanism so users can wire that exact string into
+// their Codex hook config.
 type CodexCmd struct {
-	Init    CodexInitCmd    `cmd:"" help:"Output the embedded Codex CLI default configuration."`
-	Metrics CodexMetricsCmd `cmd:"" help:"Show Codex CLI usage metrics."`
+	Hook    CodexHookCmd    `cmd:"" default:"withargs" hidden:""                                                 name:"hook"`
+	Init    CodexInitCmd    `cmd:""                                                                              help:"Output the embedded Codex CLI default configuration."`
+	Metrics CodexMetricsCmd `cmd:""                                                                              help:"Show Codex CLI usage metrics."`
 }
+
+// CodexHookCmd is a marker struct so kong has a "subcommand" to make
+// default. The actual hook orchestration is dispatched in cli.go.
+type CodexHookCmd struct{}
 
 // CodexInitCmd backs `ccgate codex init`. Codex defaults are a single
 // jsonnet file (no project-vs-global split) so we only carry --output

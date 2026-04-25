@@ -1,11 +1,17 @@
 package cli
 
-// ClaudeCmd groups the Claude Code subcommands. The bare form
-// (`ccgate claude`) is the explicit equivalent of bare `ccgate`.
+// ClaudeCmd groups the Claude Code subcommands. Bare `ccgate claude`
+// dispatches to the hidden Hook sub-sub-command (kong's default
+// mechanism), making it the explicit equivalent of bare `ccgate`.
 type ClaudeCmd struct {
-	Init    ClaudeInitCmd    `cmd:"" help:"Output the embedded Claude Code default configuration."`
-	Metrics ClaudeMetricsCmd `cmd:"" help:"Show Claude Code usage metrics (combined with legacy path)."`
+	Hook    ClaudeHookCmd    `cmd:"" default:"withargs" hidden:""                                                 name:"hook"`
+	Init    ClaudeInitCmd    `cmd:""                                                                              help:"Output the embedded Claude Code default configuration."`
+	Metrics ClaudeMetricsCmd `cmd:""                                                                              help:"Show Claude Code usage metrics (combined with legacy path)."`
 }
+
+// ClaudeHookCmd is a marker struct so kong has a "subcommand" to make
+// default. The actual hook orchestration is dispatched in cli.go.
+type ClaudeHookCmd struct{}
 
 // ClaudeInitCmd backs `ccgate claude init`.
 type ClaudeInitCmd struct {

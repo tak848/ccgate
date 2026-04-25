@@ -97,7 +97,7 @@ type kongExit struct{ code int }
 
 func dispatch(kctx *kong.Context, cli *CLI, stdin io.Reader, stdout, stderr io.Writer) int {
 	switch kctx.Command() {
-	case "claude":
+	case "claude", "claude hook":
 		return claude.Run(stdin, stdout)
 	case "claude init":
 		return claude.Init(stdout, stderr, claude.InitOptions{
@@ -115,7 +115,7 @@ func dispatch(kctx *kong.Context, cli *CLI, stdin io.Reader, stdout, stderr io.W
 			AsJSON:     cli.Claude.Metrics.JSON,
 			DetailsTop: cli.Claude.Metrics.Details,
 		})
-	case "codex":
+	case "codex", "codex hook":
 		if exit := requireCodexPlatform(stderr); exit != 0 {
 			return exit
 		}
