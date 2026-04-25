@@ -1,5 +1,6 @@
 [tools]
 go = "1.25.9"
+"aqua:golangci/golangci-lint" = "2.5.0"
 
 [tasks.build]
 description = "Build the binary (dev use)"
@@ -17,8 +18,13 @@ description = "Run go vet"
 run = "go vet ./..."
 
 [tasks.lint]
-description = "Run vet"
+description = "Run go vet + golangci-lint"
 depends = ["vet"]
+run = "golangci-lint run ./..."
+
+[tasks.fmt]
+description = "Apply gofmt + goimports via golangci-lint"
+run = "golangci-lint fmt ./..."
 
 [tasks.cover]
 description = "Generate coverage report"

@@ -16,4 +16,4 @@ Topics planned for this page (see follow-up issues for status):
 
 ## Bare `ccgate` (no args + stdin pipe)
 
-`ccgate` with no args reading from stdin is identical to `ccgate claude`. This invocation is the canonical Claude Code hook command and will keep working forever — existing `~/.claude/settings.json` entries using `"command": "ccgate"` are not touched by the v0.5 multi-target refactor.
+`ccgate` with no args reading from stdin is identical to `ccgate claude`. This invocation is the canonical Claude Code hook command and will keep working forever — existing `~/.claude/settings.json` entries using `"command": "ccgate"` are not touched by the v0.6 multi-target refactor.

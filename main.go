@@ -13,7 +13,7 @@ import (
 // version is overwritten via -ldflags at release time. It is also
 // resolved from the Go module build info as a fallback so unstamped
 // `go install` / `go build` users still see a useful version string
-// (e.g. v0.5.0 from a tagged checkout).
+// (e.g. v0.6.0 from a tagged checkout).
 var version = "dev"
 
 func init() {

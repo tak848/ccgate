@@ -15,13 +15,13 @@ type (
 )
 
 const (
-	releaseURL = "https://github.com/tak848/ccgate/releases/tag/v0.5.0"
+	releaseURL = "https://github.com/tak848/ccgate/releases/tag/v0.6.0"
 
-	deprecatedInitMessage = "'ccgate init' has been removed in v0.5.0.\n" +
+	deprecatedInitMessage = "'ccgate init' has been removed in v0.6.0.\n" +
 		"Use 'ccgate claude init' (Claude Code) instead.\n" +
 		"See: " + releaseURL + "\n"
 
-	deprecatedMetricsMessage = "'ccgate metrics' has been removed in v0.5.0.\n" +
+	deprecatedMetricsMessage = "'ccgate metrics' has been removed in v0.6.0.\n" +
 		"Use 'ccgate claude metrics' instead.\n" +
 		"See: " + releaseURL + "\n"
 )

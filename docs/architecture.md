@@ -4,7 +4,7 @@
 
 Package layout and how to add a new target.
 
-## Layout (v0.5)
+## Layout (v0.6)
 
 ```
 ccgate/
@@ -28,7 +28,7 @@ ccgate/
     └── gitutil/                 # shared git helpers
 ```
 
-> The `internal/gate/` and `internal/hookctx/` packages are still used by `cmd/claude/` today; lifting them down into `cmd/claude/` is tracked as a follow-up so this v0.5 PR stays bounded.
+> The `internal/gate/` and `internal/hookctx/` packages are still used by `cmd/claude/` today; lifting them down into `cmd/claude/` is tracked as a follow-up so this v0.6 PR stays bounded.
 
 ## Adding a new target
 
@@ -42,4 +42,4 @@ ccgate/
 
 ## Spec Ledger
 
-Per-target spec verification status is tracked in the v0.5 plan (`.claude/plans/codex-cli-hook-system-piped-badger.md`, section A2). When you change adapter / docs / fixture / spec-citation code, update the relevant Spec Ledger row in the same PR.
+Per-target spec verification status is tracked in the v0.6 plan (`.claude/plans/codex-cli-hook-system-piped-badger.md`, section A2). When you change adapter / docs / fixture / spec-citation code, update the relevant Spec Ledger row in the same PR.

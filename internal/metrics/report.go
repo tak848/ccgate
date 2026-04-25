@@ -192,7 +192,7 @@ func readEntriesFromFile(path string, cutoff time.Time) ([]Entry, error) {
 		}
 		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var entries []Entry
 	scanner := bufio.NewScanner(f)

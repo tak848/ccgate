@@ -27,7 +27,7 @@ func Record(path string, maxSize int64, entry Entry) {
 		slog.Warn("metrics: failed to open file", "path", path, "error", err)
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	line, err := json.Marshal(entry)
 	if err != nil {

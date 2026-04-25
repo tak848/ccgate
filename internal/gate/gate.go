@@ -60,20 +60,18 @@ type hookSpecificOutput struct {
 	Decision      permissionDecisionOutput `json:"decision"`
 }
 
-type permissionDecisionOutput struct {
-	Behavior string `json:"behavior"`
-	Message  string `json:"message,omitempty"`
-}
+// permissionDecisionOutput keeps the same struct tags as
+// PermissionDecision so they can be type-converted directly. Kept as
+// a named alias instead of a plain alias so external callers still see
+// a distinct exported type.
+type permissionDecisionOutput PermissionDecision
 
 // NewPermissionResponse creates the response structure expected by Claude Code.
 func NewPermissionResponse(d PermissionDecision) PermissionResponse {
 	return PermissionResponse{
 		HookSpecificOutput: hookSpecificOutput{
 			HookEventName: "PermissionRequest",
-			Decision: permissionDecisionOutput{
-				Behavior: d.Behavior,
-				Message:  d.Message,
-			},
+			Decision:      permissionDecisionOutput(d),
 		},
 	}
 }

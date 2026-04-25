@@ -1,0 +1,72 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - errorlint
+    - gocritic
+    - gosec
+    - govet
+    - ineffassign
+    - misspell
+    - nilerr
+    - revive
+    - staticcheck
+    - unused
+  settings:
+    revive:
+      rules:
+        - name: var-naming
+          arguments:
+            - []
+            - []
+            - - skip-package-name-checks: true
+        - name: package-comments
+          disabled: true
+    gocritic:
+      disabled-checks:
+        # Triggered by short comment headers we deliberately keep.
+        - commentFormatting
+        - ifElseChain
+        # The few singleCaseSwitch occurrences mirror upstream SDK
+        # patterns and stay readable as switch.
+        - singleCaseSwitch
+        # Cosmetic; not worth touching mature code paths for.
+        - assignOp
+    gosec:
+      excludes:
+        # ccgate writes config / log / metrics with the historical
+        # 0644 / 0755 perms; per-target subdirectories under
+        # $XDG_STATE_HOME are not secret material.
+        - G301 # mkdir perms
+        - G302 # file perms
+        - G304 # file path is user-supplied by design
+        - G306 # write perms
+        # Subprocess invocation is integral (git, ccgate binary E2E).
+        - G204
+  exclusions:
+    rules:
+      # Test files are noisier and we don't want gosec/gocritic stopping iteration.
+      - path: _test\.go
+        linters:
+          - gosec
+          - gocritic
+          - errcheck
+      # Generated schemas and the generator itself.
+      - path: scripts/genschema/.*
+        linters:
+          - revive
+      # defer f.Close() on read paths and fmt.Fprintf to TTY are
+      # idiomatic fire-and-forget; suppress errcheck noise here.
+      - linters:
+          - errcheck
+        text: "Error return value of `(\\(.+\\.Close|fmt\\.Fp(rintf|rintln|rint))` is not checked"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

@@ -46,7 +46,7 @@ ccgate codex init [-o|-f]      Output the embedded Codex CLI defaults.
 ccgate codex metrics [...]     Show Codex CLI usage metrics.
 ```
 
-> `ccgate init` / `ccgate metrics` (top-level) were **removed in v0.5.0**. Run `ccgate claude init` / `ccgate claude metrics` (or the codex equivalents) instead. The bare `ccgate` hook invocation is unaffected.
+> `ccgate init` / `ccgate metrics` (top-level) were **removed in v0.6.0**. Run `ccgate claude init` / `ccgate claude metrics` (or the codex equivalents) instead. The bare `ccgate` hook invocation is unaffected.
 
 ## Installation
 
@@ -165,7 +165,7 @@ If a global config file exists, embedded defaults are **not** used. The global c
 Project-local configs always **append** to the base (allow/deny/environment are appended, provider fields are overwritten).
 Project-local configs are loaded only when **not tracked by Git**.
 
-> v0.5 change: `{repo_root}/ccgate.local.jsonnet` (root-level, target-ambiguous) is no longer read. Move it to `{repo_root}/.claude/ccgate.local.jsonnet` (or `.codex/...`) to keep the same behavior.
+> v0.6 change: `{repo_root}/ccgate.local.jsonnet` (root-level, target-ambiguous) is no longer read. Move it to `{repo_root}/.claude/ccgate.local.jsonnet` (or `.codex/...`) to keep the same behavior.
 
 ### Config fields
 
@@ -185,7 +185,7 @@ Project-local configs are loaded only when **not tracked by Git**.
 | `deny`                   | string[]                          | `[]`                                                                          | Deny guidance rules (mandatory). Supports inline `deny_message:` hints                                 |
 | `environment`            | string[]                          | `[]`                                                                          | Context strings passed to the LLM (trust level, policies, etc.)                                        |
 
-`<target>` is `claude` or `codex` depending on which hook is invoked. Pre-v0.5 ccgate wrote both files directly under `$XDG_STATE_HOME/ccgate/`; that path is still read by `ccgate claude metrics` for backward-compat.
+`<target>` is `claude` or `codex` depending on which hook is invoked. Pre-v0.6 ccgate wrote both files directly under `$XDG_STATE_HOME/ccgate/`; that path is still read by `ccgate claude metrics` for backward-compat.
 
 ## Default Rules
 
@@ -235,7 +235,7 @@ Logs and metrics live under `$XDG_STATE_HOME/ccgate/<target>/`:
 
 Both files rotate on size (`.log.1`, `.jsonl.1`).
 
-`ccgate claude metrics` also reads the legacy `$XDG_STATE_HOME/ccgate/metrics.jsonl` written by pre-v0.5 ccgate, so existing users keep seeing their full history. Override paths in jsonnet are still respected — set `log_path` / `metrics_path` to put them anywhere.
+`ccgate claude metrics` also reads the legacy `$XDG_STATE_HOME/ccgate/metrics.jsonl` written by pre-v0.6 ccgate, so existing users keep seeing their full history. Override paths in jsonnet are still respected — set `log_path` / `metrics_path` to put them anywhere.
 
 ```bash
 ccgate claude metrics                 # last 7 days, TTY table

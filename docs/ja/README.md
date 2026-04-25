@@ -45,7 +45,7 @@ ccgate codex init [-o|-f]      Codex CLI 用の埋込デフォルトを出力
 ccgate codex metrics [...]     Codex CLI のメトリクス集計
 ```
 
-> `ccgate init` / `ccgate metrics` (top-level) は **v0.5.0 で廃止** されました。代わりに `ccgate claude init` / `ccgate claude metrics` (または codex 版) を使用してください。bare `ccgate` (hook 起動) は影響ありません。
+> `ccgate init` / `ccgate metrics` (top-level) は **v0.6.0 で廃止** されました。代わりに `ccgate claude init` / `ccgate claude metrics` (または codex 版) を使用してください。bare `ccgate` (hook 起動) は影響ありません。
 
 ## インストール
 
@@ -164,7 +164,7 @@ Claude Code と同じ環境変数 (`CCGATE_ANTHROPIC_API_KEY` / `ANTHROPIC_API_K
 プロジェクトローカル設定は常にベースに**追加**されます (allow/deny/environment は append、provider 系は overwrite)。
 プロジェクトローカル設定は **Git に追跡されていないファイルのみ** 読み込まれます。
 
-> v0.5 の変更: `{repo_root}/ccgate.local.jsonnet` (root 直下、target ambiguous) は読み込まれなくなりました。`{repo_root}/.claude/ccgate.local.jsonnet` (または `.codex/...`) に rename して同等の挙動を維持してください。
+> v0.6 の変更: `{repo_root}/ccgate.local.jsonnet` (root 直下、target ambiguous) は読み込まれなくなりました。`{repo_root}/.claude/ccgate.local.jsonnet` (または `.codex/...`) に rename して同等の挙動を維持してください。
 
 ### 設定項目
 
@@ -184,7 +184,7 @@ Claude Code と同じ環境変数 (`CCGATE_ANTHROPIC_API_KEY` / `ANTHROPIC_API_K
 | `deny`                   | string[]                          | `[]`                                                                            | 拒否ルール (mandatory)。`deny_message:` ヒント対応                                                         |
 | `environment`            | string[]                          | `[]`                                                                            | LLM に渡すコンテキスト (信頼レベル、ポリシー等)                                                            |
 
-`<target>` は Claude / Codex どちらの hook が呼ばれたかで `claude` / `codex` になります。pre-v0.5 の ccgate は両ファイルを `$XDG_STATE_HOME/ccgate/` 直下に書いていましたが、その path は後方互換のため `ccgate claude metrics` から引き続き読まれます。
+`<target>` は Claude / Codex どちらの hook が呼ばれたかで `claude` / `codex` になります。pre-v0.6 の ccgate は両ファイルを `$XDG_STATE_HOME/ccgate/` 直下に書いていましたが、その path は後方互換のため `ccgate claude metrics` から引き続き読まれます。
 
 ## デフォルトルール
 
@@ -234,7 +234,7 @@ ccgate codex  init    > ~/.codex/ccgate.jsonnet            # グローバル, co
 
 両ファイルともサイズベースでローテーションします (`.log.1`, `.jsonl.1`)。
 
-`ccgate claude metrics` は pre-v0.5 ccgate が書いていた `$XDG_STATE_HOME/ccgate/metrics.jsonl` も併せて読み込むため、既存ユーザーは過去のメトリクス履歴も継続して参照できます。jsonnet で `log_path` / `metrics_path` を明示している場合はその設定が尊重されます。
+`ccgate claude metrics` は pre-v0.6 ccgate が書いていた `$XDG_STATE_HOME/ccgate/metrics.jsonl` も併せて読み込むため、既存ユーザーは過去のメトリクス履歴も継続して参照できます。jsonnet で `log_path` / `metrics_path` を明示している場合はその設定が尊重されます。
 
 ```bash
 ccgate claude metrics                 # 直近 7 日間、TTY テーブル

@@ -16,4 +16,4 @@
 
 ## bare `ccgate` (引数なし + stdin pipe)
 
-引数なしで stdin から読み込む `ccgate` は `ccgate claude` と完全に等価です。これは Claude Code hook の正規呼び出し方法であり、v0.5 multi-target リファクタ後も**永続的に維持**されます。既存の `~/.claude/settings.json` の `"command": "ccgate"` 設定はそのまま動作し続けます。
+引数なしで stdin から読み込む `ccgate` は `ccgate claude` と完全に等価です。これは Claude Code hook の正規呼び出し方法であり、v0.6 multi-target リファクタ後も**永続的に維持**されます。既存の `~/.claude/settings.json` の `"command": "ccgate"` 設定はそのまま動作し続けます。

@@ -280,7 +280,7 @@ func initLogger(logPath string, disabled bool, maxLogSize int64) (*slog.Logger, 
 		return slog.New(slog.NewTextHandler(os.Stderr, nil)), func() {}
 	}
 	w := &atomicWriter{f: f}
-	return slog.New(slog.NewTextHandler(w, nil)), func() { f.Close() }
+	return slog.New(slog.NewTextHandler(w, nil)), func() { _ = f.Close() }
 }
 
 type atomicWriter struct {

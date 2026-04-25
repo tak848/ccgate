@@ -4,7 +4,7 @@
 
 パッケージ構成と新 target 追加手順。
 
-## レイアウト (v0.5)
+## レイアウト (v0.6)
 
 ```
 ccgate/
@@ -28,7 +28,7 @@ ccgate/
     └── gitutil/                 # 共通 git helper
 ```
 
-> `internal/gate/` と `internal/hookctx/` は現時点で `cmd/claude/` から使われています。これらを `cmd/claude/` 配下に物理移管するのは follow-up issue として、v0.5 PR の境界を保っています。
+> `internal/gate/` と `internal/hookctx/` は現時点で `cmd/claude/` から使われています。これらを `cmd/claude/` 配下に物理移管するのは follow-up issue として、v0.6 PR の境界を保っています。
 
 ## 新 target の追加手順
 
@@ -42,4 +42,4 @@ ccgate/
 
 ## Spec Ledger
 
-target ごとの仕様 verify 状況は v0.5 plan ファイル (`.claude/plans/codex-cli-hook-system-piped-badger.md`、section A2) で管理しています。adapter / docs / fixture / 仕様参照を伴うコードを変更したら、同じ PR 内で関連する Spec Ledger 行を更新してください。
+target ごとの仕様 verify 状況は v0.6 plan ファイル (`.claude/plans/codex-cli-hook-system-piped-badger.md`、section A2) で管理しています。adapter / docs / fixture / 仕様参照を伴うコードを変更したら、同じ PR 内で関連する Spec Ledger 行を更新してください。
