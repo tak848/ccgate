@@ -84,7 +84,7 @@ func TestBuildReportAutomationRateEmpty(t *testing.T) {
 	// Create an empty file (no entries).
 	writeEntries(t, path, nil)
 
-	report, _, err := buildReport(path, ReportOptions{Days: 7})
+	report, _, err := buildReport([]string{path}, ReportOptions{Days: 7})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestBuildReportAutomationRateWithError(t *testing.T) {
 		{Timestamp: now, ToolName: "Bash", Decision: "error", Error: "boom", ElapsedMS: 20},
 		{Timestamp: now, ToolName: "Bash", Decision: "fallthrough", FallthroughKind: "llm", ElapsedMS: 30},
 	})
-	report, _, err := buildReport(path, ReportOptions{Days: 7})
+	report, _, err := buildReport([]string{path}, ReportOptions{Days: 7})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestBuildReportDetailsTopFallback(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			report, _, err := buildReport(path, ReportOptions{Days: 7, DetailsTop: tc.detailsIn})
+			report, _, err := buildReport([]string{path}, ReportOptions{Days: 7, DetailsTop: tc.detailsIn})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -187,7 +187,7 @@ func TestBuildReportExcludesUserInteractionFromAggregates(t *testing.T) {
 		{Timestamp: now, ToolName: "AskUserQuestion", Decision: "fallthrough", FallthroughKind: "user_interaction", ElapsedMS: 0},
 	})
 
-	report, _, err := buildReport(path, ReportOptions{Days: 7, DetailsTop: 10})
+	report, _, err := buildReport([]string{path}, ReportOptions{Days: 7, DetailsTop: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +248,7 @@ func TestToolInputTop(t *testing.T) {
 		{Timestamp: now, ToolName: "Bash", Decision: "deny",
 			ToolInput: ToolInputFields{Command: "rm -rf /"}, ElapsedMS: 1},
 	})
-	report, _, err := buildReport(path, ReportOptions{Days: 7, DetailsTop: 10})
+	report, _, err := buildReport([]string{path}, ReportOptions{Days: 7, DetailsTop: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +290,7 @@ func TestToolInputTop(t *testing.T) {
 	}
 
 	// DetailsTop=2 must slice the ranked list to the top 2 entries.
-	rep2, _, err := buildReport(path, ReportOptions{Days: 7, DetailsTop: 2})
+	rep2, _, err := buildReport([]string{path}, ReportOptions{Days: 7, DetailsTop: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +334,7 @@ func TestToolInputTopTieBreaker(t *testing.T) {
 	}
 	writeEntries(t, path, entries)
 
-	report, _, err := buildReport(path, ReportOptions{Days: 7, DetailsTop: 20})
+	report, _, err := buildReport([]string{path}, ReportOptions{Days: 7, DetailsTop: 20})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -378,7 +378,7 @@ func TestToolInputTopLegacyEntries(t *testing.T) {
 	writeRawJSONLines(t, path, []string{legacyLine})
 	writeRawJSONLines(t, rotatedPath, []string{legacyLine})
 
-	report, _, err := buildReport(path, ReportOptions{Days: 7, DetailsTop: 10})
+	report, _, err := buildReport([]string{path}, ReportOptions{Days: 7, DetailsTop: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -414,7 +414,7 @@ func TestPrintReportEmpty(t *testing.T) {
 	writeEntries(t, path, nil)
 
 	var buf bytes.Buffer
-	if err := PrintReport(&buf, path, ReportOptions{Days: 7, DetailsTop: 10}); err != nil {
+	if err := PrintReport(&buf, []string{path}, ReportOptions{Days: 7, DetailsTop: 10}); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -442,7 +442,7 @@ func TestPrintReportNoInputDisplay(t *testing.T) {
 
 	// TTY: should contain (no input)
 	var buf bytes.Buffer
-	if err := PrintReport(&buf, path, ReportOptions{Days: 7, DetailsTop: 10}); err != nil {
+	if err := PrintReport(&buf, []string{path}, ReportOptions{Days: 7, DetailsTop: 10}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "(no input)") {
@@ -451,7 +451,7 @@ func TestPrintReportNoInputDisplay(t *testing.T) {
 
 	// JSON: should contain "tool_input":{} and NOT (no input)
 	var jsonBuf bytes.Buffer
-	if err := PrintReport(&jsonBuf, path, ReportOptions{Days: 7, AsJSON: true, DetailsTop: 10}); err != nil {
+	if err := PrintReport(&jsonBuf, []string{path}, ReportOptions{Days: 7, AsJSON: true, DetailsTop: 10}); err != nil {
 		t.Fatal(err)
 	}
 	j := jsonBuf.String()
@@ -477,7 +477,7 @@ func TestPrintReportMultilineCommandDisplay(t *testing.T) {
 	// TTY: the \n must NOT remain literal (row must stay on one line).
 	// Concretely, "line1 line2" appears and "line1\nline2" does not.
 	var buf bytes.Buffer
-	if err := PrintReport(&buf, path, ReportOptions{Days: 7, DetailsTop: 10}); err != nil {
+	if err := PrintReport(&buf, []string{path}, ReportOptions{Days: 7, DetailsTop: 10}); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -496,7 +496,7 @@ func TestPrintReportMultilineCommandDisplay(t *testing.T) {
 
 	// JSON: command must be preserved verbatim including the literal LF.
 	var jsonBuf bytes.Buffer
-	if err := PrintReport(&jsonBuf, path, ReportOptions{Days: 7, AsJSON: true, DetailsTop: 10}); err != nil {
+	if err := PrintReport(&jsonBuf, []string{path}, ReportOptions{Days: 7, AsJSON: true, DetailsTop: 10}); err != nil {
 		t.Fatal(err)
 	}
 	var decoded FullReport
@@ -533,7 +533,7 @@ func TestBuildReportForcedAggregation(t *testing.T) {
 			ToolInput: ToolInputFields{Command: "forced allow cmd"}, ElapsedMS: 1},
 	})
 
-	report, _, err := buildReport(path, ReportOptions{Days: 7, DetailsTop: 10})
+	report, _, err := buildReport([]string{path}, ReportOptions{Days: 7, DetailsTop: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -605,7 +605,7 @@ func TestPrintReportColumnAlignment(t *testing.T) {
 	})
 
 	var buf bytes.Buffer
-	if err := PrintReport(&buf, path, ReportOptions{Days: 7, DetailsTop: 10}); err != nil {
+	if err := PrintReport(&buf, []string{path}, ReportOptions{Days: 7, DetailsTop: 10}); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()

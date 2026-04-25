@@ -79,17 +79,20 @@ func (p ProviderConfig) GetTimeoutMS() int {
 	return *p.TimeoutMS
 }
 
+// Default returns a Config seeded with the provider/log/metrics
+// defaults common to every target. LogPath / MetricsPath are left
+// empty on purpose — Load fills them from LoadOptions so each
+// target writes under its own subdirectory; Resolve* still falls
+// back to the historical stateDir() root if neither is set (kept
+// for the legacy file-format backward-compat tests).
 func Default() Config {
-	sd := stateDir()
 	return Config{
 		Provider: ProviderConfig{
 			Name:      DefaultProvider,
 			Model:     DefaultModel,
 			TimeoutMS: intPtr(DefaultTimeoutMS),
 		},
-		LogPath:        filepath.Join(sd, "ccgate.log"),
 		LogMaxSize:     int64Ptr(DefaultLogMaxSize),
-		MetricsPath:    filepath.Join(sd, "metrics.jsonl"),
 		MetricsMaxSize: int64Ptr(DefaultMetricsMaxSize),
 	}
 }
@@ -182,9 +185,10 @@ type LoadResult struct {
 	Source ConfigSource
 }
 
-// LoadOptions describes target-specific config search paths and the
-// embedded defaults snippet. Callers (cmd/claude, cmd/codex) supply
-// their own values so Load itself stays target-agnostic.
+// LoadOptions describes target-specific config search paths, the
+// embedded defaults snippet, and default log/metrics destinations.
+// Callers (cmd/claude, cmd/codex) supply their own values so Load
+// itself stays target-agnostic.
 type LoadOptions struct {
 	// GlobalConfigPath is the absolute path of the per-user config
 	// (e.g. ~/.claude/ccgate.jsonnet, ~/.codex/ccgate.jsonnet).
@@ -198,7 +202,17 @@ type LoadOptions struct {
 	// global config is absent. Targets ship their own defaults via
 	// //go:embed.
 	EmbedDefaults string
+	// DefaultLogPath is used when neither the global nor any
+	// project-local config sets log_path. Empty string falls back
+	// to the historical stateDir() root (Resolve* compat path).
+	DefaultLogPath string
+	// DefaultMetricsPath behaves like DefaultLogPath but for metrics_path.
+	DefaultMetricsPath string
 }
+
+// ClaudeStateDir is the per-user state subdirectory for Claude Code
+// log/metrics files (i.e. $XDG_STATE_HOME/ccgate/claude/...).
+func ClaudeStateDir() string { return filepath.Join(stateDir(), "claude") }
 
 // ClaudeLoadOptions returns the LoadOptions for the Claude Code hook.
 // Kept here as a transitional helper so existing callers (main.go,
@@ -206,10 +220,13 @@ type LoadOptions struct {
 // callers should construct their own LoadOptions.
 func ClaudeLoadOptions() LoadOptions {
 	home, _ := os.UserHomeDir()
+	sd := ClaudeStateDir()
 	return LoadOptions{
 		GlobalConfigPath:          filepath.Join(home, ".claude", BaseConfigName),
 		ProjectLocalRelativePaths: []string{filepath.Join(".claude", LocalConfigName)},
 		EmbedDefaults:             DefaultsJsonnet,
+		DefaultLogPath:            filepath.Join(sd, "ccgate.log"),
+		DefaultMetricsPath:        filepath.Join(sd, "metrics.jsonl"),
 	}
 }
 
@@ -238,6 +255,18 @@ func Load(opts LoadOptions, cwd string) (LoadResult, error) {
 		if err := mergeConfigFile(path, &cfg); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return LoadResult{Config: cfg}, fmt.Errorf("local config %s: %w", path, err)
 		}
+	}
+
+	// Apply target-specific log/metrics defaults only when the user
+	// did not set explicit paths in any of the merged configs. This
+	// is what gives each target its own subdirectory under
+	// $XDG_STATE_HOME/ccgate/<target>/ while still respecting any
+	// log_path / metrics_path the user wrote in their jsonnet.
+	if cfg.LogPath == "" && opts.DefaultLogPath != "" {
+		cfg.LogPath = opts.DefaultLogPath
+	}
+	if cfg.MetricsPath == "" && opts.DefaultMetricsPath != "" {
+		cfg.MetricsPath = opts.DefaultMetricsPath
 	}
 
 	if err := cfg.Validate(); err != nil {

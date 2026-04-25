@@ -75,7 +75,16 @@ func _main() int {
 				fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
 				return 1
 			}
-			if err := metrics.PrintReport(os.Stdout, lr.Config.ResolveMetricsPath(), metrics.ReportOptions{
+			// Read both the per-target path and the legacy
+			// $XDG_STATE_HOME/ccgate/metrics.jsonl that older
+			// ccgate versions wrote to. PrintReport silently
+			// skips missing files, so users without legacy data
+			// are unaffected.
+			paths := []string{
+				lr.Config.ResolveMetricsPath(),
+				filepath.Join(legacyStateDir(), "metrics.jsonl"),
+			}
+			if err := metrics.PrintReport(os.Stdout, paths, metrics.ReportOptions{
 				Days:       cli.Metrics.Days,
 				AsJSON:     cli.Metrics.JSON,
 				DetailsTop: cli.Metrics.Details,
@@ -295,4 +304,18 @@ func (w *atomicWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.f.Write(p)
+}
+
+// legacyStateDir returns the historical $XDG_STATE_HOME/ccgate/
+// directory where pre-v0.5 ccgate wrote both ccgate.log and
+// metrics.jsonl. Used as a read-only fallback so existing users
+// keep seeing their metrics history through `ccgate metrics`.
+func legacyStateDir() string {
+	if d := os.Getenv("XDG_STATE_HOME"); d != "" && filepath.IsAbs(d) {
+		return filepath.Join(d, "ccgate")
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		return filepath.Join(home, ".local", "state", "ccgate")
+	}
+	return "."
 }

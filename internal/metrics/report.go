@@ -125,9 +125,12 @@ type FullReport struct {
 	DenyTop        []ToolInputSummary `json:"deny_top"`
 }
 
-// PrintReport reads the metrics file and prints a report to w.
-func PrintReport(w io.Writer, path string, opts ReportOptions) error {
-	report, cutoff, err := buildReport(path, opts)
+// PrintReport reads metrics from one or more files and prints a
+// combined report to w. Each path is read in order; missing files are
+// silently skipped (so callers can pass legacy paths as fallbacks).
+// Both `<path>` and `<path>.1` (rotated) are read for every entry.
+func PrintReport(w io.Writer, paths []string, opts ReportOptions) error {
+	report, cutoff, err := buildReport(paths, opts)
 	if err != nil {
 		return err
 	}
@@ -142,7 +145,7 @@ func PrintReport(w io.Writer, path string, opts ReportOptions) error {
 	return nil
 }
 
-func buildReport(path string, opts ReportOptions) (FullReport, time.Time, error) {
+func buildReport(paths []string, opts ReportOptions) (FullReport, time.Time, error) {
 	if opts.Days <= 0 {
 		opts.Days = DefaultReportDays
 	}
@@ -156,7 +159,7 @@ func buildReport(path string, opts ReportOptions) (FullReport, time.Time, error)
 	now := time.Now()
 	cutoff := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).AddDate(0, 0, -opts.Days+1)
 
-	entries, err := readEntries(path, cutoff)
+	entries, err := readEntries(paths, cutoff)
 	if err != nil {
 		return FullReport{}, cutoff, err
 	}
@@ -164,16 +167,18 @@ func buildReport(path string, opts ReportOptions) (FullReport, time.Time, error)
 	return aggregate(entries, opts.Days, detailsTop), cutoff, nil
 }
 
-func readEntries(path string, cutoff time.Time) ([]Entry, error) {
+func readEntries(paths []string, cutoff time.Time) ([]Entry, error) {
 	var entries []Entry
 
-	// Read both current and rotated file.
-	for _, p := range []string{path + ".1", path} {
-		more, err := readEntriesFromFile(p, cutoff)
-		if err != nil {
-			return nil, err
+	for _, path := range paths {
+		// Read both current and rotated file for each path.
+		for _, p := range []string{path + ".1", path} {
+			more, err := readEntriesFromFile(p, cutoff)
+			if err != nil {
+				return nil, err
+			}
+			entries = append(entries, more...)
 		}
-		entries = append(entries, more...)
 	}
 
 	return entries, nil
