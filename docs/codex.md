@@ -1,21 +1,129 @@
-# ccgate — OpenAI Codex CLI
+# ccgate -- OpenAI Codex CLI
 
 [日本語版 (docs/ja/codex.md)](ja/codex.md)
 
 Codex-CLI-specific notes for the `ccgate codex` hook.
 
-> Until this guide is filled in, the **[root README](../README.md)** is the source of truth for Codex CLI setup. This page exists so deep-dive material has a stable URL to grow into.
-
 ## Status
 
 - **Experimental.** Codex hooks are upstream-experimental as of 2026-04. Schema and behavior may change without notice; treat the OpenAI [Codex hooks docs](https://developers.openai.com/codex/hooks) as the source of truth and re-verify before relying on a specific field.
-- **Tested on Linux/macOS; Windows untested.** Upstream Codex docs list `windows_managed_dir` as a first-class config field, so Windows is not blocked at the binary level. ccgate's Codex flow has not been exercised on Windows -- treat any usage there as untested.
+- **Tested on Linux/macOS; Windows untested.** The OpenAI docs list `windows_managed_dir` as a first-class config field, so Windows is not blocked at the binary level. ccgate's Codex flow has not been exercised there yet -- treat any usage as untested.
 - **Tool-agnostic.** Codex hooks fire for Bash, `apply_patch`, MCP tool calls, and other surfaces. ccgate classifies by `tool_name` + the full `tool_input` JSON, not by tool kind alone.
 
-## Topics planned for this page
+## Hook registration
 
-- Hook registration in `~/.codex/hooks.json` and the `codex_hooks` feature flag (config.toml gating)
-- `~/.codex/config.toml` (`approval_policy` / `sandbox_mode` / `prefix_rules`) — currently **not** ingested by ccgate; tracked as follow-up issues (see plan L#3, L#4)
-- `permission_mode=plan` detection for Codex (plan L#1)
-- Codex transcript JSONL parsing for the `recent_transcript` context (plan L#2)
-- Differences from Claude Code (see [docs/claude.md](claude.md))
+Codex CLI lookup order (per OpenAI's [Codex hooks docs](https://developers.openai.com/codex/hooks)):
+
+1. `~/.codex/hooks.json`
+2. `~/.codex/config.toml`
+3. `<repo>/.codex/hooks.json` (only when the project's `.codex/` layer is trusted)
+4. `<repo>/.codex/config.toml` (same trust requirement)
+
+Layers are additive -- a hook registered globally and a hook registered project-local both fire.
+
+### `hooks.json` form (recommended)
+
+```json
+{
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "ccgate codex",
+            "statusMessage": "ccgate evaluating request"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+`"matcher": ""` makes ccgate evaluate every PermissionRequest event Codex emits (Bash, `apply_patch`, MCP tool calls, ...). Restrict by tool name pattern if you only want a subset.
+
+### `config.toml` form
+
+If you want to keep hooks alongside the rest of your Codex config:
+
+```toml
+[features]
+codex_hooks = true   # gate is still required on some Codex versions
+
+[[hooks.PermissionRequest]]
+matcher = ""
+
+[[hooks.PermissionRequest.hooks]]
+type    = "command"
+command = "ccgate codex"
+statusMessage = "ccgate evaluating request"
+```
+
+### Trying a development build without touching dotfiles
+
+Project-local `<repo>/.codex/{hooks.json,config.toml}` only loads when the project is trusted. For an in-tree dev build of ccgate, drop a project-local hooks file (untracked) and point it at `go run`:
+
+```jsonc
+// <repo>/.codex/hooks.json (untracked)
+{
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "go run /absolute/path/to/ccgate codex",
+            "statusMessage": "ccgate (dev) evaluating request"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+`go run` build cache makes second-onwards invocations fast. Dotfiles-managed `~/.codex/config.toml` is not touched.
+
+## What ccgate sees in the HookInput
+
+ccgate forwards the full `tool_input` JSON to the LLM verbatim, so MCP arguments and `apply_patch` hunk metadata reach the classifier untouched even when ccgate has no typed field for them. The metrics layer pulls a small parsed view (`command` / `description` / `file_path` / `path` / `pattern`) for the JSONL but never strips the raw payload from the LLM message.
+
+Fields the upstream Codex docs (verified 2026-04) deliver and ccgate uses:
+
+- `session_id`
+- `transcript_path` (path only; not parsed today, see follow-up issue list)
+- `cwd`
+- `hook_event_name`
+- `model` (the AI side's model, e.g. `gpt-5`)
+- `turn_id`
+- `tool_name` (`Bash`, `apply_patch`, `mcp__<server>__<tool>`, ...)
+- `tool_input` (typed view + raw forwarding)
+
+Codex does not deliver Claude's `permission_mode`, `permission_suggestions`, `recent_transcript`, or `settings_permissions` today. The system prompt explicitly tells the LLM "no recent_transcript here -- judge from `tool_name` + `tool_input` + `cwd` alone" so it does not invent context that isn't there.
+
+## Defaults snapshot
+
+ccgate ships an embedded Codex defaults file (`internal/cmd/codex/defaults.jsonnet`) that mirrors the Claude side's allow + deny + environment shape. Notable Codex-specific entries:
+
+- `allow`: read-only Bash inspection, project-script build/test, repo-confined package install, feature-branch git, MCP tools whose server is explicitly trusted with read-only `tool_input`.
+- `deny`: pipe-to-shell of remote content, one-shot remote package execution (`npx` / `pnpx` / `bunx` against unfamiliar packages), `sudo`, out-of-workspace `rm -rf` / `mv` / `apply_patch` hunks, destructive git on protected branches, unrestricted network out (`nc` / `ssh` / `scp` / `ftp` to non-allowlisted hosts), MCP tools advertising destructive side effects without an explicit per-rule allow.
+- `environment`: heterogeneous tool surface, trusted-repo boundary, path scope rule, `apply_patch` is a write surface (do not auto-allow), `recent_transcript` is absent.
+
+`apply_patch` is **not** in `allow` on purpose: PermissionRequest fires when Codex would otherwise prompt the user, and auto-allowing patches there would let the LLM bypass the user's last line of defense. Override only with a project-local rule that scopes the allow to a specific path subtree (and only if you accept the risk).
+
+## Differences from Claude Code
+
+See [docs/claude.md](claude.md) for the full table.
+
+## Follow-up topics (not in v0.6)
+
+- `permission_mode = plan` detection once Codex exposes it ([plan L#1](https://github.com/tak848/ccgate/pulls?q=is%3Aopen+plan)).
+- `transcript_path` JSONL parsing for a `recent_transcript` field ([plan L#2]).
+- `~/.codex/config.toml` `prefix_rules` ingestion -- `forbidden` -> deny, `prompt` -> fallthrough ([plan L#3]).
+- `approval_policy` / `sandbox_mode` ingestion as system prompt context ([plan L#4]).
+- Verifying fork-only schema fields against runtime payloads ([plan L#5]).
+
+These are tracked as follow-up GitHub issues; the v0.6 PR is intentionally scoped to multi-target plumbing + a tool-agnostic Codex hook.
