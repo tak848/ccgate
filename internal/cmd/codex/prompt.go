@@ -46,13 +46,14 @@ func buildPrompt(cfg config.Config, in HookInput) (llm.Prompt, error) {
 	}
 
 	p := prompt.Build(prompt.Args{
-		TargetName:    "Codex CLI",
-		PlanMode:      false,
-		TargetSection: codexTargetSection,
-		Allow:         cfg.Allow,
-		Deny:          cfg.Deny,
-		Environment:   cfg.Environment,
-		UserPayload:   string(user),
+		TargetName:          "Codex CLI",
+		PlanMode:            false,
+		HasRecentTranscript: false,
+		TargetSection:       codexTargetSection,
+		Allow:               cfg.Allow,
+		Deny:                cfg.Deny,
+		Environment:         cfg.Environment,
+		UserPayload:         string(user),
 	})
 	p.Model = cfg.Provider.Model
 	p.TimeoutMS = cfg.GetTimeoutMS()

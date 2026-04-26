@@ -29,7 +29,7 @@
 
   allow: [
     'Read-only operations: Bash inspection commands (ls, cat, head, tail, less, file, stat, find/grep without -exec/--delete, git status/log/diff/show/branch/remote -v), or any tool whose tool_input shape implies pure read (no writes, no network calls with side effects).',
-    "Local build/test against project-defined scripts: make, just, mise run, pnpm test, go test, cargo test, etc. Includes apply_patch invocations confined to repo files when the patch is small and matches the AI's stated intent.",
+    'Local build/test against project-defined scripts: make, just, mise run, pnpm test, go test, cargo test, etc.',
     'Package install confined to this repo: pnpm/cargo/go install with no global flags.',
     'Git feature-branch operations on non-protected branches.',
     'MCP tools whose server is explicitly trusted by the user and whose tool_input is read-only (search, fetch metadata, list resources).',
@@ -46,8 +46,10 @@
   ],
 
   environment: [
-    'Tool surface: Codex hooks fire for Bash, apply_patch, MCP tool calls, and other tool kinds. classify by tool_name + tool_input shape rather than assuming a single surface.',
+    'Tool surface: Codex hooks fire for Bash, apply_patch, MCP tool calls, and other tool kinds. Classify by tool_name + tool_input shape rather than assuming a single surface.',
     'Trusted repo: assume the repo is the trust boundary; treat anything outside it (other directories, remote endpoints, MCP servers not explicitly trusted) as untrusted.',
     'Path scope: when a tool_input targets paths outside cwd (e.g. /etc/, /usr/, ~/.ssh/), treat as out-of-repo and lean toward deny unless clearly read-only and benign.',
+    'apply_patch is a write surface: do NOT auto-allow it. Treat it like any other write — fallthrough so Codex can show its own approval prompt unless a project-local rule explicitly opts a specific path scope into allow.',
+    'Codex has no recent_transcript field today. Decide from tool_name + tool_input + cwd alone; if intent is ambiguous, return fallthrough (do NOT invent transcript context).',
   ],
 }

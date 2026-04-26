@@ -40,6 +40,31 @@ ccgate/
 
 > コードスニペット入りの完全な手順は今後追記予定。現時点では `internal/cmd/codex/` を実装例として参照してください。
 
-## Spec Ledger
+## Defaults parity (Claude vs Codex)
 
-target ごとの仕様 verify 状況は v0.6 plan ファイル (`.claude/plans/codex-cli-hook-system-piped-badger.md`、section A2) で管理しています。adapter / docs / fixture / 仕様参照を伴うコードを変更したら、同じ PR 内で関連する Spec Ledger 行を更新してください。
+両 target とも `allow + deny + environment` ガイダンスを持ちます (project philosophy)。wording が異なるのは、Claude が tool 種別 (Read/Edit/Bash/etc.) で分類する一方、Codex は同じ surface で Bash + apply_patch + MCP を捌くため、Codex defaults は command shape や MCP server trust の言葉で書かれているためです。
+
+意図的な片側だけのカテゴリと理由:
+
+| 側         | カテゴリ                                       | 理由                                                                                                                                |
+|------------|------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------|
+| Claude     | `Sibling Checkout / Worktree Confusion`        | Claude Code は `is_worktree` を surface する。Codex には無いため worktree 混同は Claude 固有の失敗モード。                            |
+| Claude     | `Library Source Read`, `Read-Only Operations`  | Claude は Read/Glob/Grep を独立 tool surface として持つ。Codex は同じ操作を Bash 経由で捌くため read-only Bash ルールでカバー。       |
+| Claude     | `Draft PR Creation`                            | Claude は `gh pr create` の `draft` flag を `tool_input_raw` で持つ。Codex hook は同 field を surface しない。                         |
+| Codex      | `MCP tools whose server is explicitly trusted` | MCP 専用 allow パス。Claude の hook は現状 MCP を ccgate に dispatch しない。                                                          |
+| Codex      | `MCP tools that advertise destructive side effects` | 同上 (MCP 専用 deny レーン)。                                                                                                       |
+| Codex      | `sudo or other privilege escalation`           | Codex hook は privilege escalation Bash も ccgate に通すので明示。Claude は `~/.claude/settings.json` で同等のカバレッジを持つ。      |
+| Codex      | `Unrestricted network out`                     | Codex の auto-approval ladder は `nc` / `ssh` / `scp` / `ftp` まで届くため、Codex 側で deny ルールを前面に出している。                |
+| Codex      | `apply_patch` is a write surface (environment) | Codex 固有の tool surface。Claude は `Edit` / `Write` を直接 dispatch するため不要。                                                  |
+
+両方に存在するが wording が異なるカテゴリ (`Download and Execute`, `Direct Tool Invocation` ↔ `Direct one-shot remote package execution bypassing project scripts`, `Git Destructive` ↔ `Git destructive`, `Out-of-Repo Deletion` ↔ `rm -rf or mv targeting paths outside the workspace`) は同じ意図をカバーしています。wording の自動 equality assert は意図的に re-phrase してるため fragile になるので、defaults 変更時はレビュアーが手動でパリティを確認してください。
+
+## Upstream 仕様
+
+ccgate の挙動は各 target の hook upstream docs に従っています。adapter / fixture / 仕様参照を変更する際は、まずこれらを source of truth として確認してください:
+
+- Claude Code hooks: <https://code.claude.com/docs/en/hooks>
+- OpenAI Codex hooks: <https://developers.openai.com/codex/hooks>
+- OpenAI Codex config reference: <https://developers.openai.com/codex/config-reference>
+
+PR で hook payload の parse 方法や依存 field を変更する場合は、関連 upstream セクションへのリンクを PR description に含めてください (upstream はまだ動くため、レビュアーが現行 docs で再確認できるように)。

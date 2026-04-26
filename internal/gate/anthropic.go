@@ -168,12 +168,13 @@ const claudeTargetSection = "The user message includes settings_permissions and 
 
 func buildSystemPrompt(cfg config.Config, permissionMode string) string {
 	p := prompt.Build(prompt.Args{
-		TargetName:    "Claude Code",
-		PlanMode:      permissionMode == PermissionModePlan,
-		TargetSection: claudeTargetSection,
-		Allow:         cfg.Allow,
-		Deny:          cfg.Deny,
-		Environment:   cfg.Environment,
+		TargetName:          "Claude Code",
+		PlanMode:            permissionMode == PermissionModePlan,
+		HasRecentTranscript: true,
+		TargetSection:       claudeTargetSection,
+		Allow:               cfg.Allow,
+		Deny:                cfg.Deny,
+		Environment:         cfg.Environment,
 	})
 	return p.System
 }
