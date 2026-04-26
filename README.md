@@ -260,7 +260,6 @@ The daily table shows per-day counts (Allow, Deny, Fall, F.Allow, F.Deny, Err), 
 - [docs/claude.md](docs/claude.md) — Claude Code specifics
 - [docs/codex.md](docs/codex.md) — Codex CLI specifics
 - [docs/configuration.md](docs/configuration.md) — config layering, fallthrough_strategy, metrics, known limits
-- [docs/architecture.md](docs/architecture.md) — package structure, adding a new target
 - [日本語ドキュメント (docs/ja/)](docs/ja/README.md)
 
 ## Development

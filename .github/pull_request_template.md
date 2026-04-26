@@ -25,7 +25,7 @@ Tick what applies. Untick what doesn't and remove the line if not relevant.
 - [ ] Public schema (`internal/config.Config`) changed → `mise run schema` re-run, `schemas/{claude,codex}.schema.json` committed
 - [ ] User-facing behavior change → docs (`README.md`, `docs/*.md`) updated
 - [ ] English doc change → matching `docs/ja/*.md` mirror updated in the same PR
-- [ ] Breaking change (CLI flag removal, config field removal, file path change) → CHANGELOG entry added under the right minor / major version
+- [ ] Breaking change (CLI flag removal, config field removal, file path change) → called out in this PR body and PR labeled `breaking-change`
 - [ ] New embedded `defaults.jsonnet` rule → covered by `internal/cmd/<target>/defaults_test.go`
 - [ ] Adapter / fixture / spec-citation change → linked the relevant upstream Anthropic / OpenAI hook docs section in the PR body
 

@@ -22,7 +22,7 @@ field / hook event etc. if relevant. -->
 
 <!-- If this involves a breaking change (CLI flag removal, config
 field removal, file-path change), call it out so we can plan a minor
-bump and the CHANGELOG entry. -->
+bump and label the resulting PR `breaking-change`. -->
 
 ## Notes
 

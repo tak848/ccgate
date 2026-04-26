@@ -259,7 +259,6 @@ ccgate codex  metrics --days 7        # codex 側、同じシェイプ
 - [docs/ja/claude.md](claude.md) — Claude Code 固有
 - [docs/ja/codex.md](codex.md) — Codex CLI 固有
 - [docs/ja/configuration.md](configuration.md) — 設定 layering、fallthrough_strategy、metrics、既知の制約
-- [docs/ja/architecture.md](architecture.md) — パッケージ構造、新 target の追加手順
 - [English documentation (docs/)](../claude.md)
 
 ## 開発

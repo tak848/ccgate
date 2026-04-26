@@ -37,8 +37,8 @@ Windows, and `mise run lint` on Ubuntu.
 ccgate's per-target hook implementations live under
 `internal/cmd/{claude,codex}/`. The shared primitives
 (`internal/{prompt,llm,llm/anthropic,config,metrics,gitutil}`) are
-target-agnostic. See [docs/architecture.md](docs/architecture.md)
-for the package layout and how to add a new target.
+target-agnostic. `internal/cmd/codex/` is the worked example to copy
+when adding a new target.
 
 If your change touches `internal/config.Config`, regenerate the public
 JSON schemas before committing:
@@ -80,7 +80,7 @@ The PR template walks through the expected sections (Why / What / Test
 plan / Checklist). Notable items the checklist asks for:
 
 - public schema change → schemas regenerated and committed;
-- breaking change → CHANGELOG entry under the right minor / major version;
+- breaking change → call it out in the PR body and label the PR `breaking-change` so it surfaces in the GitHub release notes group;
 - English doc change → matching `docs/ja/*` mirror updated;
 - adapter / fixture / spec-citation change → link the relevant upstream
   Anthropic / OpenAI hook docs section in the PR body so reviewers
