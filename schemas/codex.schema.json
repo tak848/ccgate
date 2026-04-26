@@ -63,9 +63,6 @@
   },
   "additionalProperties": false,
   "type": "object",
-  "required": [
-    "provider"
-  ],
   "title": "ccgate codex configuration",
   "description": "Configuration schema for ccgate's codex PermissionRequest hook. See https://github.com/tak848/ccgate."
 }

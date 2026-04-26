@@ -63,6 +63,14 @@ func writeSchema(path, target string) error {
 	schema.Description = "Configuration schema for ccgate's " + target +
 		" PermissionRequest hook. See https://github.com/tak848/ccgate."
 
+	// Project-local config files (`{repo_root}/.<target>/ccgate.local.jsonnet`)
+	// intentionally do not carry `provider` — they only append allow / deny /
+	// environment on top of the global base. Marking `provider` as required
+	// at the root would make those files fail editor validation. Drop the
+	// root-level required list entirely; per-field required (e.g. provider's
+	// nested name / model) is still emitted by the reflector.
+	schema.Required = nil
+
 	data, err := json.MarshalIndent(schema, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)

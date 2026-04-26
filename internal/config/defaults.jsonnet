@@ -3,7 +3,7 @@
 
   // Default safety rules for ccgate.
   // Inspired by Claude Code Auto Mode defaults.
-  // Customize: ccgate init > ~/.claude/ccgate.jsonnet
+  // Customize: ccgate claude init > ~/.claude/ccgate.jsonnet
 
   provider: {
     name: 'anthropic',

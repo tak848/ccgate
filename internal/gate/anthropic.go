@@ -164,7 +164,7 @@ const PermissionModePlan = "plan"
 // gate/ so the existing orchestrator keeps working unchanged.
 const claudeTargetSection = "The user message includes settings_permissions and recent_transcript as background context.\n" +
 	"settings_permissions lists the user's Claude Code static allow/deny/ask patterns. Claude Code already matched them BEFORE invoking ccgate, so by design every request that reaches ccgate did NOT auto-match allow (often composite constructs like `$()` or pipelines that slip past literal matchers, or MCP tools without a static matcher). Absence from settings_permissions.allow is therefore the normal, expected case — use it only as a hint about user preferences, never as a whitelist requirement.\n" +
-	"recent_transcript shows recent user messages and tool calls. Use it to understand what the user asked for. If the user explicitly requested the operation, prefer allow or fallthrough over deny.\n"
+	"recent_transcript shows recent user messages and tool calls. Use it to understand what the user asked for. If the user explicitly requested the operation, prefer fallthrough over deny so Claude Code can confirm with the user. Explicit user intent never escalates a deny rule to allow.\n"
 
 func buildSystemPrompt(cfg config.Config, permissionMode string) string {
 	p := prompt.Build(prompt.Args{

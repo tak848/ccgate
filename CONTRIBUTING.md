@@ -79,10 +79,12 @@ Any user-facing change must update both languages in the same PR.
 The PR template walks through the expected sections (Why / What / Test
 plan / Checklist). Notable items the checklist asks for:
 
-- adapter / docs / fixture / spec-citation change → Spec Ledger updated;
 - public schema change → schemas regenerated and committed;
 - breaking change → CHANGELOG entry under the right minor / major version;
-- English doc change → matching `docs/ja/*` mirror updated.
+- English doc change → matching `docs/ja/*` mirror updated;
+- adapter / fixture / spec-citation change → link the relevant upstream
+  Anthropic / OpenAI hook docs section in the PR body so reviewers
+  can verify the change against current upstream docs.
 
 PR / commit messages and review replies in this repository are written
 in **English**. Chat / plan files / code comments may stay in any

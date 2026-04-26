@@ -38,7 +38,13 @@ ccgate/
 4. Generate a per-target schema via `mise run schema` (extend `scripts/genschema/main.go` if the target needs a different Config struct).
 5. Add docs at `docs/<target>.md` + `docs/ja/<target>.md` (1:1 en/ja mirror).
 
-> A fully fleshed-out walkthrough with code snippets is the planned content for this page. The bullets above describe the shape of the contribution; cross-reference `internal/cmd/codex/` as a worked example.
+`internal/cmd/codex/` is a complete worked example of every step:
+
+- `codex.go` exposes `Run`, `Init`, `Metrics`, `LoadOptions`, and bakes in the per-target `$XDG_STATE_HOME/ccgate/codex/` paths.
+- `defaults.jsonnet` (`//go:embed`) ships allow / deny / environment guidance with the same shape as the Claude defaults; `defaults_test.go` pins the rule taxonomy so a future edit can't silently drop a category.
+- `input.go` keeps a typed view of fields the metrics layer understands plus the raw `tool_input` JSON for the LLM.
+- `prompt.go` builds the system prompt via `internal/prompt.Build` with `HasRecentTranscript=false`, and supplies a Codex-specific `TargetSection` describing the heterogeneous tool surface.
+- `internal/cli/codex_cmd.go` wires the kong subcommand tree; the `Hook` sub-sub-command uses `default:"withargs"` so bare `ccgate codex` runs the hook while `ccgate codex --help` still lists every entry point.
 
 ## Defaults parity (Claude vs Codex)
 

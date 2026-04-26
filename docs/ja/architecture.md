@@ -38,7 +38,13 @@ ccgate/
 4. `mise run schema` で per-target schema を生成 (target が異なる Config struct を持つ場合は `scripts/genschema/main.go` を拡張)
 5. `docs/<target>.md` + `docs/ja/<target>.md` を 1:1 で追加 (en/ja ミラー)
 
-> コードスニペット入りの完全な手順は今後追記予定。現時点では `internal/cmd/codex/` を実装例として参照してください。
+`internal/cmd/codex/` が各ステップの完全な実装例:
+
+- `codex.go` で `Run` / `Init` / `Metrics` / `LoadOptions` を expose し、`$XDG_STATE_HOME/ccgate/codex/` の per-target path を埋め込み
+- `defaults.jsonnet` (`//go:embed`) は Claude defaults と同じ shape の allow / deny / environment ガイダンスを持ち、`defaults_test.go` でルール taxonomy を pin (将来の edit が silent にカテゴリを落とせないように)
+- `input.go` は metrics 層が理解できる typed view + LLM 用に raw `tool_input` JSON を保持
+- `prompt.go` は `internal/prompt.Build` を `HasRecentTranscript=false` で呼び、Codex 固有の `TargetSection` で heterogeneous な tool surface を説明
+- `internal/cli/codex_cmd.go` で kong subcommand tree を結線。`Hook` sub-sub-command に `default:"withargs"` を付けて bare `ccgate codex` が hook を起動しつつ `ccgate codex --help` で全エントリーポイントが一覧表示されるようにしている
 
 ## Defaults parity (Claude vs Codex)
 

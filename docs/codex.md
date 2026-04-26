@@ -120,10 +120,12 @@ See [docs/claude.md](claude.md) for the full table.
 
 ## Follow-up topics (not in v0.6)
 
-- `permission_mode = plan` detection once Codex exposes it ([plan L#1](https://github.com/tak848/ccgate/pulls?q=is%3Aopen+plan)).
-- `transcript_path` JSONL parsing for a `recent_transcript` field ([plan L#2]).
-- `~/.codex/config.toml` `prefix_rules` ingestion -- `forbidden` -> deny, `prompt` -> fallthrough ([plan L#3]).
-- `approval_policy` / `sandbox_mode` ingestion as system prompt context ([plan L#4]).
-- Verifying fork-only schema fields against runtime payloads ([plan L#5]).
+The following are intentionally out of scope for v0.6 and not yet tracked as separate GitHub issues. Each will get its own issue before any of the work starts:
 
-These are tracked as follow-up GitHub issues; the v0.6 PR is intentionally scoped to multi-target plumbing + a tool-agnostic Codex hook.
+- `permission_mode = plan` detection once Codex exposes the field upstream.
+- `transcript_path` JSONL parsing so the LLM can see a `recent_transcript` for Codex.
+- `~/.codex/config.toml` `prefix_rules` ingestion -- mapping `forbidden` -> deny and `prompt` -> fallthrough.
+- `approval_policy` / `sandbox_mode` ingestion as system prompt context.
+- Verifying fork-only Codex hook schema fields against actual runtime payloads.
+
+The v0.6 PR is intentionally scoped to multi-target plumbing + a tool-agnostic Codex hook.
