@@ -38,13 +38,54 @@ ccgate/
 4. Generate a per-target schema via `mise run schema` (extend `scripts/genschema/main.go` if the target needs a different Config struct).
 5. Add docs at `docs/<target>.md` + `docs/ja/<target>.md` (1:1 en/ja mirror).
 
-`internal/cmd/codex/` is a complete worked example of every step:
+`internal/cmd/codex/` is a complete worked example of every step. Key shapes:
 
-- `codex.go` exposes `Run`, `Init`, `Metrics`, `LoadOptions`, and bakes in the per-target `$XDG_STATE_HOME/ccgate/codex/` paths.
+```go
+// internal/cmd/codex/codex.go
+//go:embed defaults.jsonnet
+var defaultsJsonnet string
+
+func LoadOptions() config.LoadOptions {
+    home, _ := os.UserHomeDir()
+    sd := stateDir() // $XDG_STATE_HOME/ccgate/codex
+    return config.LoadOptions{
+        GlobalConfigPath:          filepath.Join(home, ".codex", config.BaseConfigName),
+        ProjectLocalRelativePaths: []string{filepath.Join(".codex", config.LocalConfigName)},
+        EmbedDefaults:             defaultsJsonnet,
+        DefaultLogPath:            filepath.Join(sd, "ccgate.log"),
+        DefaultMetricsPath:        filepath.Join(sd, "metrics.jsonl"),
+    }
+}
+```
+
+```go
+// internal/cmd/codex/prompt.go
+p := prompt.Build(prompt.Args{
+    TargetName:          "Codex CLI",
+    PlanMode:            false,
+    HasRecentTranscript: false, // Codex does not deliver a transcript field today
+    TargetSection:       codexTargetSection,
+    Allow:               cfg.Allow,
+    Deny:                cfg.Deny,
+    Environment:         cfg.Environment,
+    UserPayload:         string(user),
+})
+```
+
+```go
+// internal/cli/codex_cmd.go
+type CodexCmd struct {
+    Hook    CodexHookCmd    `cmd:"" default:"withargs" name:"hook" help:"Run the Codex CLI hook from stdin (default; same as 'ccgate codex')."`
+    Init    CodexInitCmd    `cmd:""                                help:"Output the embedded Codex CLI default configuration."`
+    Metrics CodexMetricsCmd `cmd:""                                help:"Show Codex CLI usage metrics."`
+}
+```
+
+Other notable files in the package:
+
 - `defaults.jsonnet` (`//go:embed`) ships allow / deny / environment guidance with the same shape as the Claude defaults; `defaults_test.go` pins the rule taxonomy so a future edit can't silently drop a category.
 - `input.go` keeps a typed view of fields the metrics layer understands plus the raw `tool_input` JSON for the LLM.
-- `prompt.go` builds the system prompt via `internal/prompt.Build` with `HasRecentTranscript=false`, and supplies a Codex-specific `TargetSection` describing the heterogeneous tool surface.
-- `internal/cli/codex_cmd.go` wires the kong subcommand tree; the `Hook` sub-sub-command uses `default:"withargs"` so bare `ccgate codex` runs the hook while `ccgate codex --help` still lists every entry point.
+- `entry.go` shapes the per-invocation `metrics.Entry` -- field-for-field compatible with the Claude side so `metrics.PrintReport` aggregates either target.
 
 ## Defaults parity (Claude vs Codex)
 

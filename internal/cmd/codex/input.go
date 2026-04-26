@@ -14,8 +14,8 @@ import "encoding/json"
 //
 // Fields kept here are the upstream-verified subset (developers.openai.com/codex/hooks
 // as of 2026-04-26). Forks (e.g. stellarlinkco) expose a richer schema
-// — when those fields land in upstream we will extend this struct and
-// update the Spec Ledger in the plan file.
+// — when those fields land in upstream, extend this struct and link
+// the relevant section of the upstream Codex hooks docs in the PR body.
 type HookInput struct {
 	SessionID      string          `json:"session_id"`
 	TranscriptPath string          `json:"transcript_path"`

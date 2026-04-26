@@ -38,13 +38,54 @@ ccgate/
 4. `mise run schema` で per-target schema を生成 (target が異なる Config struct を持つ場合は `scripts/genschema/main.go` を拡張)
 5. `docs/<target>.md` + `docs/ja/<target>.md` を 1:1 で追加 (en/ja ミラー)
 
-`internal/cmd/codex/` が各ステップの完全な実装例:
+`internal/cmd/codex/` が各ステップの完全な実装例。主要 shape:
 
-- `codex.go` で `Run` / `Init` / `Metrics` / `LoadOptions` を expose し、`$XDG_STATE_HOME/ccgate/codex/` の per-target path を埋め込み
-- `defaults.jsonnet` (`//go:embed`) は Claude defaults と同じ shape の allow / deny / environment ガイダンスを持ち、`defaults_test.go` でルール taxonomy を pin (将来の edit が silent にカテゴリを落とせないように)
+```go
+// internal/cmd/codex/codex.go
+//go:embed defaults.jsonnet
+var defaultsJsonnet string
+
+func LoadOptions() config.LoadOptions {
+    home, _ := os.UserHomeDir()
+    sd := stateDir() // $XDG_STATE_HOME/ccgate/codex
+    return config.LoadOptions{
+        GlobalConfigPath:          filepath.Join(home, ".codex", config.BaseConfigName),
+        ProjectLocalRelativePaths: []string{filepath.Join(".codex", config.LocalConfigName)},
+        EmbedDefaults:             defaultsJsonnet,
+        DefaultLogPath:            filepath.Join(sd, "ccgate.log"),
+        DefaultMetricsPath:        filepath.Join(sd, "metrics.jsonl"),
+    }
+}
+```
+
+```go
+// internal/cmd/codex/prompt.go
+p := prompt.Build(prompt.Args{
+    TargetName:          "Codex CLI",
+    PlanMode:            false,
+    HasRecentTranscript: false, // Codex は現状 transcript field を deliver しない
+    TargetSection:       codexTargetSection,
+    Allow:               cfg.Allow,
+    Deny:                cfg.Deny,
+    Environment:         cfg.Environment,
+    UserPayload:         string(user),
+})
+```
+
+```go
+// internal/cli/codex_cmd.go
+type CodexCmd struct {
+    Hook    CodexHookCmd    `cmd:"" default:"withargs" name:"hook" help:"Run the Codex CLI hook from stdin (default; same as 'ccgate codex')."`
+    Init    CodexInitCmd    `cmd:""                                help:"Output the embedded Codex CLI default configuration."`
+    Metrics CodexMetricsCmd `cmd:""                                help:"Show Codex CLI usage metrics."`
+}
+```
+
+その他の主要ファイル:
+
+- `defaults.jsonnet` (`//go:embed`) は Claude defaults と同じ shape の allow / deny / environment ガイダンス。`defaults_test.go` でルール taxonomy を pin (将来の edit が silent にカテゴリを落とせないように)
 - `input.go` は metrics 層が理解できる typed view + LLM 用に raw `tool_input` JSON を保持
-- `prompt.go` は `internal/prompt.Build` を `HasRecentTranscript=false` で呼び、Codex 固有の `TargetSection` で heterogeneous な tool surface を説明
-- `internal/cli/codex_cmd.go` で kong subcommand tree を結線。`Hook` sub-sub-command に `default:"withargs"` を付けて bare `ccgate codex` が hook を起動しつつ `ccgate codex --help` で全エントリーポイントが一覧表示されるようにしている
+- `entry.go` で per-invocation `metrics.Entry` の shape を決定 -- Claude 側と field 互換なので `metrics.PrintReport` がどちらの target も同じく集計可能
 
 ## Defaults parity (Claude vs Codex)
 
