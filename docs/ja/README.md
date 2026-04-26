@@ -184,7 +184,7 @@ Claude Code と同じ環境変数 (`CCGATE_ANTHROPIC_API_KEY` / `ANTHROPIC_API_K
 | `deny`                   | string[]                          | `[]`                                                                            | 拒否ルール (mandatory)。`deny_message:` ヒント対応                                                         |
 | `environment`            | string[]                          | `[]`                                                                            | LLM に渡すコンテキスト (信頼レベル、ポリシー等)                                                            |
 
-`<target>` は Claude / Codex どちらの hook が呼ばれたかで `claude` / `codex` になります。pre-v0.6 の ccgate は両ファイルを `$XDG_STATE_HOME/ccgate/` 直下に書いていましたが、その path は後方互換のため `ccgate claude metrics` から引き続き読まれます。
+`<target>` は Claude / Codex どちらの hook が呼ばれたかで `claude` / `codex` になります。`XDG_STATE_HOME` が未設定の場合は `~/.local/state/ccgate/<target>/...` が fallback として使われます。pre-v0.6 の ccgate は両ファイルを `$XDG_STATE_HOME/ccgate/` 直下 (`<target>` セグメントなし) に書いていましたが、その legacy path は後方互換のため `ccgate claude metrics` から引き続き読まれます。
 
 ## デフォルトルール
 
@@ -227,7 +227,7 @@ ccgate codex  init    > ~/.codex/ccgate.jsonnet            # グローバル, co
 
 ## ログ・メトリクス
 
-ログ・メトリクスは `$XDG_STATE_HOME/ccgate/<target>/` 配下に保存されます:
+ログ・メトリクスは `$XDG_STATE_HOME/ccgate/<target>/` 配下 (`XDG_STATE_HOME` 未設定時は `~/.local/state/ccgate/<target>/`) に保存されます:
 
 - `$XDG_STATE_HOME/ccgate/claude/{ccgate.log,metrics.jsonl}` — Claude Code
 - `$XDG_STATE_HOME/ccgate/codex/{ccgate.log,metrics.jsonl}` — Codex CLI

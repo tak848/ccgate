@@ -185,7 +185,7 @@ Project-local configs are loaded only when **not tracked by Git**.
 | `deny`                   | string[]                          | `[]`                                                                          | Deny guidance rules (mandatory). Supports inline `deny_message:` hints                                 |
 | `environment`            | string[]                          | `[]`                                                                          | Context strings passed to the LLM (trust level, policies, etc.)                                        |
 
-`<target>` is `claude` or `codex` depending on which hook is invoked. Pre-v0.6 ccgate wrote both files directly under `$XDG_STATE_HOME/ccgate/`; that path is still read by `ccgate claude metrics` for backward-compat.
+`<target>` is `claude` or `codex` depending on which hook is invoked. When `XDG_STATE_HOME` is unset, ccgate falls back to `~/.local/state/ccgate/<target>/...`. Pre-v0.6 ccgate wrote both files directly under `$XDG_STATE_HOME/ccgate/` (no `<target>` segment); that legacy path is still read by `ccgate claude metrics` for backward-compat.
 
 ## Default Rules
 
@@ -228,7 +228,7 @@ Only LLM-driven uncertainty is affected. Truncated/refused API responses, missin
 
 ## Logging & metrics
 
-Logs and metrics live under `$XDG_STATE_HOME/ccgate/<target>/`:
+Logs and metrics live under `$XDG_STATE_HOME/ccgate/<target>/` (or `~/.local/state/ccgate/<target>/` when `XDG_STATE_HOME` is unset):
 
 - `$XDG_STATE_HOME/ccgate/claude/{ccgate.log,metrics.jsonl}` — Claude Code
 - `$XDG_STATE_HOME/ccgate/codex/{ccgate.log,metrics.jsonl}` — Codex CLI
