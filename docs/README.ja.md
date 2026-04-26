@@ -125,7 +125,7 @@ ccgate init > ~/.claude/ccgate.jsonnet
 | `provider.name` | string | `"anthropic"` | プロバイダー名。`"anthropic"` のみ対応 |
 | `provider.model` | string | `"claude-haiku-4-5"` | モデル名 (例: `claude-haiku-4-5`, `claude-sonnet-4-6`, `claude-opus-4-6`) |
 | `provider.timeout_ms` | int | `20000` | API タイムアウト (ms) |
-| `log_path` | string | `"~/.claude/logs/ccgate.log"` | ログファイルパス。`~` でホームディレクトリ展開 |
+| `log_path` | string | `"$XDG_STATE_HOME/ccgate/ccgate.log"` | ログファイルパス。`~` でホームディレクトリ展開 |
 | `log_disabled` | bool | `false` | ログ出力を完全に無効化 |
 | `log_max_size` | int | `5242880` | ローテーション閾値 (bytes, デフォルト 5MB) |
 | `metrics_path` | string | `"$XDG_STATE_HOME/ccgate/metrics.jsonl"` | メトリクス JSONL のパス。`~` でホームディレクトリ展開 |
@@ -176,7 +176,7 @@ ccgate init -p > ccgate.local.jsonnet     # プロジェクトローカルテン
 
 ## ログ
 
-デフォルトでは `~/.claude/logs/ccgate.log` に出力されます。5MB でローテーション (`.log.1`)。
+デフォルトでは `$XDG_STATE_HOME/ccgate/ccgate.log` に出力されます。`XDG_STATE_HOME` が未設定の場合は `~/.local/state/ccgate/ccgate.log` にフォールバックします。5MB でローテーション (`.log.1`)。
 
 ログパスの変更・無効化:
 

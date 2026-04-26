@@ -129,7 +129,7 @@ Project-local configs are only loaded if **not tracked by Git**.
 | `provider.name` | string | `"anthropic"` | Provider name. Only `"anthropic"` is supported. |
 | `provider.model` | string | `"claude-haiku-4-5"` | Model name (e.g. `claude-haiku-4-5`, `claude-sonnet-4-6`, `claude-opus-4-6`) |
 | `provider.timeout_ms` | int | `20000` | API timeout (ms) |
-| `log_path` | string | `"~/.claude/logs/ccgate.log"` | Log file path. Supports `~` for home directory. |
+| `log_path` | string | `"$XDG_STATE_HOME/ccgate/ccgate.log"` | Log file path. Supports `~` for home directory. |
 | `log_disabled` | bool | `false` | Disable logging entirely |
 | `log_max_size` | int | `5242880` | Max log file size in bytes before rotation (default 5MB) |
 | `metrics_path` | string | `"$XDG_STATE_HOME/ccgate/metrics.jsonl"` | Metrics JSONL file path. Supports `~` for home directory. |
@@ -180,7 +180,8 @@ Only LLM-driven uncertainty is affected. Truncated/refused API responses, missin
 
 ## Logging
 
-Logs are written to `~/.claude/logs/ccgate.log` by default with 5 MB rotation (`.log.1`).
+Logs are written to `$XDG_STATE_HOME/ccgate/ccgate.log` by default with 5 MB rotation (`.log.1`).
+If `XDG_STATE_HOME` is unset, ccgate falls back to `~/.local/state/ccgate/ccgate.log`.
 
 To change the log path or disable logging:
 
