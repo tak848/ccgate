@@ -43,16 +43,16 @@ const (
 
 type Config struct {
 	Provider            ProviderConfig `json:"provider"`
-	LogPath             string         `json:"log_path"`
-	LogDisabled         *bool          `json:"log_disabled"`
-	LogMaxSize          *int64         `json:"log_max_size"`
-	MetricsPath         string         `json:"metrics_path"`
-	MetricsDisabled     *bool          `json:"metrics_disabled"`
-	MetricsMaxSize      *int64         `json:"metrics_max_size"`
-	FallthroughStrategy *string        `json:"fallthrough_strategy"`
-	Allow               []string       `json:"allow"`
-	Deny                []string       `json:"deny"`
-	Environment         []string       `json:"environment"`
+	LogPath             string         `json:"log_path,omitempty"`
+	LogDisabled         *bool          `json:"log_disabled,omitempty"`
+	LogMaxSize          *int64         `json:"log_max_size,omitempty"`
+	MetricsPath         string         `json:"metrics_path,omitempty"`
+	MetricsDisabled     *bool          `json:"metrics_disabled,omitempty"`
+	MetricsMaxSize      *int64         `json:"metrics_max_size,omitempty"`
+	FallthroughStrategy *string        `json:"fallthrough_strategy,omitempty"`
+	Allow               []string       `json:"allow,omitempty"`
+	Deny                []string       `json:"deny,omitempty"`
+	Environment         []string       `json:"environment,omitempty"`
 }
 
 // GetFallthroughStrategy returns the configured strategy for LLM fallthrough,
@@ -67,7 +67,7 @@ func (c Config) GetFallthroughStrategy() string {
 type ProviderConfig struct {
 	Name      string `json:"name"`
 	Model     string `json:"model"`
-	TimeoutMS *int   `json:"timeout_ms"`
+	TimeoutMS *int   `json:"timeout_ms,omitempty"`
 }
 
 // GetTimeoutMS returns the timeout in milliseconds.

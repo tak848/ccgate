@@ -8,7 +8,7 @@ AI コーディングツール向けの **PermissionRequest** フックです。
 対応ターゲット:
 
 - **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — 安定
-- **[OpenAI Codex CLI](https://developers.openai.com/codex/hooks)** — experimental, Linux/macOS のみ
+- **[OpenAI Codex CLI](https://developers.openai.com/codex/hooks)** — experimental。Linux/macOS で検証済み、Windows は未検証 (block はされない)
 
 [English README](../../README.md)
 
@@ -132,7 +132,7 @@ ccgate claude init > ~/.claude/ccgate.jsonnet
 
 ## セットアップ — Codex CLI (experimental)
 
-> Codex hooks は upstream で experimental 扱い (2026-04 時点)。スキーマや挙動が今後変わる可能性があります。Linux/macOS のみ対応 — `ccgate codex` は Windows では fail-fast します (Codex 側で hooks が無効化されているため)。
+> Codex hooks は upstream で experimental 扱い (2026-04 時点)。スキーマや挙動が今後変わる可能性があります。ccgate の Codex 対応は Linux/macOS で検証済み。OpenAI Codex hooks docs には `windows_managed_dir` が一級フィールドとして記載されているので、Windows も binary レベルでは block されません。ただし ccgate の Codex flow は Windows で動作未検証なので、Windows で使う場合は untested 扱いとしてください。
 
 ### 1. 設定ファイルを配置 (オプション)
 
@@ -252,7 +252,7 @@ ccgate codex  metrics --days 7        # codex 側、同じシェイプ
 - **Plan mode の正しさはプロンプトのみに依存 (Claude のみ)。** `permission_mode == "plan"` では、(a) 実装系 write を拒絶する判定と (b) allow guidance に載っていない read-only クエリを許可する判定の両方を、LLM とシステムプロンプトの指示文に委ねています。プロンプトで記述する以上、どちらの方向にも誤判定の余地があります。[#37](https://github.com/tak848/ccgate/issues/37) で追跡しています。
 - **設定ファイル layering の非対称。** グローバル設定は組み込みデフォルトを*置換*するのに対し、プロジェクトローカルは*追加のみ*。プロジェクト層からルールを狭める/上書きする手段がありません。互換性を壊す破壊的リファクタとして [#38](https://github.com/tak848/ccgate/issues/38) で追跡しています。
 - **Codex hook は upstream で experimental。** スキーマや挙動が変わる可能性があります。richer なフィールド (`permission_mode`、`recent_transcript` 解析、`~/.codex/config.toml` 取り込み、MCP server 単位の trust hint) は follow-up issue で追跡しています。
-- **Codex hook は Windows 非対応。** Codex 側で hooks が無効化されているため、`ccgate codex` は Codex docs へのリンク付きで exit します。
+- **Codex hook の Windows は未検証。** ccgate の Codex 対応は Linux/macOS でのみ動作確認しています。OpenAI Codex hooks docs には `windows_managed_dir` が一級フィールドとして記載されているため、binary レベルでは block しませんが、ccgate の Codex flow が Windows で動くかは保証していません。
 
 ## ドキュメント
 

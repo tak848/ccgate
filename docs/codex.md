@@ -9,7 +9,7 @@ Codex-CLI-specific notes for the `ccgate codex` hook.
 ## Status
 
 - **Experimental.** Codex hooks are upstream-experimental as of 2026-04. Schema and behavior may change without notice; ccgate tracks each verified spec entry in `.claude/plans/codex-cli-hook-system-piped-badger.md` (Spec Ledger, section A2).
-- **Linux/macOS only.** Codex hooks are upstream-disabled on Windows; `ccgate codex` exits with a pointer to the Codex docs.
+- **Tested on Linux/macOS; Windows untested.** Upstream Codex docs list `windows_managed_dir` as a first-class config field, so Windows is not blocked at the binary level. ccgate's Codex flow has not been exercised on Windows -- treat any usage there as untested.
 - **Tool-agnostic.** Codex hooks fire for Bash, `apply_patch`, MCP tool calls, and other surfaces. ccgate classifies by `tool_name` + the full `tool_input` JSON, not by tool kind alone.
 
 ## Topics planned for this page

@@ -50,7 +50,9 @@ changelog:
       order: 999
   filters:
     exclude:
-      - '^docs'
       - '^test'
       - '^ci'
-      - '^chore'
+      # docs and chore are kept: breaking-change migration notes often
+      # land on docs / chore commits, and dropping them silently from
+      # release notes hides them from users. Maintainers should still
+      # cross-check release notes against CHANGELOG.md before tagging.

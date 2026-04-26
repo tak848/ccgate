@@ -9,7 +9,7 @@
 ## ステータス
 
 - **Experimental.** Codex hooks は upstream で experimental 扱い (2026-04 時点)。スキーマや挙動が予告なく変更される可能性があります。仕様の verify 状況は `.claude/plans/codex-cli-hook-system-piped-badger.md` の Spec Ledger (section A2) で追跡しています。
-- **Linux/macOS のみ対応。** Windows では Codex 側で hooks が無効化されているため、`ccgate codex` は Codex docs へのリンク付きで exit します。
+- **Linux/macOS で検証済み、Windows は未検証。** OpenAI Codex hooks docs には `windows_managed_dir` が一級フィールドとして記載されているため、binary レベルでは block されません。ccgate の Codex flow は Windows で動作未検証 — Windows で使う場合は untested 扱いとしてください。
 - **Tool-agnostic。** Codex hooks は Bash、`apply_patch`、MCP tool 呼び出しなど複数の tool surface で発火します。ccgate は `tool_name` + `tool_input` JSON 全体で分類します。
 
 ## このページで扱う予定

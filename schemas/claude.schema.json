@@ -18,8 +18,7 @@
       "type": "object",
       "required": [
         "name",
-        "model",
-        "timeout_ms"
+        "model"
       ]
     },
     "log_path": {
@@ -65,17 +64,7 @@
   "additionalProperties": false,
   "type": "object",
   "required": [
-    "provider",
-    "log_path",
-    "log_disabled",
-    "log_max_size",
-    "metrics_path",
-    "metrics_disabled",
-    "metrics_max_size",
-    "fallthrough_strategy",
-    "allow",
-    "deny",
-    "environment"
+    "provider"
   ],
   "title": "ccgate claude configuration",
   "description": "Configuration schema for ccgate's claude PermissionRequest hook. See https://github.com/tak848/ccgate."

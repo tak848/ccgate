@@ -3,7 +3,9 @@
 
   // Project-local ccgate configuration.
   // This file adds restrictions on top of the global config.
-  // Place as: {repo_root}/ccgate.local.jsonnet or {repo_root}/.claude/ccgate.local.jsonnet
+  // Place as: {repo_root}/.claude/ccgate.local.jsonnet
+  // (root-level {repo_root}/ccgate.local.jsonnet was removed in v0.6.0;
+  //  for the Codex CLI hook use {repo_root}/.codex/ccgate.local.jsonnet)
   // IMPORTANT: Must NOT be tracked by git (add to .gitignore).
 
   // Force the LLM's "fallthrough" decisions to a fixed allow/deny.
