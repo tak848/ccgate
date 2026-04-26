@@ -1,13 +1,14 @@
 package cli
 
-// CodexCmd groups the OpenAI Codex CLI subcommands. Bare
-// `ccgate codex` dispatches to the hidden Hook sub-sub-command via
-// kong's default mechanism so users can wire that exact string into
-// their Codex hook config.
+// CodexCmd groups the OpenAI Codex CLI subcommands. Bare `ccgate codex`
+// dispatches to the Hook sub-sub-command via kong's default mechanism
+// so users can wire that exact string into their Codex hook config.
+// Hook is left visible in --help so users can see that the bare
+// invocation has a concrete entry point.
 type CodexCmd struct {
-	Hook    CodexHookCmd    `cmd:"" default:"withargs" hidden:""                                                 name:"hook"`
-	Init    CodexInitCmd    `cmd:""                                                                              help:"Output the embedded Codex CLI default configuration."`
-	Metrics CodexMetricsCmd `cmd:""                                                                              help:"Show Codex CLI usage metrics."`
+	Hook    CodexHookCmd    `cmd:"" default:"withargs" name:"hook" help:"Run the Codex CLI hook from stdin (default; same as 'ccgate codex')."`
+	Init    CodexInitCmd    `cmd:""                                help:"Output the embedded Codex CLI default configuration."`
+	Metrics CodexMetricsCmd `cmd:""                                help:"Show Codex CLI usage metrics."`
 }
 
 // CodexHookCmd is a marker struct so kong has a "subcommand" to make

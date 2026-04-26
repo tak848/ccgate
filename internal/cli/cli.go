@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"runtime"
 
 	"github.com/alecthomas/kong"
 	"golang.org/x/term"
@@ -30,10 +29,10 @@ import (
 type CLI struct {
 	Version kong.VersionFlag `help:"Print version and exit."`
 
-	Claude  ClaudeCmd            `cmd:"" help:"Run the Claude Code PermissionRequest hook (or manage its config / metrics)."`
-	Codex   CodexCmd             `cmd:"" help:"Run the OpenAI Codex CLI PermissionRequest hook (experimental, Linux/macOS only)."`
-	Init    DeprecatedInitCmd    `cmd:"" help:"[removed in v0.5] Use 'ccgate claude init' instead."`
-	Metrics DeprecatedMetricsCmd `cmd:"" help:"[removed in v0.5] Use 'ccgate claude metrics' instead."`
+	Claude  ClaudeCmd            `cmd:"" help:"Run the Claude Code PermissionRequest hook (or manage its config / metrics). With no sub-sub-command, runs the hook from stdin."`
+	Codex   CodexCmd             `cmd:"" help:"Run the OpenAI Codex CLI PermissionRequest hook (experimental). Tested on Linux/macOS; Windows is untested. With no sub-sub-command, runs the hook from stdin."`
+	Init    DeprecatedInitCmd    `cmd:"" help:"[removed in v0.6] Use 'ccgate claude init' or 'ccgate codex init' instead."`
+	Metrics DeprecatedMetricsCmd `cmd:"" help:"[removed in v0.6] Use 'ccgate claude metrics' or 'ccgate codex metrics' instead."`
 }
 
 // Run is the binary entry point. main() should call cli.Run with the
@@ -56,7 +55,7 @@ func Run(version string, args []string, stdin io.Reader, stdout, stderr io.Write
 	var cli CLI
 	parser, err := kong.New(&cli,
 		kong.Name("ccgate"),
-		kong.Description("ccgate — PermissionRequest hook for AI coding tools (Claude Code today; Codex CLI coming).\nNo args + stdin pipe = Claude Code hook (legacy invocation, permanent)."),
+		kong.Description("ccgate -- PermissionRequest hook for AI coding tools (Claude Code, OpenAI Codex CLI).\nNo args + stdin pipe = Claude Code hook (legacy invocation, permanent)."),
 		kong.Vars{"version": version},
 		kong.Writers(stdout, stderr),
 		kong.Exit(func(code int) {
@@ -148,18 +147,14 @@ func dispatch(kctx *kong.Context, cli *CLI, stdin io.Reader, stdout, stderr io.W
 	}
 }
 
-// requireCodexPlatform fails fast on Windows because Codex hooks are
-// upstream-disabled there ("temporarily disabled" per
-// developers.openai.com/codex/hooks). Returns 0 to continue, 1 to
-// abort with an explanatory message already written to stderr.
-func requireCodexPlatform(stderr io.Writer) int {
-	if runtime.GOOS == "windows" {
-		fmt.Fprintln(stderr, "ccgate codex: Codex hooks are not supported on Windows (upstream feature is currently disabled there).")
-		fmt.Fprintln(stderr, "See: https://developers.openai.com/codex/hooks")
-		return 1
-	}
-	return 0
-}
+// requireCodexPlatform is a placeholder for any future platform gates
+// the Codex hook may need. Today it is a no-op on every platform:
+// upstream Codex hooks documentation lists `windows_managed_dir`
+// alongside the macOS / Linux paths, so there is no evidence Windows
+// is actively unsupported. ccgate's Codex hook is tested on
+// Linux / macOS only, but that is documented as a tested-platform
+// statement rather than a hard fail.
+func requireCodexPlatform(_ io.Writer) int { return 0 }
 
 func isTerminal(r io.Reader) bool {
 	f, ok := r.(*os.File)
