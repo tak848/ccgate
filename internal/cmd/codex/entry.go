@@ -63,8 +63,14 @@ func buildMetricsEntry(
 		entry.OutputTokens = usage.OutputTokens
 	}
 
+	// Surface every parsed tool_input field metrics already understands,
+	// not just Bash's command. apply_patch / MCP / Read-style tools all
+	// populate file_path / path / pattern instead.
 	entry.ToolInput = metrics.CapToolInput(metrics.ToolInputFields{
-		Command: input.ToolInput.Command,
+		Command:  input.ToolInput.Command,
+		FilePath: input.ToolInput.FilePath,
+		Path:     input.ToolInput.Path,
+		Pattern:  input.ToolInput.Pattern,
 	})
 
 	return entry

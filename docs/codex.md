@@ -10,7 +10,7 @@ Codex-CLI-specific notes for the `ccgate codex` hook.
 
 - **Experimental.** Codex hooks are upstream-experimental as of 2026-04. Schema and behavior may change without notice; ccgate tracks each verified spec entry in `.claude/plans/codex-cli-hook-system-piped-badger.md` (Spec Ledger, section A2).
 - **Linux/macOS only.** Codex hooks are upstream-disabled on Windows; `ccgate codex` exits with a pointer to the Codex docs.
-- **Bash-only assumption.** Codex hooks always set `tool_name="Bash"` today, so ccgate's defaults classify by command shape rather than tool kind.
+- **Tool-agnostic.** Codex hooks fire for Bash, `apply_patch`, MCP tool calls, and other surfaces. ccgate classifies by `tool_name` + the full `tool_input` JSON, not by tool kind alone.
 
 ## Topics planned for this page
 

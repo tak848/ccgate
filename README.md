@@ -141,7 +141,7 @@ Set the `CCGATE_ANTHROPIC_API_KEY` or `ANTHROPIC_API_KEY` environment variable.
 ccgate codex init > ~/.codex/ccgate.jsonnet
 ```
 
-The defaults follow Claude Code parity (allow + deny + environment guidance) but are written as Bash command patterns since Codex hooks always set `tool_name=Bash` today.
+The defaults follow Claude Code parity (allow + deny + environment guidance). Codex hooks fire for Bash, `apply_patch`, MCP tool calls, and other tool surfaces; the rules cover all of them and the system prompt instructs the LLM to classify by `tool_name` + the full `tool_input` JSON, not just Bash command shape.
 
 ### 2. Register as a Codex hook
 
@@ -252,7 +252,7 @@ The daily table shows per-day counts (Allow, Deny, Fall, F.Allow, F.Deny, Err), 
 
 - **Plan mode correctness is prompt-only (Claude only).** Under `permission_mode == "plan"`, ccgate relies on the LLM plus prose in the system prompt to (a) reject implementation-side writes and (b) allow read-only queries without requiring an allow-guidance match. Either side can misfire. Tracked in [#37](https://github.com/tak848/ccgate/issues/37).
 - **Config file layering is asymmetric.** Global config *replaces* embedded defaults while project-local files only *append*. Narrowing / overriding rules from the project layer is not supported today. Tracked as a breaking-change refactor in [#38](https://github.com/tak848/ccgate/issues/38).
-- **Codex hook is upstream-experimental.** Schema and behavior may change. ccgate currently treats Codex's `tool_name="Bash"` constraint as a fixed assumption; richer fields (`permission_mode`, `recent_transcript` parsing, `~/.codex/config.toml` ingestion) are tracked as follow-up issues.
+- **Codex hook is upstream-experimental.** Schema and behavior may change. Richer fields (`permission_mode`, `recent_transcript` parsing, `~/.codex/config.toml` ingestion, MCP server-specific trust hints) are tracked as follow-up issues.
 - **Codex hook is unsupported on Windows.** Codex hooks are upstream-disabled there; `ccgate codex` exits with a pointer to the Codex docs.
 
 ## Documentation

@@ -51,15 +51,17 @@ func TestDefaultsJsonnetStructure(t *testing.T) {
 		t.Errorf("environment is empty; codex defaults must encode the Bash-only / trust-boundary hints")
 	}
 
-	// Codex Bash-only constraint MUST be communicated via the
-	// environment block — the LLM has no other signal that Codex
-	// always sends tool_name="Bash", and the codex-review feedback
-	// during planning explicitly flagged this as a regression vector.
+	// Codex hooks fire for Bash, apply_patch, MCP tool calls, and
+	// other surfaces. The environment block MUST tell the LLM that
+	// the tool surface is heterogeneous so it does not regress to a
+	// Bash-only assumption (an earlier version of this file did).
 	var envText string
 	for _, e := range got.Environment {
 		envText += "\n" + e
 	}
-	if !strings.Contains(envText, "Bash") {
-		t.Errorf("environment guidance must mention the Bash-only constraint, got:\n%s", envText)
+	for _, surface := range []string{"Bash", "apply_patch", "MCP"} {
+		if !strings.Contains(envText, surface) {
+			t.Errorf("environment guidance must mention %q so the LLM knows the tool surface is heterogeneous, got:\n%s", surface, envText)
+		}
 	}
 }
