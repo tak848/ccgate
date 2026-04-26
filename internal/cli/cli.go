@@ -30,7 +30,7 @@ type CLI struct {
 	Version kong.VersionFlag `help:"Print version and exit."`
 
 	Claude  ClaudeCmd            `cmd:"" help:"Run the Claude Code PermissionRequest hook (or manage its config / metrics). With no sub-sub-command, runs the hook from stdin."`
-	Codex   CodexCmd             `cmd:"" help:"Run the OpenAI Codex CLI PermissionRequest hook (experimental). Tested on Linux/macOS; Windows is untested. With no sub-sub-command, runs the hook from stdin."`
+	Codex   CodexCmd             `cmd:"" help:"Run the OpenAI Codex CLI PermissionRequest hook (experimental). With no sub-sub-command, runs the hook from stdin."`
 	Init    DeprecatedInitCmd    `cmd:"" help:"[removed in v0.6] Use 'ccgate claude init' or 'ccgate codex init' instead."`
 	Metrics DeprecatedMetricsCmd `cmd:"" help:"[removed in v0.6] Use 'ccgate claude metrics' or 'ccgate codex metrics' instead."`
 }
@@ -115,14 +115,8 @@ func dispatch(kctx *kong.Context, cli *CLI, stdin io.Reader, stdout, stderr io.W
 			DetailsTop: cli.Claude.Metrics.Details,
 		})
 	case "codex", "codex hook":
-		if exit := requireCodexPlatform(stderr); exit != 0 {
-			return exit
-		}
 		return codex.Run(stdin, stdout)
 	case "codex init":
-		// init does not call into the hook runtime, so it stays
-		// available on Windows for users editing their config from
-		// there even if they later run the hook on Linux/macOS.
 		return codex.Init(stdout, stderr, codex.InitOptions{
 			Output: cli.Codex.Init.Output,
 			Force:  cli.Codex.Init.Force,
@@ -146,15 +140,6 @@ func dispatch(kctx *kong.Context, cli *CLI, stdin io.Reader, stdout, stderr io.W
 		return 2
 	}
 }
-
-// requireCodexPlatform is a placeholder for any future platform gates
-// the Codex hook may need. Today it is a no-op on every platform:
-// upstream Codex hooks documentation lists `windows_managed_dir`
-// alongside the macOS / Linux paths, so there is no evidence Windows
-// is actively unsupported. ccgate's Codex hook is tested on
-// Linux / macOS only, but that is documented as a tested-platform
-// statement rather than a hard fail.
-func requireCodexPlatform(_ io.Writer) int { return 0 }
 
 func isTerminal(r io.Reader) bool {
 	f, ok := r.(*os.File)

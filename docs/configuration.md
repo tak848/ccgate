@@ -146,5 +146,5 @@ The same fields exist for the log file (`log_path`, `log_disabled`, `log_max_siz
 
 - **Plan mode (Claude only) is prompt-only.** Under `permission_mode == "plan"`, ccgate relies on the LLM plus prose in the system prompt to (a) reject implementation-side writes and (b) allow read-only queries without an explicit allow-guidance match. Either side can misfire. Tracked in [#37](https://github.com/tak848/ccgate/issues/37).
 - **Layering asymmetry** between global (replaces) and project-local (appends). See "What 'replaces' vs 'appends' means" above. Tracked in [#38](https://github.com/tak848/ccgate/issues/38).
-- **Codex hook is upstream-experimental.** The hook schema may change without notice. ccgate's Codex flow is tested on Linux/macOS; Windows is untested but not blocked.
+- **Codex hook is upstream-experimental.** The hook schema may change without notice.
 - **Codex `~/.codex/config.toml` ingestion** (`approval_policy`, `sandbox_mode`, `prefix_rules`) is not implemented yet. ccgate decides purely from the hook payload + ccgate config; if Codex's own settings would have rejected something, that signal does not reach the LLM today.

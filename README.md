@@ -8,7 +8,7 @@ A **PermissionRequest** hook for AI coding tools that delegates tool-execution p
 Supported targets:
 
 - **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — stable
-- **[OpenAI Codex CLI](https://developers.openai.com/codex/hooks)** — experimental; tested on Linux/macOS, Windows is untested but not blocked
+- **[OpenAI Codex CLI](https://developers.openai.com/codex/hooks)** — experimental
 
 [日本語ドキュメント](docs/ja/README.md)
 
@@ -133,7 +133,7 @@ Set the `CCGATE_ANTHROPIC_API_KEY` or `ANTHROPIC_API_KEY` environment variable.
 
 ## Setup — Codex CLI (experimental)
 
-> Codex hooks are upstream-experimental as of 2026-04. Schema and behavior may change. ccgate's Codex support is tested on Linux and macOS. The OpenAI Codex hooks docs list `windows_managed_dir` as a first-class field, so Windows is not blocked, but ccgate has not been exercised there yet -- treat any Windows usage as untested.
+> Codex hooks are upstream-experimental. Schema and behavior may change.
 
 ### 1. Create a config file (optional)
 
@@ -252,7 +252,6 @@ The daily table shows per-day counts (Allow, Deny, Fall, F.Allow, F.Deny, Err), 
 - **Plan mode correctness is prompt-only (Claude only).** Under `permission_mode == "plan"`, ccgate relies on the LLM plus prose in the system prompt to (a) reject implementation-side writes and (b) allow read-only queries without requiring an allow-guidance match. Either side can misfire. Tracked in [#37](https://github.com/tak848/ccgate/issues/37).
 - **Config file layering is asymmetric.** Global config *replaces* embedded defaults while project-local files only *append*. Narrowing / overriding rules from the project layer is not supported today. Tracked as a breaking-change refactor in [#38](https://github.com/tak848/ccgate/issues/38).
 - **Codex hook is upstream-experimental.** Schema and behavior may change. ccgate does not currently expose `permission_mode` from Codex, parse the Codex transcript JSONL, ingest `~/.codex/config.toml`, or apply MCP-server-specific trust hints; classification runs from `tool_name` + `tool_input` + `cwd` only.
-- **Codex hook on Windows is untested.** ccgate's Codex support has only been exercised on Linux/macOS. The OpenAI Codex hooks docs list `windows_managed_dir` as a first-class config field, so Windows is not blocked at the binary level, but no claim is made that the ccgate Codex flow works there until someone tries it.
 
 ## Documentation
 

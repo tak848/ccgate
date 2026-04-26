@@ -146,5 +146,5 @@ ccgate codex  metrics --days 7         # codex 側も同 shape
 
 - **Plan mode (Claude のみ) はプロンプト依存**: `permission_mode == "plan"` では (a) 実装系 write を拒絶する判定と (b) 明示的な allow guidance なしの read-only クエリ許可 を、LLM とシステムプロンプトの指示文に委ねています。どちらの方向にも誤判定の余地あり。[#37](https://github.com/tak848/ccgate/issues/37) で追跡
 - **layering 非対称**: global (置換) と project-local (追加) の差。前述「『置換』と『追加』の意味」参照。[#38](https://github.com/tak848/ccgate/issues/38) で追跡
-- **Codex hook は upstream で experimental**: hook schema が予告なく変更される可能性あり。ccgate の Codex flow は Linux/macOS で検証済、Windows は未検証だが block はされない
+- **Codex hook は upstream で experimental**: hook schema が予告なく変更される可能性あり
 - **Codex `~/.codex/config.toml` 取り込み未実装** (`approval_policy`, `sandbox_mode`, `prefix_rules`): ccgate は hook payload + ccgate config だけで判定するため、Codex 自身の設定が拒絶するはずだった操作のシグナルは LLM に届かない (現状)

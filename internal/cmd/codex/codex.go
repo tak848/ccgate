@@ -2,8 +2,7 @@
 //
 // Same shape as cmd/claude (Run / Init / Metrics) but configured for
 // Codex's stdin schema and writing to a per-target log/metrics path.
-// Codex hooks are upstream-experimental as of v0.5; the package is
-// fail-fast on Windows because Codex hooks are disabled there.
+// Codex hooks are upstream-experimental.
 package codex
 
 import (

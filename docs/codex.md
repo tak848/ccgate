@@ -6,8 +6,7 @@ Codex-CLI-specific notes for the `ccgate codex` hook.
 
 ## Status
 
-- **Experimental.** Codex hooks are upstream-experimental as of 2026-04. Schema and behavior may change without notice; treat the OpenAI [Codex hooks docs](https://developers.openai.com/codex/hooks) as the source of truth and re-verify before relying on a specific field.
-- **Tested on Linux/macOS; Windows untested.** The OpenAI docs list `windows_managed_dir` as a first-class config field, so Windows is not blocked at the binary level. ccgate's Codex flow has not been exercised there yet -- treat any usage as untested.
+- **Experimental.** Codex hooks are upstream-experimental. Schema and behavior may change without notice; treat the OpenAI [Codex hooks docs](https://developers.openai.com/codex/hooks) as the source of truth and re-check before relying on a specific field.
 - **Tool-agnostic.** Codex hooks fire for Bash, `apply_patch`, MCP tool calls, and other surfaces. ccgate classifies by `tool_name` + the full `tool_input` JSON, not by tool kind alone.
 
 ## Hook registration
@@ -91,7 +90,7 @@ Project-local `<repo>/.codex/{hooks.json,config.toml}` only loads when the proje
 
 ccgate forwards the full `tool_input` JSON to the LLM verbatim, so MCP arguments and `apply_patch` hunk metadata reach the classifier untouched even when ccgate has no typed field for them. The metrics layer pulls a small parsed view (`command` / `description` / `file_path` / `path` / `pattern`) for the JSONL but never strips the raw payload from the LLM message.
 
-Fields the upstream Codex docs (verified 2026-04) deliver and ccgate uses:
+Fields the upstream Codex docs declare and ccgate uses:
 
 - `session_id`
 - `transcript_path` (path only; ccgate does not parse the transcript JSONL)
