@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-ccgate is pre-1.0 and only the most recently released version on the `main` branch receives security fixes. Older minor lines (e.g. `v0.5.x` after `v0.6.0` ships) do not get backports unless someone steps up to maintain them; please update to the latest release before reporting.
+ccgate is pre-1.0 and only the most recently released version receives security fixes. Older minor lines do not get backports unless someone steps up to maintain them; please update to the latest release before reporting.
 
 ## Reporting a vulnerability
 

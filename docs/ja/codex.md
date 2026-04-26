@@ -94,7 +94,7 @@ ccgate は `tool_input` JSON 全体を verbatim で LLM に転送するので、
 upstream Codex docs (2026-04 verified) が delivers し ccgate が利用するフィールド:
 
 - `session_id`
-- `transcript_path` (path のみ; 現状未パース、follow-up issue 参照)
+- `transcript_path` (path のみ; ccgate は transcript JSONL を parse しない)
 - `cwd`
 - `hook_event_name`
 - `model` (AI 側のモデル、例: `gpt-5`)
@@ -118,14 +118,3 @@ workspace 内 `apply_patch` は意図的に `allow` に**含めています**: C
 
 完全な表は [docs/ja/claude.md](claude.md) を参照。
 
-## Follow-up topics (v0.6 では未対応)
-
-以下は v0.6 では意図的に scope 外で、まだ個別の GitHub issue にもなっていません (各項目は着手前に専用 issue を立てる想定):
-
-- Codex が `permission_mode = plan` を upstream で expose したら検出
-- `transcript_path` JSONL を解析し Codex でも LLM が `recent_transcript` を見られるようにする
-- `~/.codex/config.toml` `prefix_rules` の取り込み -- `forbidden` -> deny / `prompt` -> fallthrough
-- `approval_policy` / `sandbox_mode` を system prompt context として取り込み
-- fork-only な Codex hook schema field を runtime payload で再検証
-
-v0.6 PR は意図的に「multi-target plumbing + tool-agnostic Codex hook」までに scope を絞ってます。

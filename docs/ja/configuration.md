@@ -18,7 +18,6 @@ ccgate は target ごとに 3 layer を順に評価します:
 
 `{repo_root}` は git repo root で、hook の `cwd` から `git rev-parse --show-toplevel` で解決します。git repo 外では `cwd` 自体が使われます。
 
-> v0.6 で root 直下の `{repo_root}/ccgate.local.jsonnet` を廃止しました。multi-target 環境では target 不明瞭になるためです。既存の root 直下 local config は `{repo_root}/.claude/ccgate.local.jsonnet` (または `.codex/...`) へ rename してください。
 
 ### 「置換」と「追加」の意味
 
@@ -42,7 +41,7 @@ LLM は `allow` / `deny` / `fallthrough` のいずれかを返します。`fallt
 
 | 値        | 挙動                                                                                                  | 選ぶ場面                                                                          |
 |-----------|-------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------|
-| `ask`     | デフォルト。上流ツール (Claude Code / Codex) の確認 prompt にそのまま流す                              | 対話セッション。v0.5 と同じ挙動                                                    |
+| `ask`     | デフォルト。上流ツール (Claude Code / Codex) の確認 prompt にそのまま流す                              | 対話セッション                                                                     |
 | `deny`    | 自動拒否。deny メッセージが「user に聞くな、別コマンドで回避するな」と AI に指示する                    | 無人実行で「許可待ちで止まる」より「失敗で抜ける」を選びたいとき                    |
 | `allow`   | 自動許可                                                                                              | 完全自律実行で「LLM が迷ったケースも進めたい」リスクを受容できるとき                |
 
@@ -64,7 +63,7 @@ LLM は `allow` / `deny` / `fallthrough` のいずれかを返します。`fallt
 
 ## メトリクス出力
 
-呼び出しごとに `$XDG_STATE_HOME/ccgate/<target>/metrics.jsonl` に JSON 1 行を append (size でローテート)。`ccgate <target> metrics` がファイル (Claude 側は legacy `$XDG_STATE_HOME/ccgate/metrics.jsonl` 含む) を集計し、TTY テーブル or JSON ドキュメントを出力します。
+呼び出しごとに `$XDG_STATE_HOME/ccgate/<target>/metrics.jsonl` に JSON 1 行を append (size でローテート)。`ccgate <target> metrics` がファイルを集計し、TTY テーブル or JSON ドキュメントを出力します。`ccgate claude metrics` は `$XDG_STATE_HOME/ccgate/metrics.jsonl` (`<target>` セグメントなし) も追加で読みます。
 
 ### CLI
 

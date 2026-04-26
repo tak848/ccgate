@@ -18,7 +18,6 @@ ccgate evaluates three layers, in order, per target:
 
 `{repo_root}` is the git repo root, resolved via `git rev-parse --show-toplevel` from the hook's `cwd`. Outside a git repo the `cwd` itself is used.
 
-> v0.6 removed the root-level `{repo_root}/ccgate.local.jsonnet`. It was target-ambiguous in a multi-target world. Move (rename) any existing root-level local config into `{repo_root}/.claude/ccgate.local.jsonnet` (or `.codex/...`).
 
 ### What "replaces" vs "appends" means
 
@@ -42,7 +41,7 @@ The LLM returns one of: `allow`, `deny`, `fallthrough`. `fallthrough` is the LLM
 
 | Value     | Behavior                                                                                            | When to choose                                                            |
 |-----------|-----------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------|
-| `ask`     | Default. Pass through to the upstream tool's permission prompt (Claude Code / Codex).               | Interactive sessions. Same as v0.5 default behavior.                      |
+| `ask`     | Default. Pass through to the upstream tool's permission prompt (Claude Code / Codex).               | Interactive sessions.                                                     |
 | `deny`    | Auto-deny. The deny message tells the AI not to re-ask and not to attempt workarounds.              | Unattended runs that should fail safely instead of waiting for approval.  |
 | `allow`   | Auto-allow.                                                                                         | Fully autonomous runs where you accept the risk that the LLM was unsure.  |
 
@@ -64,7 +63,7 @@ You can audit how often each strategy fired through the metrics output (see belo
 
 ## Metrics output
 
-Every invocation appends a JSON line to `$XDG_STATE_HOME/ccgate/<target>/metrics.jsonl` (rotated on size). `ccgate <target> metrics` aggregates the file (current + the legacy `$XDG_STATE_HOME/ccgate/metrics.jsonl` for the Claude side) and prints either a TTY table or a JSON document.
+Every invocation appends a JSON line to `$XDG_STATE_HOME/ccgate/<target>/metrics.jsonl` (rotated on size). `ccgate <target> metrics` aggregates the file and prints either a TTY table or a JSON document. `ccgate claude metrics` additionally reads `$XDG_STATE_HOME/ccgate/metrics.jsonl` (no `<target>` segment).
 
 ### CLI
 

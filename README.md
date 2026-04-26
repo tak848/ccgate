@@ -46,7 +46,7 @@ ccgate codex init [-o|-f]      Output the embedded Codex CLI defaults.
 ccgate codex metrics [...]     Show Codex CLI usage metrics.
 ```
 
-> `ccgate init` / `ccgate metrics` (top-level) were **removed in v0.6.0**. Run `ccgate claude init` / `ccgate claude metrics` (or the codex equivalents) instead. The bare `ccgate` hook invocation is unaffected.
+> Top-level `ccgate init` and `ccgate metrics` are not real subcommands — they print a one-line pointer to the per-target form and exit `2`. The bare `ccgate` hook invocation is a different code path and works as documented above.
 
 ## Installation
 
@@ -165,7 +165,6 @@ If a global config file exists, embedded defaults are **not** used. The global c
 Project-local configs always **append** to the base (allow/deny/environment are appended, provider fields are overwritten).
 Project-local configs are loaded only when **not tracked by Git**.
 
-> v0.6 change: `{repo_root}/ccgate.local.jsonnet` (root-level, target-ambiguous) is no longer read. Move it to `{repo_root}/.claude/ccgate.local.jsonnet` (or `.codex/...`) to keep the same behavior.
 
 ### Config fields
 
@@ -185,7 +184,7 @@ Project-local configs are loaded only when **not tracked by Git**.
 | `deny`                   | string[]                          | `[]`                                                                          | Deny guidance rules (mandatory). Supports inline `deny_message:` hints                                 |
 | `environment`            | string[]                          | `[]`                                                                          | Context strings passed to the LLM (trust level, policies, etc.)                                        |
 
-`<target>` is `claude` or `codex` depending on which hook is invoked. When `XDG_STATE_HOME` is unset, ccgate falls back to `~/.local/state/ccgate/<target>/...`. Pre-v0.6 ccgate wrote both files directly under `$XDG_STATE_HOME/ccgate/` (no `<target>` segment); that legacy path is still read by `ccgate claude metrics` for backward-compat.
+`<target>` is `claude` or `codex` depending on which hook is invoked. When `XDG_STATE_HOME` is unset, ccgate falls back to `~/.local/state/ccgate/<target>/...`. `ccgate claude metrics` additionally reads `$XDG_STATE_HOME/ccgate/metrics.jsonl` (no `<target>` segment) so the report still includes entries written there.
 
 ## Default Rules
 
@@ -235,7 +234,7 @@ Logs and metrics live under `$XDG_STATE_HOME/ccgate/<target>/` (or `~/.local/sta
 
 Both files rotate on size (`.log.1`, `.jsonl.1`).
 
-`ccgate claude metrics` also reads the legacy `$XDG_STATE_HOME/ccgate/metrics.jsonl` written by pre-v0.6 ccgate, so existing users keep seeing their full history. Override paths in jsonnet are still respected — set `log_path` / `metrics_path` to put them anywhere.
+`ccgate claude metrics` additionally reads `$XDG_STATE_HOME/ccgate/metrics.jsonl` (no `<target>` segment) so entries written there are included. Override paths in jsonnet are respected — set `log_path` / `metrics_path` to put them anywhere.
 
 ```bash
 ccgate claude metrics                 # last 7 days, TTY table
@@ -252,7 +251,7 @@ The daily table shows per-day counts (Allow, Deny, Fall, F.Allow, F.Deny, Err), 
 
 - **Plan mode correctness is prompt-only (Claude only).** Under `permission_mode == "plan"`, ccgate relies on the LLM plus prose in the system prompt to (a) reject implementation-side writes and (b) allow read-only queries without requiring an allow-guidance match. Either side can misfire. Tracked in [#37](https://github.com/tak848/ccgate/issues/37).
 - **Config file layering is asymmetric.** Global config *replaces* embedded defaults while project-local files only *append*. Narrowing / overriding rules from the project layer is not supported today. Tracked as a breaking-change refactor in [#38](https://github.com/tak848/ccgate/issues/38).
-- **Codex hook is upstream-experimental.** Schema and behavior may change. Richer fields (`permission_mode`, `recent_transcript` parsing, `~/.codex/config.toml` ingestion, MCP server-specific trust hints) are tracked as follow-up issues.
+- **Codex hook is upstream-experimental.** Schema and behavior may change. ccgate does not currently expose `permission_mode` from Codex, parse the Codex transcript JSONL, ingest `~/.codex/config.toml`, or apply MCP-server-specific trust hints; classification runs from `tool_name` + `tool_input` + `cwd` only.
 - **Codex hook on Windows is untested.** ccgate's Codex support has only been exercised on Linux/macOS. The OpenAI Codex hooks docs list `windows_managed_dir` as a first-class config field, so Windows is not blocked at the binary level, but no claim is made that the ccgate Codex flow works there until someone tries it.
 
 ## Documentation

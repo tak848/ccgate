@@ -45,7 +45,7 @@ ccgate codex init [-o|-f]      Codex CLI 用の埋込デフォルトを出力
 ccgate codex metrics [...]     Codex CLI のメトリクス集計
 ```
 
-> `ccgate init` / `ccgate metrics` (top-level) は **v0.6.0 で廃止** されました。代わりに `ccgate claude init` / `ccgate claude metrics` (または codex 版) を使用してください。bare `ccgate` (hook 起動) は影響ありません。
+> top-level の `ccgate init` / `ccgate metrics` は実 subcommand ではなく、per-target 形式への 1 行案内を出して exit `2` します。bare `ccgate` (hook 起動) は別経路で、上述の通り動作します。
 
 ## インストール
 
@@ -164,7 +164,6 @@ Claude Code と同じ環境変数 (`CCGATE_ANTHROPIC_API_KEY` / `ANTHROPIC_API_K
 プロジェクトローカル設定は常にベースに**追加**されます (allow/deny/environment は append、provider 系は overwrite)。
 プロジェクトローカル設定は **Git に追跡されていないファイルのみ** 読み込まれます。
 
-> v0.6 の変更: `{repo_root}/ccgate.local.jsonnet` (root 直下、target ambiguous) は読み込まれなくなりました。`{repo_root}/.claude/ccgate.local.jsonnet` (または `.codex/...`) に rename して同等の挙動を維持してください。
 
 ### 設定項目
 
@@ -184,7 +183,7 @@ Claude Code と同じ環境変数 (`CCGATE_ANTHROPIC_API_KEY` / `ANTHROPIC_API_K
 | `deny`                   | string[]                          | `[]`                                                                            | 拒否ルール (mandatory)。`deny_message:` ヒント対応                                                         |
 | `environment`            | string[]                          | `[]`                                                                            | LLM に渡すコンテキスト (信頼レベル、ポリシー等)                                                            |
 
-`<target>` は Claude / Codex どちらの hook が呼ばれたかで `claude` / `codex` になります。`XDG_STATE_HOME` が未設定の場合は `~/.local/state/ccgate/<target>/...` が fallback として使われます。pre-v0.6 の ccgate は両ファイルを `$XDG_STATE_HOME/ccgate/` 直下 (`<target>` セグメントなし) に書いていましたが、その legacy path は後方互換のため `ccgate claude metrics` から引き続き読まれます。
+`<target>` は Claude / Codex どちらの hook が呼ばれたかで `claude` / `codex` になります。`XDG_STATE_HOME` が未設定の場合は `~/.local/state/ccgate/<target>/...` が fallback として使われます。`ccgate claude metrics` は `$XDG_STATE_HOME/ccgate/metrics.jsonl` (`<target>` セグメントなし) も追加で読むので、そこに書かれたエントリも集計に含まれます。
 
 ## デフォルトルール
 
@@ -234,7 +233,7 @@ ccgate codex  init    > ~/.codex/ccgate.jsonnet            # グローバル, co
 
 両ファイルともサイズベースでローテーションします (`.log.1`, `.jsonl.1`)。
 
-`ccgate claude metrics` は pre-v0.6 ccgate が書いていた `$XDG_STATE_HOME/ccgate/metrics.jsonl` も併せて読み込むため、既存ユーザーは過去のメトリクス履歴も継続して参照できます。jsonnet で `log_path` / `metrics_path` を明示している場合はその設定が尊重されます。
+`ccgate claude metrics` は `$XDG_STATE_HOME/ccgate/metrics.jsonl` (`<target>` セグメントなし) も追加で読むため、そこに書かれたエントリも集計に含まれます。jsonnet で `log_path` / `metrics_path` を明示している場合はその設定が尊重されます。
 
 ```bash
 ccgate claude metrics                 # 直近 7 日間、TTY テーブル
@@ -251,7 +250,7 @@ ccgate codex  metrics --days 7        # codex 側、同じシェイプ
 
 - **Plan mode の正しさはプロンプトのみに依存 (Claude のみ)。** `permission_mode == "plan"` では、(a) 実装系 write を拒絶する判定と (b) allow guidance に載っていない read-only クエリを許可する判定の両方を、LLM とシステムプロンプトの指示文に委ねています。プロンプトで記述する以上、どちらの方向にも誤判定の余地があります。[#37](https://github.com/tak848/ccgate/issues/37) で追跡しています。
 - **設定ファイル layering の非対称。** グローバル設定は組み込みデフォルトを*置換*するのに対し、プロジェクトローカルは*追加のみ*。プロジェクト層からルールを狭める/上書きする手段がありません。互換性を壊す破壊的リファクタとして [#38](https://github.com/tak848/ccgate/issues/38) で追跡しています。
-- **Codex hook は upstream で experimental。** スキーマや挙動が変わる可能性があります。richer なフィールド (`permission_mode`、`recent_transcript` 解析、`~/.codex/config.toml` 取り込み、MCP server 単位の trust hint) は follow-up issue で追跡しています。
+- **Codex hook は upstream で experimental。** スキーマや挙動が変わる可能性があります。ccgate は現在 Codex 側の `permission_mode` を expose せず、transcript JSONL を parse せず、`~/.codex/config.toml` も取り込まず、MCP server 単位の trust hint も適用しません。判定は `tool_name` + `tool_input` + `cwd` のみで行います。
 - **Codex hook の Windows は未検証。** ccgate の Codex 対応は Linux/macOS でのみ動作確認しています。OpenAI Codex hooks docs には `windows_managed_dir` が一級フィールドとして記載されているため、binary レベルでは block しませんが、ccgate の Codex flow が Windows で動くかは保証していません。
 
 ## ドキュメント

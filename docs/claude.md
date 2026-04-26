@@ -26,13 +26,13 @@ ccgate plugs into the Claude Code [PermissionRequest hook](https://code.claude.c
 }
 ```
 
-`"command": "ccgate"` (no subcommand, the legacy invocation) is also accepted and will keep working forever -- bare `ccgate` is the canonical Claude Code hook command. New setups should use the explicit `"ccgate claude"` form so the intent reads correctly when both Claude and Codex hooks live in the same dotfiles.
+`"command": "ccgate"` (no subcommand) is equivalent to `"command": "ccgate claude"`. The explicit form reads better when Claude and Codex hooks live in the same dotfiles.
 
 A wide-open `"matcher": ""` makes ccgate evaluate every PermissionRequest. Restrict by tool kind via the same matcher field if you want a narrower hook (e.g. `"matcher": "Bash|Edit|Write"`).
 
 ## Bare `ccgate` (no args + stdin pipe)
 
-`ccgate` with no args reading from stdin is identical to `ccgate claude`. Permanent default; existing settings entries using `"command": "ccgate"` are not touched by the v0.6 multi-target refactor.
+`ccgate` with no args reading from stdin is identical to `ccgate claude` and is part of the supported invocation surface.
 
 If you launch `ccgate` from a terminal with no stdin pipe, it prints a usage banner and exits `0`. Only when stdin is a pipe (= the AI tool is feeding it a HookInput JSON) does it run the hook.
 
@@ -86,7 +86,7 @@ Treating `settings_permissions.allow` as a whitelist requirement therefore break
 | Tool surface                        | `Bash`, `Read`, `Write`, `Edit`, `Glob`, MCP, ...  | `Bash`, `apply_patch`, MCP, ...                                                           |
 | `permission_mode`                   | `default` / `acceptEdits` / `plan` / `bypassPermissions` / `dontAsk` | Not delivered today.                                                |
 | `recent_transcript`                 | Forwarded to the LLM.                              | Not delivered. The LLM is told to judge from `tool_name` + `tool_input` + `cwd` alone.   |
-| `settings_permissions`              | Forwarded as background hint.                      | No equivalent; `~/.codex/config.toml` ingestion is a follow-up.                          |
+| `settings_permissions`              | Forwarded as background hint.                      | No equivalent. `~/.codex/config.toml` is not ingested.                                   |
 | `permission_suggestions`            | Forwarded.                                         | Not delivered.                                                                            |
 | State path                          | `$XDG_STATE_HOME/ccgate/claude/`                   | `$XDG_STATE_HOME/ccgate/codex/`                                                           |
 | Project-local config                | `{repo_root}/.claude/ccgate.local.jsonnet`         | `{repo_root}/.codex/ccgate.local.jsonnet`                                                 |
