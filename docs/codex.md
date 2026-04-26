@@ -108,11 +108,11 @@ Codex does not deliver Claude's `permission_mode`, `permission_suggestions`, `re
 
 ccgate ships an embedded Codex defaults file (`internal/cmd/codex/defaults.jsonnet`) that mirrors the Claude side's allow + deny + environment shape. Notable Codex-specific entries:
 
-- `allow`: read-only Bash inspection, project-script build/test, repo-confined package install, feature-branch git, MCP tools whose server is explicitly trusted with read-only `tool_input`.
+- `allow`: read-only Bash inspection, in-workspace writes (`apply_patch` hunks under cwd / repo_root, project file edits the AI is doing right now), project-script build/test, repo-confined package install, feature-branch git, MCP tools on user-trusted servers whose side effects stay within the user-authorized scope.
 - `deny`: pipe-to-shell of remote content, one-shot remote package execution (`npx` / `pnpx` / `bunx` against unfamiliar packages), `sudo`, out-of-workspace `rm -rf` / `mv` / `apply_patch` hunks, destructive git on protected branches, unrestricted network out (`nc` / `ssh` / `scp` / `ftp` to non-allowlisted hosts), MCP tools advertising destructive side effects without an explicit per-rule allow.
-- `environment`: heterogeneous tool surface, trusted-repo boundary, path scope rule, `apply_patch` is a write surface (do not auto-allow), `recent_transcript` is absent.
+- `environment`: heterogeneous tool surface, trusted-repo boundary, path scope rule, **ccgate replaces the upstream prompt** -- fallthrough only when genuinely ambiguous, otherwise default to allow / deny -- `recent_transcript` is absent.
 
-`apply_patch` is **not** in `allow` on purpose: PermissionRequest fires when Codex would otherwise prompt the user, and auto-allowing patches there would let the LLM bypass the user's last line of defense. Override only with a project-local rule that scopes the allow to a specific path subtree (and only if you accept the risk).
+In-workspace `apply_patch` is in `allow` on purpose: this is the same bar Claude Code edits go through, and the user installed ccgate specifically to avoid being prompted for routine in-repo edits. Out-of-workspace patch hunks are denied via the existing deny rule. If you want to be more conservative, add a project-local rule that narrows the apply_patch allow scope (e.g. only specific subtrees).
 
 ## Differences from Claude Code
 
