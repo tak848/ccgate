@@ -1,4 +1,4 @@
-package hookctx
+package claude
 
 import (
 	"path/filepath"
