@@ -1,4 +1,4 @@
-package claude
+package runner
 
 import (
 	"encoding/json"
@@ -11,18 +11,20 @@ import (
 	"github.com/tak848/ccgate/internal/gitutil"
 )
 
-type SettingsPermissions struct {
+type settingsPermissions struct {
 	Allow []string `json:"allow,omitempty"`
 	Deny  []string `json:"deny,omitempty"`
 }
 
-// LoadSettingsPermissions reads permissions from settings.json files.
+func (s settingsPermissions) empty() bool { return len(s.Allow) == 0 && len(s.Deny) == 0 }
+
+// loadSettingsPermissions reads permissions from settings.json files.
 // File-not-found errors are expected and silently ignored.
 // JSON parse errors are logged as warnings but do not fail the operation.
-func LoadSettingsPermissions(cwd string) SettingsPermissions {
+func loadSettingsPermissions(cwd string) settingsPermissions {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return SettingsPermissions{}
+		return settingsPermissions{}
 	}
 
 	repoRoot := cwd
@@ -36,7 +38,7 @@ func LoadSettingsPermissions(cwd string) SettingsPermissions {
 		filepath.Join(repoRoot, ".claude", "settings.local.json"),
 	}
 
-	var merged SettingsPermissions
+	var merged settingsPermissions
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -46,7 +48,7 @@ func LoadSettingsPermissions(cwd string) SettingsPermissions {
 			continue
 		}
 		var s struct {
-			Permissions SettingsPermissions `json:"permissions"`
+			Permissions settingsPermissions `json:"permissions"`
 		}
 		if err := json.Unmarshal(data, &s); err != nil {
 			slog.Warn("failed to parse settings", "path", path, "error", fmt.Errorf("unmarshal: %w", err))

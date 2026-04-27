@@ -30,9 +30,12 @@ func LoadOptions() config.LoadOptions {
 }
 
 // Run reads a single PermissionRequest from stdin and writes the
-// response to stdout. Delegates the orchestration to internal/runner.
+// response to stdout. Delegates the entire orchestration to
+// internal/runner; the only Claude-specific knowledge needed is
+// LoadOptions (where to read config / write log+metrics) and the
+// embedded defaults Init outputs.
 func Run(stdin io.Reader, stdout io.Writer) int {
-	return runner.Run(stdin, stdout, target())
+	return runner.Run(stdin, stdout, LoadOptions())
 }
 
 // InitOptions describes how `ccgate claude init` should output the

@@ -1,14 +1,16 @@
-// Package runner is the target-agnostic orchestration for ccgate
-// PermissionRequest hooks. Targets (Claude Code, Codex CLI, ...)
-// supply only the parts that genuinely differ:
+// Package runner is the entire ccgate PermissionRequest hook
+// orchestration. There is no per-target adapter layer: stdin/stdout
+// shapes are shared across Claude Code and Codex CLI (both deliver
+// session_id / transcript_path / cwd / hook_event_name / tool_name /
+// tool_input on stdin and the same hookSpecificOutput.decision shape
+// on stdout). Per-target differences are handled here directly:
 //
-//   - the wire format on stdin / stdout (Decode, Render),
-//   - the embedded config (LoadOptions),
-//   - and target-specific prefilters / extra context (Prefilter, ExtraPayload).
+//   - Claude-only fields: permission_mode, permission_suggestions
+//   - Codex-only fields: model, turn_id
 //
-// Everything else -- provider/API-key check, prompt assembly, LLM
-// call, fallthrough_strategy resolution, metrics entry shape, log
-// initialisation -- lives here.
+// cmd/<target>/ packages stay tiny -- they only hand a config.LoadOptions
+// (where to read the per-user config / write the per-target log+metrics)
+// and call Run.
 package runner
 
 import (
@@ -33,90 +35,121 @@ import (
 	"github.com/tak848/ccgate/internal/prompt"
 )
 
-// Request is the target-agnostic view of a single PermissionRequest
-// invocation. Targets fill the fields they actually receive; the
-// rest stay zero-valued and are simply omitted from the LLM payload.
-type Request struct {
-	SessionID      string
-	ToolName       string
-	Cwd            string
-	PermissionMode string // Claude only today
-	Description    string
-	Model          string          // upstream AI model (Codex surfaces this)
-	TurnID         string          // Codex
-	TranscriptPath string          // Claude reads, Codex passes through
-	ToolInputRaw   json.RawMessage // forwarded to the LLM verbatim
+// PermissionModePlan is the Claude Code permission_mode value that
+// puts ccgate into plan-mode evaluation.
+const PermissionModePlan = "plan"
 
-	// MetricsTool* expose a small parsed view of tool_input for the
-	// metrics layer. Targets fill whichever fields make sense.
-	MetricsToolCommand  string
-	MetricsToolFilePath string
-	MetricsToolPath     string
-	MetricsToolPattern  string
+// HookInput is the on-the-wire JSON Claude Code and Codex CLI both
+// deliver to the PermissionRequest hook. Fields that only one of the
+// two surfaces stay omitempty so the user payload sent to the LLM
+// only contains what actually arrived.
+type HookInput struct {
+	SessionID      string `json:"session_id"`
+	TranscriptPath string `json:"transcript_path"`
+	Cwd            string `json:"cwd"`
+	HookEventName  string `json:"hook_event_name"`
+	ToolName       string `json:"tool_name"`
 
-	// Extras carries target-internal data DecodeInput already parsed
-	// (e.g. the full HookInput struct) so target hooks like
-	// ExtraPayload don't have to reparse stdin. The runner itself
-	// never reads it.
-	Extras any
+	ToolInput    HookToolInput   `json:"-"`
+	ToolInputRaw json.RawMessage `json:"-"`
+
+	// Claude-only
+	PermissionMode        string            `json:"permission_mode,omitempty"`
+	PermissionSuggestions []json.RawMessage `json:"permission_suggestions,omitempty"`
+
+	// Codex-only
+	Model  string `json:"model,omitempty"`
+	TurnID string `json:"turn_id,omitempty"`
 }
 
-// PrefilterResult lets a target short-circuit before the LLM is
-// called. Skip=true means the runner returns immediately with the
-// recorded fallthrough kind (no LLM call, no decision).
-type PrefilterResult struct {
-	Skip            bool
-	FallthroughKind string
+// HookToolInput is the parsed view of tool_input that the metrics
+// layer understands. Targets emit different tool_input shapes; the
+// fields that overlap (command / description / file_path / path /
+// pattern / content / content_updates) are surfaced here for
+// consistent metrics, while ToolInputRaw retains the full payload
+// for the LLM.
+type HookToolInput struct {
+	Command        string              `json:"command,omitempty"`
+	Description    string              `json:"description,omitempty"`
+	FilePath       string              `json:"file_path,omitempty"`
+	Path           string              `json:"path,omitempty"`
+	Pattern        string              `json:"pattern,omitempty"`
+	Content        string              `json:"content,omitempty"`
+	ContentUpdates []HookContentUpdate `json:"content_updates,omitempty"`
 }
 
-// Target is the per-target adapter. All fields are required.
-type Target struct {
-	// Name appears in log lines and Spec Ledger references.
-	Name string
-
-	// LoadOptions is the config layer (global path, project-local
-	// candidates, embedded defaults, default log/metrics paths).
-	LoadOptions func() config.LoadOptions
-
-	// DecodeInput reads stdin and returns a Request the runner can
-	// orchestrate.
-	DecodeInput func(io.Reader) (Request, error)
-
-	// Prefilter runs before the provider check. Use it for
-	// target-specific short-circuits (Claude's
-	// ExitPlanMode/AskUserQuestion, bypassPermissions, dontAsk).
-	// Return Skip=false to continue into the LLM call.
-	Prefilter func(Request) PrefilterResult
-
-	// ExtraPayload returns extra JSON fields injected into the user
-	// message above and beyond the common (tool_name, tool_input,
-	// cwd, context, ...) shape. Used by Claude to ship
-	// settings_permissions / recent_transcript / permission_suggestions.
-	// Return nil for targets that have nothing extra.
-	ExtraPayload func(Request) map[string]any
-
-	// PlanMode toggles the plan-mode decision rules in the system
-	// prompt. Only Claude returns true today.
-	PlanMode func(Request) bool
-
-	// RenderOutput writes the resolved decision to stdout in the
-	// target's wire format.
-	RenderOutput func(io.Writer, llm.Decision) error
+// HookContentUpdate is the per-hunk Edit / apply_patch payload.
+type HookContentUpdate struct {
+	OldString string `json:"old_str"`
+	NewString string `json:"new_str"`
 }
 
-// Run is the binary entry point for a target. main() / cli wires the
-// Target struct and hands it here.
-func Run(stdin io.Reader, stdout io.Writer, t Target) int {
+// UnmarshalJSON keeps the raw tool_input bytes around so the LLM sees
+// every field the upstream hook delivered (including tool-specific
+// shapes ccgate doesn't yet model) while also surfacing the parsed
+// fields metrics relies on.
+func (h *HookInput) UnmarshalJSON(data []byte) error {
+	type alias HookInput
+	var raw struct {
+		alias
+		ToolInput json.RawMessage `json:"tool_input"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*h = HookInput(raw.alias)
+	h.ToolInputRaw = raw.ToolInput
+	if len(raw.ToolInput) > 0 {
+		// Best-effort parse: failure is fine for tool shapes ccgate
+		// does not yet model. Raw bytes are forwarded to the LLM untouched.
+		_ = json.Unmarshal(raw.ToolInput, &h.ToolInput)
+	}
+	return nil
+}
+
+// HookOutput is the JSON response shape Claude Code and Codex both expect.
+type HookOutput struct {
+	HookSpecificOutput hookSpecificOutput `json:"hookSpecificOutput"`
+}
+
+type hookSpecificOutput struct {
+	HookEventName string             `json:"hookEventName"`
+	Decision      decisionPayloadOut `json:"decision"`
+}
+
+type decisionPayloadOut struct {
+	Behavior string `json:"behavior"`
+	Message  string `json:"message,omitempty"`
+}
+
+func newHookOutput(eventName string, d llm.Decision) HookOutput {
+	if eventName == "" {
+		eventName = "PermissionRequest"
+	}
+	return HookOutput{
+		HookSpecificOutput: hookSpecificOutput{
+			HookEventName: eventName,
+			Decision: decisionPayloadOut{
+				Behavior: d.Behavior,
+				Message:  d.Message,
+			},
+		},
+	}
+}
+
+// Run is the entry point. cmd/<target>/ packages call it with a
+// per-target config.LoadOptions; the rest of the flow is identical.
+func Run(stdin io.Reader, stdout io.Writer, opts config.LoadOptions) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	req, err := t.DecodeInput(stdin)
-	if err != nil {
+	var input HookInput
+	if err := json.NewDecoder(stdin).Decode(&input); err != nil {
 		slog.Error("failed to decode stdin", "error", err)
 		return 1
 	}
 
-	lr, err := config.Load(t.LoadOptions(), req.Cwd)
+	lr, err := config.Load(opts, input.Cwd)
 	if err != nil {
 		slog.Error("failed to load config", "error", err)
 		return 1
@@ -132,41 +165,58 @@ func Run(stdin io.Reader, stdout io.Writer, t Target) int {
 	}
 
 	slog.Info("hook invoked",
-		"target", t.Name,
-		"tool", req.ToolName,
-		"permission_mode", req.PermissionMode,
+		"tool", input.ToolName,
+		"permission_mode", input.PermissionMode,
+		"model", input.Model,
+		"turn_id", input.TurnID,
 		"config_source", string(lr.Source),
 	)
 
 	start := time.Now()
-	decision, hasDecision, kind, reason, usage, runErr := decide(ctx, t, cfg, req)
+	decision, hasDecision, kind, reason, usage, runErr := decide(ctx, cfg, input)
 	elapsed := time.Since(start)
 
 	if !cfg.IsMetricsDisabled() {
-		entry := buildMetricsEntry(start, elapsed, t.Name, req, cfg, decision, hasDecision, kind, reason, usage, runErr)
+		entry := buildMetricsEntry(start, elapsed, input, cfg, decision, hasDecision, kind, reason, usage, runErr)
 		metrics.Record(cfg.ResolveMetricsPath(), cfg.GetMetricsMaxSize(), entry)
 	}
 
 	if runErr != nil {
-		slog.Error("decide failed", "error", runErr, "tool", req.ToolName, "elapsed_ms", elapsed.Milliseconds())
+		slog.Error("decide failed", "error", runErr, "tool", input.ToolName, "elapsed_ms", elapsed.Milliseconds())
 		return 1
 	}
 	if !hasDecision {
-		slog.Info("no decision (fallthrough)", "kind", kind, "tool", req.ToolName, "elapsed_ms", elapsed.Milliseconds())
+		slog.Info("no decision (fallthrough)", "kind", kind, "tool", input.ToolName, "elapsed_ms", elapsed.Milliseconds())
 		return 0
 	}
 
-	slog.Info("decision made", "behavior", decision.Behavior, "message", decision.Message, "tool", req.ToolName, "elapsed_ms", elapsed.Milliseconds())
-	if err := t.RenderOutput(stdout, decision); err != nil {
-		slog.Error("failed to render output", "error", err)
+	slog.Info("decision made", "behavior", decision.Behavior, "message", decision.Message, "tool", input.ToolName, "elapsed_ms", elapsed.Milliseconds())
+	if err := json.NewEncoder(stdout).Encode(newHookOutput(input.HookEventName, decision)); err != nil {
+		slog.Error("failed to encode response to stdout", "error", err)
 		return 1
 	}
 	return 0
 }
 
-func decide(ctx context.Context, t Target, cfg config.Config, req Request) (llm.Decision, bool, string, string, *llm.Usage, error) {
-	if pr := t.Prefilter(req); pr.Skip {
-		return llm.Decision{}, false, pr.FallthroughKind, "", nil, nil
+func decide(ctx context.Context, cfg config.Config, in HookInput) (llm.Decision, bool, string, string, *llm.Usage, error) {
+	// Tools that require user interaction must never be auto-decided.
+	switch in.ToolName {
+	case "ExitPlanMode", "AskUserQuestion":
+		slog.Info("user interaction tool: falling through", "tool", in.ToolName)
+		return llm.Decision{}, false, llm.FallthroughKindUserInteraction, "", nil, nil
+	}
+
+	// Some permission modes hand the prompt back to the upstream tool
+	// regardless of the LLM's opinion.
+	switch in.PermissionMode {
+	case PermissionModePlan:
+		// fall through to LLM
+	case "bypassPermissions":
+		slog.Info("bypass mode: falling through", "tool", in.ToolName)
+		return llm.Decision{}, false, llm.FallthroughKindBypass, "", nil, nil
+	case "dontAsk":
+		slog.Info("dontAsk mode: falling through", "tool", in.ToolName)
+		return llm.Decision{}, false, llm.FallthroughKindDontAsk, "", nil, nil
 	}
 
 	if !strings.EqualFold(cfg.Provider.Name, "anthropic") {
@@ -180,7 +230,7 @@ func decide(ctx context.Context, t Target, cfg config.Config, req Request) (llm.
 		return llm.Decision{}, false, llm.FallthroughKindNoAPIKey, "", nil, nil
 	}
 
-	p, err := buildUserPrompt(t, cfg, req)
+	p, err := buildPrompt(cfg, in)
 	if err != nil {
 		return llm.Decision{}, false, "", "", nil, fmt.Errorf("build prompt: %w", err)
 	}
@@ -224,28 +274,47 @@ func decide(ctx context.Context, t Target, cfg config.Config, req Request) (llm.
 	}
 }
 
-func buildUserPrompt(t Target, cfg config.Config, req Request) (llm.Prompt, error) {
+func buildPrompt(cfg config.Config, in HookInput) (llm.Prompt, error) {
 	payload := map[string]any{
-		"tool_name":       req.ToolName,
-		"tool_input":      req.ToolInputRaw,
-		"cwd":             req.Cwd,
-		"context":         gitutil.BuildContext(req.Cwd),
-		"permission_mode": req.PermissionMode,
-		"description":     req.Description,
-		"model":           req.Model,
-		"turn_id":         req.TurnID,
+		"tool_name":  in.ToolName,
+		"tool_input": in.ToolInputRaw,
+		"cwd":        in.Cwd,
+		"context":    gitutil.BuildContext(in.Cwd),
 	}
-	if t.ExtraPayload != nil {
-		for k, v := range t.ExtraPayload(req) {
-			payload[k] = v
+	if in.ToolInput.Description != "" {
+		payload["description"] = in.ToolInput.Description
+	}
+	if in.PermissionMode != "" {
+		payload["permission_mode"] = in.PermissionMode
+	}
+	if len(in.PermissionSuggestions) > 0 {
+		payload["permission_suggestions"] = in.PermissionSuggestions
+	}
+	if in.Model != "" {
+		payload["model"] = in.Model
+	}
+	if in.TurnID != "" {
+		payload["turn_id"] = in.TurnID
+	}
+	if paths := referencedPaths(in); len(paths) > 0 {
+		payload["referenced_paths"] = paths
+	}
+	if sp := loadSettingsPermissions(in.Cwd); !sp.empty() {
+		payload["settings_permissions"] = sp
+	}
+	if in.TranscriptPath != "" {
+		if t, err := loadRecentTranscript(in.TranscriptPath); err == nil && !t.empty() {
+			payload["recent_transcript"] = t
+		} else if err != nil {
+			slog.Warn("failed to load transcript, proceeding without it", "error", err)
 		}
 	}
-	user, err := json.MarshalIndent(stripEmpty(payload), "", "  ")
+	user, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
 		return llm.Prompt{}, fmt.Errorf("marshal prompt input: %w", err)
 	}
 	p := prompt.Build(prompt.Args{
-		PlanMode:    t.PlanMode(req),
+		PlanMode:    in.PermissionMode == PermissionModePlan,
 		Allow:       cfg.Allow,
 		Deny:        cfg.Deny,
 		Environment: cfg.Environment,
@@ -256,40 +325,12 @@ func buildUserPrompt(t Target, cfg config.Config, req Request) (llm.Prompt, erro
 	return p, nil
 }
 
-// stripEmpty removes keys whose value is the type's zero so the
-// payload sent to the LLM only contains fields that actually came in.
-// Targets that don't deliver permission_mode / model / turn_id
-// shouldn't surface those keys at all.
-func stripEmpty(m map[string]any) map[string]any {
-	out := make(map[string]any, len(m))
-	for k, v := range m {
-		switch x := v.(type) {
-		case string:
-			if x == "" {
-				continue
-			}
-		case json.RawMessage:
-			if len(x) == 0 {
-				continue
-			}
-		case nil:
-			continue
-		}
-		out[k] = v
-	}
-	return out
-}
-
-// redactedUserMessage strips the high-volume / potentially sensitive
-// pieces (raw tool_input bodies, content, content_updates) from the
-// user message before it is logged. The full payload still goes to
-// the LLM; only the local log file is sanitised.
 func redactedUserMessage(user string) string {
 	var m map[string]any
 	if err := json.Unmarshal([]byte(user), &m); err != nil {
 		return "{}"
 	}
-	for _, k := range []string{"tool_input", "tool_input_raw", "content", "content_updates", "permission_suggestions", "recent_transcript"} {
+	for _, k := range []string{"tool_input", "permission_suggestions", "recent_transcript"} {
 		if _, ok := m[k]; ok {
 			m[k] = "[REDACTED]"
 		}
@@ -316,8 +357,7 @@ const maxTruncateLen = 200
 func buildMetricsEntry(
 	start time.Time,
 	elapsed time.Duration,
-	targetName string,
-	req Request,
+	in HookInput,
 	cfg config.Config,
 	decision llm.Decision,
 	hasDecision bool,
@@ -326,12 +366,11 @@ func buildMetricsEntry(
 	usage *llm.Usage,
 	err error,
 ) metrics.Entry {
-	_ = targetName // metrics file is per-target on disk, no need to encode it inline
 	entry := metrics.Entry{
 		Timestamp:      start,
-		SessionID:      req.SessionID,
-		ToolName:       req.ToolName,
-		PermissionMode: req.PermissionMode,
+		SessionID:      in.SessionID,
+		ToolName:       in.ToolName,
+		PermissionMode: in.PermissionMode,
 		Model:          cfg.Provider.Model,
 		ElapsedMS:      elapsed.Milliseconds(),
 	}
@@ -362,12 +401,11 @@ func buildMetricsEntry(
 	}
 
 	entry.ToolInput = metrics.CapToolInput(metrics.ToolInputFields{
-		Command:  req.MetricsToolCommand,
-		FilePath: req.MetricsToolFilePath,
-		Path:     req.MetricsToolPath,
-		Pattern:  req.MetricsToolPattern,
+		Command:  in.ToolInput.Command,
+		FilePath: in.ToolInput.FilePath,
+		Path:     in.ToolInput.Path,
+		Pattern:  in.ToolInput.Pattern,
 	})
-
 	return entry
 }
 

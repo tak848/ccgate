@@ -1,4 +1,4 @@
-package claude
+package runner
 
 import (
 	"bufio"
@@ -8,10 +8,14 @@ import (
 	"os"
 )
 
-// RecentTranscript holds recent user messages and tool operations from the session transcript.
-type RecentTranscript struct {
+// recentTranscript holds recent user messages and tool operations from the session transcript.
+type recentTranscript struct {
 	UserMessages    []string `json:"user_messages,omitempty"`
 	RecentToolCalls []string `json:"recent_tool_calls,omitempty"`
+}
+
+func (t recentTranscript) empty() bool {
+	return len(t.UserMessages) == 0 && len(t.RecentToolCalls) == 0
 }
 
 const (
@@ -20,19 +24,19 @@ const (
 	tailBytes       = 64 * 1024
 )
 
-// LoadRecentTranscript reads the tail of the transcript JSONL and extracts
+// LoadrecentTranscript reads the tail of the transcript JSONL and extracts
 // the most recent user messages and tool call summaries.
-func LoadRecentTranscript(path string) (RecentTranscript, error) {
+func loadRecentTranscript(path string) (recentTranscript, error) {
 	if path == "" {
-		return RecentTranscript{}, nil
+		return recentTranscript{}, nil
 	}
 
 	data, err := readTail(path, tailBytes)
 	if err != nil {
-		return RecentTranscript{}, fmt.Errorf("read transcript %s: %w", path, err)
+		return recentTranscript{}, fmt.Errorf("read transcript %s: %w", path, err)
 	}
 
-	var result RecentTranscript
+	var result recentTranscript
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 	scanner.Buffer(make([]byte, 256*1024), 256*1024)
 	for scanner.Scan() {
