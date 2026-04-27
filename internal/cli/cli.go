@@ -31,6 +31,8 @@ type CLI struct {
 
 	Claude  ClaudeCmd            `cmd:"" help:"Run the Claude Code PermissionRequest hook (or manage its config / metrics). With no sub-sub-command, runs the hook from stdin."`
 	Codex   CodexCmd             `cmd:"" help:"Run the OpenAI Codex CLI PermissionRequest hook (experimental). With no sub-sub-command, runs the hook from stdin."`
+	Clm     ClaudeMetricsCmd     `cmd:"" help:"Shortcut for 'ccgate claude metrics'."`
+	Com     CodexMetricsCmd      `cmd:"" help:"Shortcut for 'ccgate codex metrics'."`
 	Init    DeprecatedInitCmd    `cmd:"" help:"[removed in v0.6] Use 'ccgate claude init' or 'ccgate codex init' instead."`
 	Metrics DeprecatedMetricsCmd `cmd:"" help:"[removed in v0.6] Use 'ccgate claude metrics' or 'ccgate codex metrics' instead."`
 }
@@ -131,6 +133,26 @@ func dispatch(kctx *kong.Context, cli *CLI, stdin io.Reader, stdout, stderr io.W
 			AsJSON:     cli.Codex.Metrics.JSON,
 			DetailsTop: cli.Codex.Metrics.Details,
 		})
+	case "clm":
+		cwd, err := os.Getwd()
+		if err != nil {
+			fmt.Fprintf(stderr, "warning: failed to get working directory: %v\n", err)
+		}
+		return claude.Metrics(stdout, stderr, cwd, claude.MetricsOptions{
+			Days:       cli.Clm.Days,
+			AsJSON:     cli.Clm.JSON,
+			DetailsTop: cli.Clm.Details,
+		})
+	case "com":
+		cwd, err := os.Getwd()
+		if err != nil {
+			fmt.Fprintf(stderr, "warning: failed to get working directory: %v\n", err)
+		}
+		return codex.Metrics(stdout, stderr, cwd, codex.MetricsOptions{
+			Days:       cli.Com.Days,
+			AsJSON:     cli.Com.JSON,
+			DetailsTop: cli.Com.Details,
+		})
 	case "init":
 		return runDeprecatedInit(stderr)
 	case "metrics":
@@ -164,6 +186,9 @@ Usage:
   ccgate codex                               Read HookInput JSON from stdin (Codex CLI hook, experimental).
   ccgate codex init [-o FILE] [-f]           Output the embedded Codex CLI defaults.
   ccgate codex metrics [--days N] [--json]   Show Codex CLI metrics.
+
+  ccgate clm [--days N] [--json]             Shortcut for 'ccgate claude metrics'.
+  ccgate com [--days N] [--json]             Shortcut for 'ccgate codex metrics'.
 
 Flags:
   --version    Print version and exit
