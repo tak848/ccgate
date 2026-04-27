@@ -27,8 +27,16 @@ var defaultsProjectJsonnet string
 func Defaults() string { return defaultsJsonnet }
 
 // LoadOptions returns the config.LoadOptions for the Claude Code hook.
-func LoadOptions() config.LoadOptions {
-	home, _ := os.UserHomeDir()
+// Returns an error when the user home directory cannot be resolved
+// (rare: misconfigured CI / sandbox without HOME); the caller should
+// surface that as a hard failure rather than silently degrading the
+// global config path to a relative one and accidentally reading repo
+// files as user-trusted config.
+func LoadOptions() (config.LoadOptions, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return config.LoadOptions{}, fmt.Errorf("resolve user home dir: %w", err)
+	}
 	sd := config.StateDir("claude")
 	return config.LoadOptions{
 		GlobalConfigPath:          filepath.Join(home, ".claude", config.BaseConfigName),
@@ -36,7 +44,7 @@ func LoadOptions() config.LoadOptions {
 		EmbedDefaults:             defaultsJsonnet,
 		DefaultLogPath:            filepath.Join(sd, "ccgate.log"),
 		DefaultMetricsPath:        filepath.Join(sd, "metrics.jsonl"),
-	}
+	}, nil
 }
 
 // Run reads a single PermissionRequest from stdin and writes the
@@ -47,7 +55,12 @@ func LoadOptions() config.LoadOptions {
 // `~/.codex/config.toml` rules / transcript ingestion is a separate
 // piece of work) so cmd/codex passes neither hook.
 func Run(stdin io.Reader, stdout io.Writer) int {
-	return runner.Run(stdin, stdout, LoadOptions(),
+	opts, err := LoadOptions()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ccgate claude: %v\n", err)
+		return 1
+	}
+	return runner.Run(stdin, stdout, opts,
 		runner.WithStaticPermissions(staticPermissionsHook),
 		runner.WithRecentTranscript(recentTranscriptHook),
 	)
@@ -117,21 +130,21 @@ type MetricsOptions struct {
 	DetailsTop int
 }
 
-// Metrics aggregates the Claude Code metrics file plus
-// `$XDG_STATE_HOME/ccgate/metrics.jsonl` (no `<target>` segment) and
-// prints the report to stdout.
+// Metrics aggregates the Claude Code metrics file and prints the
+// report to stdout.
 func Metrics(stdout io.Writer, stderr io.Writer, cwd string, opts MetricsOptions) int {
-	lr, err := config.Load(LoadOptions(), cwd)
+	loadOpts, err := LoadOptions()
+	if err != nil {
+		fmt.Fprintf(stderr, "failed to load options: %v\n", err)
+		return 1
+	}
+	lr, err := config.Load(loadOpts, cwd)
 	if err != nil {
 		fmt.Fprintf(stderr, "failed to load config: %v\n", err)
 		return 1
 	}
 
-	paths := []string{
-		lr.Config.ResolveMetricsPath(),
-		filepath.Join(legacyStateDir(), "metrics.jsonl"),
-	}
-	if err := metrics.PrintReport(stdout, paths, metrics.ReportOptions{
+	if err := metrics.PrintReport(stdout, []string{lr.Config.ResolveMetricsPath()}, metrics.ReportOptions{
 		Days:       opts.Days,
 		AsJSON:     opts.AsJSON,
 		DetailsTop: opts.DetailsTop,
@@ -158,16 +171,3 @@ var buildVersion = "dev"
 // SetBuildVersion forwards the linker-injected version into this
 // package so cli/ does not need to thread it through every call.
 func SetBuildVersion(v string) { buildVersion = v }
-
-// legacyStateDir returns $XDG_STATE_HOME/ccgate/ (the path with no
-// `<target>` segment). `Metrics` reads it in addition to the
-// per-target path so the report includes any entries written there.
-func legacyStateDir() string {
-	if d := os.Getenv("XDG_STATE_HOME"); d != "" && filepath.IsAbs(d) {
-		return filepath.Join(d, "ccgate")
-	}
-	if home, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(home, ".local", "state", "ccgate")
-	}
-	return "."
-}

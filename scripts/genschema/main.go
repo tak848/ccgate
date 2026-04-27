@@ -12,7 +12,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/invopop/jsonschema"
 
@@ -31,9 +33,9 @@ func main() {
 }
 
 func run() error {
-	root, err := os.Getwd()
+	root, err := repoRoot()
 	if err != nil {
-		return fmt.Errorf("getwd: %w", err)
+		return fmt.Errorf("locate repo root: %w", err)
 	}
 	outDir := filepath.Join(root, "schemas")
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
@@ -78,4 +80,19 @@ func writeSchema(path, target string) error {
 	// Trailing newline so the file is POSIX-friendly.
 	data = append(data, '\n')
 	return os.WriteFile(path, data, 0o644)
+}
+
+// repoRoot returns the directory containing go.mod so the generator can be
+// invoked from anywhere (`go generate ./...` from a sub-package, mise tasks
+// from a worktree, etc.) without writing schemas next to the caller's cwd.
+func repoRoot() (string, error) {
+	out, err := exec.Command("go", "env", "GOMOD").Output()
+	if err != nil {
+		return "", fmt.Errorf("go env GOMOD: %w", err)
+	}
+	gomod := strings.TrimSpace(string(out))
+	if gomod == "" || gomod == "/dev/null" {
+		return "", fmt.Errorf("not inside a Go module (go env GOMOD = %q)", gomod)
+	}
+	return filepath.Dir(gomod), nil
 }

@@ -63,7 +63,7 @@ You can audit how often each strategy fired through the metrics output (see belo
 
 ## Metrics output
 
-Every invocation appends a JSON line to `$XDG_STATE_HOME/ccgate/<target>/metrics.jsonl` (rotated on size). `ccgate <target> metrics` aggregates the file and prints either a TTY table or a JSON document. `ccgate claude metrics` additionally reads `$XDG_STATE_HOME/ccgate/metrics.jsonl` (no `<target>` segment).
+Every invocation appends a JSON line to `$XDG_STATE_HOME/ccgate/<target>/metrics.jsonl` (rotated on size). `ccgate <target> metrics` aggregates the file and prints either a TTY table or a JSON document.
 
 ### CLI
 

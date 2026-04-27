@@ -26,9 +26,15 @@ func Defaults() string { return defaultsJsonnet }
 
 // LoadOptions builds the config.LoadOptions for the Codex hook.
 // Project-local config is read from `{repo_root}/.codex/ccgate.local.jsonnet`
-// only.
-func LoadOptions() config.LoadOptions {
-	home, _ := os.UserHomeDir()
+// only. Returns an error when the user home directory cannot be
+// resolved (rare: misconfigured CI / sandbox without HOME); the
+// caller surfaces that as a hard failure rather than silently
+// degrading the global config path to a relative one.
+func LoadOptions() (config.LoadOptions, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return config.LoadOptions{}, fmt.Errorf("resolve user home dir: %w", err)
+	}
 	sd := config.StateDir("codex")
 	return config.LoadOptions{
 		GlobalConfigPath:          filepath.Join(home, ".codex", config.BaseConfigName),
@@ -36,13 +42,18 @@ func LoadOptions() config.LoadOptions {
 		EmbedDefaults:             defaultsJsonnet,
 		DefaultLogPath:            filepath.Join(sd, "ccgate.log"),
 		DefaultMetricsPath:        filepath.Join(sd, "metrics.jsonl"),
-	}
+	}, nil
 }
 
 // Run reads a single PermissionRequest from stdin and writes the
 // response to stdout. Delegates to internal/runner.
 func Run(stdin io.Reader, stdout io.Writer) int {
-	return runner.Run(stdin, stdout, LoadOptions())
+	opts, err := LoadOptions()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ccgate codex: %v\n", err)
+		return 1
+	}
+	return runner.Run(stdin, stdout, opts)
 }
 
 // InitOptions describes how `ccgate codex init` should output the
@@ -87,7 +98,12 @@ type MetricsOptions struct {
 // Metrics aggregates the Codex metrics file and prints the report
 // to stdout.
 func Metrics(stdout io.Writer, stderr io.Writer, cwd string, opts MetricsOptions) int {
-	lr, err := config.Load(LoadOptions(), cwd)
+	loadOpts, err := LoadOptions()
+	if err != nil {
+		fmt.Fprintf(stderr, "failed to load options: %v\n", err)
+		return 1
+	}
+	lr, err := config.Load(loadOpts, cwd)
 	if err != nil {
 		fmt.Fprintf(stderr, "failed to load config: %v\n", err)
 		return 1

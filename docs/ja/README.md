@@ -183,7 +183,7 @@ Claude Code と同じ環境変数 (`CCGATE_ANTHROPIC_API_KEY` / `ANTHROPIC_API_K
 | `deny`                   | string[]                          | `[]`                                                                            | 拒否ルール (mandatory)。`deny_message:` ヒント対応                                                         |
 | `environment`            | string[]                          | `[]`                                                                            | LLM に渡すコンテキスト (信頼レベル、ポリシー等)                                                            |
 
-`<target>` は Claude / Codex どちらの hook が呼ばれたかで `claude` / `codex` になります。`XDG_STATE_HOME` が未設定の場合は `~/.local/state/ccgate/<target>/...` が fallback として使われます。`ccgate claude metrics` は `$XDG_STATE_HOME/ccgate/metrics.jsonl` (`<target>` セグメントなし) も追加で読むので、そこに書かれたエントリも集計に含まれます。
+`<target>` は Claude / Codex どちらの hook が呼ばれたかで `claude` / `codex` になります。`XDG_STATE_HOME` が未設定の場合は `~/.local/state/ccgate/<target>/...` が fallback として使われます。
 
 ## デフォルトルール
 
@@ -233,7 +233,7 @@ ccgate codex  init    > ~/.codex/ccgate.jsonnet            # グローバル, co
 
 両ファイルともサイズベースでローテーションします (`.log.1`, `.jsonl.1`)。
 
-`ccgate claude metrics` は `$XDG_STATE_HOME/ccgate/metrics.jsonl` (`<target>` セグメントなし) も追加で読むため、そこに書かれたエントリも集計に含まれます。jsonnet で `log_path` / `metrics_path` を明示している場合はその設定が尊重されます。
+jsonnet で `log_path` / `metrics_path` を明示している場合はその設定が尊重されます。
 
 ```bash
 ccgate claude metrics                 # 直近 7 日間、TTY テーブル

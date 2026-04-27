@@ -63,7 +63,7 @@ LLM は `allow` / `deny` / `fallthrough` のいずれかを返します。`fallt
 
 ## メトリクス出力
 
-呼び出しごとに `$XDG_STATE_HOME/ccgate/<target>/metrics.jsonl` に JSON 1 行を append (size でローテート)。`ccgate <target> metrics` がファイルを集計し、TTY テーブル or JSON ドキュメントを出力します。`ccgate claude metrics` は `$XDG_STATE_HOME/ccgate/metrics.jsonl` (`<target>` セグメントなし) も追加で読みます。
+呼び出しごとに `$XDG_STATE_HOME/ccgate/<target>/metrics.jsonl` に JSON 1 行を append (size でローテート)。`ccgate <target> metrics` がファイルを集計し、TTY テーブル or JSON ドキュメントを出力します。
 
 ### CLI
 

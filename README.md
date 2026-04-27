@@ -184,7 +184,7 @@ Project-local configs are loaded only when **not tracked by Git**.
 | `deny`                   | string[]                          | `[]`                                                                          | Deny guidance rules (mandatory). Supports inline `deny_message:` hints                                 |
 | `environment`            | string[]                          | `[]`                                                                          | Context strings passed to the LLM (trust level, policies, etc.)                                        |
 
-`<target>` is `claude` or `codex` depending on which hook is invoked. When `XDG_STATE_HOME` is unset, ccgate falls back to `~/.local/state/ccgate/<target>/...`. `ccgate claude metrics` additionally reads `$XDG_STATE_HOME/ccgate/metrics.jsonl` (no `<target>` segment) so the report still includes entries written there.
+`<target>` is `claude` or `codex` depending on which hook is invoked. When `XDG_STATE_HOME` is unset, ccgate falls back to `~/.local/state/ccgate/<target>/...`.
 
 ## Default Rules
 
@@ -234,7 +234,7 @@ Logs and metrics live under `$XDG_STATE_HOME/ccgate/<target>/` (or `~/.local/sta
 
 Both files rotate on size (`.log.1`, `.jsonl.1`).
 
-`ccgate claude metrics` additionally reads `$XDG_STATE_HOME/ccgate/metrics.jsonl` (no `<target>` segment) so entries written there are included. Override paths in jsonnet are respected — set `log_path` / `metrics_path` to put them anywhere.
+Override paths in jsonnet are respected — set `log_path` / `metrics_path` to put them anywhere.
 
 ```bash
 ccgate claude metrics                 # last 7 days, TTY table
