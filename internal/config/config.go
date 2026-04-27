@@ -1,7 +1,6 @@
 package config
 
 import (
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,12 +15,6 @@ import (
 	"github.com/tak848/ccgate/internal/gitutil"
 	"github.com/tak848/ccgate/internal/llm"
 )
-
-//go:embed defaults.jsonnet
-var DefaultsJsonnet string
-
-//go:embed defaults_project.jsonnet
-var DefaultsProjectJsonnet string
 
 const (
 	DefaultTimeoutMS      = 20_000
@@ -210,24 +203,12 @@ type LoadOptions struct {
 	DefaultMetricsPath string
 }
 
-// ClaudeStateDir is the per-user state subdirectory for Claude Code
-// log/metrics files (i.e. $XDG_STATE_HOME/ccgate/claude/...).
-func ClaudeStateDir() string { return filepath.Join(stateDir(), "claude") }
-
-// ClaudeLoadOptions returns the LoadOptions for the Claude Code hook.
-// Kept here as a transitional helper so existing callers (main.go,
-// tests) keep working until cmd/claude takes over orchestration. New
-// callers should construct their own LoadOptions.
-func ClaudeLoadOptions() LoadOptions {
-	home, _ := os.UserHomeDir()
-	sd := ClaudeStateDir()
-	return LoadOptions{
-		GlobalConfigPath:          filepath.Join(home, ".claude", BaseConfigName),
-		ProjectLocalRelativePaths: []string{filepath.Join(".claude", LocalConfigName)},
-		EmbedDefaults:             DefaultsJsonnet,
-		DefaultLogPath:            filepath.Join(sd, "ccgate.log"),
-		DefaultMetricsPath:        filepath.Join(sd, "metrics.jsonl"),
-	}
+// StateDir returns the $XDG_STATE_HOME/ccgate/<sub>/ directory used
+// for log / metrics files. `sub` is the per-target subdirectory
+// ("claude", "codex", ...). When XDG_STATE_HOME is unset, it falls
+// back to ~/.local/state/ccgate/<sub>/.
+func StateDir(sub string) string {
+	return filepath.Join(stateDir(), sub)
 }
 
 // Load reads the base config from opts.GlobalConfigPath and merges

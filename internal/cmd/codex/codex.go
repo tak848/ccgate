@@ -29,7 +29,7 @@ func Defaults() string { return defaultsJsonnet }
 // only.
 func LoadOptions() config.LoadOptions {
 	home, _ := os.UserHomeDir()
-	sd := stateDir()
+	sd := config.StateDir("codex")
 	return config.LoadOptions{
 		GlobalConfigPath:          filepath.Join(home, ".codex", config.BaseConfigName),
 		ProjectLocalRelativePaths: []string{filepath.Join(".codex", config.LocalConfigName)},
@@ -37,18 +37,6 @@ func LoadOptions() config.LoadOptions {
 		DefaultLogPath:            filepath.Join(sd, "ccgate.log"),
 		DefaultMetricsPath:        filepath.Join(sd, "metrics.jsonl"),
 	}
-}
-
-// stateDir is the per-user state subdirectory for Codex log/metrics
-// (i.e. $XDG_STATE_HOME/ccgate/codex/...).
-func stateDir() string {
-	if d := os.Getenv("XDG_STATE_HOME"); d != "" && filepath.IsAbs(d) {
-		return filepath.Join(d, "ccgate", "codex")
-	}
-	if home, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(home, ".local", "state", "ccgate", "codex")
-	}
-	return filepath.Join(".", "codex")
 }
 
 // Run reads a single PermissionRequest from stdin and writes the

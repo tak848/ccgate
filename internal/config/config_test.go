@@ -248,82 +248,50 @@ func TestSafeProjectLocalConfigPathsSkipsTrackedFile(t *testing.T) {
 	}
 }
 
-func TestMergeConfigStringAppliesDefaults(t *testing.T) {
-	t.Parallel()
-
-	cfg := Default()
-	if err := mergeConfigString(DefaultsJsonnet, &cfg); err != nil {
-		t.Fatal(err)
-	}
-	if len(cfg.Allow) == 0 {
-		t.Fatal("expected allow rules from embedded defaults")
-	}
-	if len(cfg.Deny) == 0 {
-		t.Fatal("expected deny rules from embedded defaults")
-	}
-	if len(cfg.Environment) == 0 {
-		t.Fatal("expected environment from embedded defaults")
+// fakeLoadOptions returns a target-agnostic LoadOptions used by the
+// generic Load tests below. The real per-target LoadOptions live in
+// the cmd/<target>/ packages and are tested there.
+func fakeLoadOptions(home string) LoadOptions {
+	return LoadOptions{
+		GlobalConfigPath:          filepath.Join(home, ".fake", BaseConfigName),
+		ProjectLocalRelativePaths: []string{filepath.Join(".fake", LocalConfigName)},
+		EmbedDefaults:             `{ provider: { name: 'anthropic', model: 'claude-haiku-4-5' }, allow: ['default-allow'], deny: ['default-deny'] }`,
+		DefaultLogPath:            filepath.Join(home, ".local/state/ccgate/fake/ccgate.log"),
+		DefaultMetricsPath:        filepath.Join(home, ".local/state/ccgate/fake/metrics.jsonl"),
 	}
 }
 
-func TestEmbeddedDefaultsValidJsonnet(t *testing.T) {
-	t.Parallel()
-
-	snippets := map[string]string{
-		"defaults":         DefaultsJsonnet,
-		"defaults_project": DefaultsProjectJsonnet,
-	}
-	for name, snippet := range snippets {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			cfg := Default()
-			if err := mergeConfigString(snippet, &cfg); err != nil {
-				t.Fatalf("embedded %s is invalid jsonnet: %v", name, err)
-			}
-			if err := cfg.Validate(); err != nil {
-				t.Fatalf("config from embedded %s should be valid: %v", name, err)
-			}
-		})
-	}
-}
-
-func TestLoadFallsBackToDefaultsWhenNoGlobalConfig(t *testing.T) {
+func TestLoadFallsBackToEmbedDefaultsWhenNoGlobalConfig(t *testing.T) {
 	// t.Setenv is incompatible with t.Parallel.
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, ".claude"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	setHomeEnv(t, dir)
 
-	lr, err := Load(ClaudeLoadOptions(), "")
+	lr, err := Load(fakeLoadOptions(dir), "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if lr.Source != SourceEmbeddedDefaults {
 		t.Fatalf("source = %q, want %q", lr.Source, SourceEmbeddedDefaults)
 	}
-	if len(lr.Config.Allow) == 0 {
-		t.Fatal("expected allow rules from embedded defaults")
-	}
-	if len(lr.Config.Deny) == 0 {
-		t.Fatal("expected deny rules from embedded defaults")
+	if got := lr.Config.Allow; len(got) != 1 || got[0] != "default-allow" {
+		t.Fatalf("unexpected allow from embed defaults: %v", got)
 	}
 }
 
 func TestLoadUsesGlobalConfigWhenPresent(t *testing.T) {
 	// t.Setenv is incompatible with t.Parallel.
 	dir := t.TempDir()
-	claudeDir := filepath.Join(dir, ".claude")
-	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+	fakeDir := filepath.Join(dir, ".fake")
+	if err := os.MkdirAll(fakeDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	content := `{ provider: { name: 'anthropic', model: 'claude-haiku-4-5' }, allow: ['Custom allow'] }`
-	if err := os.WriteFile(filepath.Join(claudeDir, BaseConfigName), []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(fakeDir, BaseConfigName), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	setHomeEnv(t, dir)
 
-	lr, err := Load(ClaudeLoadOptions(), "")
+	lr, err := Load(fakeLoadOptions(dir), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,9 +301,10 @@ func TestLoadUsesGlobalConfigWhenPresent(t *testing.T) {
 	if len(lr.Config.Allow) != 1 || lr.Config.Allow[0] != "Custom allow" {
 		t.Fatalf("unexpected allow: %v", lr.Config.Allow)
 	}
-	// Deny should be empty (defaults not applied).
+	// Deny should be empty (embed defaults not applied because the
+	// global config replaces them).
 	if len(lr.Config.Deny) != 0 {
-		t.Fatalf("expected no deny rules (defaults not applied), got %v", lr.Config.Deny)
+		t.Fatalf("expected no deny rules (embed defaults not applied), got %v", lr.Config.Deny)
 	}
 }
 

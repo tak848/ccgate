@@ -5,6 +5,7 @@
 package claude
 
 import (
+	_ "embed"
 	"fmt"
 	"io"
 	"os"
@@ -16,14 +17,23 @@ import (
 	"github.com/tak848/ccgate/internal/runner"
 )
 
+//go:embed defaults.jsonnet
+var defaultsJsonnet string
+
+//go:embed defaults_project.jsonnet
+var defaultsProjectJsonnet string
+
+// Defaults exposes the embedded Claude Code defaults.
+func Defaults() string { return defaultsJsonnet }
+
 // LoadOptions returns the config.LoadOptions for the Claude Code hook.
 func LoadOptions() config.LoadOptions {
 	home, _ := os.UserHomeDir()
-	sd := config.ClaudeStateDir()
+	sd := config.StateDir("claude")
 	return config.LoadOptions{
 		GlobalConfigPath:          filepath.Join(home, ".claude", config.BaseConfigName),
 		ProjectLocalRelativePaths: []string{filepath.Join(".claude", config.LocalConfigName)},
-		EmbedDefaults:             config.DefaultsJsonnet,
+		EmbedDefaults:             defaultsJsonnet,
 		DefaultLogPath:            filepath.Join(sd, "ccgate.log"),
 		DefaultMetricsPath:        filepath.Join(sd, "metrics.jsonl"),
 	}
@@ -48,9 +58,9 @@ type InitOptions struct {
 
 // Init writes the embedded default Claude Code configuration.
 func Init(stdout io.Writer, stderr io.Writer, opts InitOptions) int {
-	content := config.DefaultsJsonnet
+	content := defaultsJsonnet
 	if opts.Project {
-		content = config.DefaultsProjectJsonnet
+		content = defaultsProjectJsonnet
 	}
 	if opts.Output == "" {
 		fmt.Fprint(stdout, content)
