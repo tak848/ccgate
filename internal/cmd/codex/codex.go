@@ -36,8 +36,7 @@ func Defaults() string { return defaultsJsonnet }
 
 // LoadOptions builds the config.LoadOptions for the Codex hook.
 // Project-local config is read from `{repo_root}/.codex/ccgate.local.jsonnet`
-// only — root-level `ccgate.local.jsonnet` is target-ambiguous and not
-// read for either target in v0.5.
+// only.
 func LoadOptions() config.LoadOptions {
 	home, _ := os.UserHomeDir()
 	sd := stateDir()

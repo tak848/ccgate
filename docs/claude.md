@@ -41,7 +41,7 @@ If you launch `ccgate` from a terminal with no stdin pipe, it prints a usage ban
 Claude Code delivers the standard PermissionRequest payload (see the upstream [hooks reference](https://code.claude.com/docs/en/hooks)). ccgate reads:
 
 - `tool_name`: routes early-return for user-interaction tools (`ExitPlanMode`, `AskUserQuestion`) -- those always fall through to Claude Code's prompt, ccgate never decides for them.
-- `tool_input`: forwarded to the LLM. The metrics layer captures `command` / `file_path` / `path` / `pattern` only; `content` and `content_updates` are intentionally redacted before logging.
+- `tool_input`: forwarded to the LLM. The metrics layer captures `command` / `file_path` / `path` / `pattern` only.
 - `permission_mode`: switches the system prompt to plan-mode rules when `"plan"`. `"bypassPermissions"` and `"dontAsk"` short-circuit ccgate to fallthrough.
 - `cwd`: feeds the git context builder (`gitutil.RepoRoot`, branch, worktree).
 - `transcript_path`: the recent-transcript loader reads up to N tail entries to give the LLM user-intent context.

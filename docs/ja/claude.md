@@ -41,7 +41,7 @@ ccgate は Claude Code の [PermissionRequest hook](https://code.claude.com/docs
 Claude Code は標準 PermissionRequest payload を流します ([upstream hooks reference](https://code.claude.com/docs/en/hooks))。ccgate が読むのは:
 
 - `tool_name`: ユーザーインタラクション専用 tool (`ExitPlanMode`, `AskUserQuestion`) で early-return -- これらは常に Claude Code prompt に fallthrough、ccgate は判定しない
-- `tool_input`: LLM に転送。metrics 層は `command` / `file_path` / `path` / `pattern` のみ記録 (`content` / `content_updates` は redact)
+- `tool_input`: LLM に転送。metrics 層は `command` / `file_path` / `path` / `pattern` のみ記録
 - `permission_mode`: `"plan"` のとき system prompt を plan mode rule に切替。`"bypassPermissions"` / `"dontAsk"` は ccgate を fallthrough で短絡
 - `cwd`: git context builder (`gitutil.RepoRoot`, branch, worktree) に渡す
 - `transcript_path`: recent-transcript loader が末尾 N 件を読み、ユーザー意図 context として LLM に渡す

@@ -161,8 +161,8 @@ type MetricsOptions struct {
 	DetailsTop int
 }
 
-// Metrics aggregates the Claude Code metrics file plus the legacy
-// `$XDG_STATE_HOME/ccgate/metrics.jsonl` written by pre-v0.5 ccgate
+// Metrics aggregates the Claude Code metrics file plus
+// `$XDG_STATE_HOME/ccgate/metrics.jsonl` (no `<target>` segment)
 // and prints the report to stdout. cwd seeds project-local config
 // resolution. Returns the exit code the wrapping main() should
 // propagate.
@@ -249,10 +249,10 @@ func (w *atomicWriter) Write(p []byte) (int, error) {
 	return w.f.Write(p)
 }
 
-// legacyStateDir returns the historical $XDG_STATE_HOME/ccgate/
-// directory where pre-v0.5 ccgate wrote both ccgate.log and
-// metrics.jsonl. Used as a read-only fallback so existing users
-// keep seeing their metrics history through `ccgate claude metrics`.
+// legacyStateDir returns $XDG_STATE_HOME/ccgate/ (the path with no
+// `<target>` segment). `ccgate claude metrics` reads it in addition
+// to the per-target path so the report includes any entries written
+// there.
 func legacyStateDir() string {
 	if d := os.Getenv("XDG_STATE_HOME"); d != "" && filepath.IsAbs(d) {
 		return filepath.Join(d, "ccgate")
