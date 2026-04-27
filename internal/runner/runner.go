@@ -137,9 +137,43 @@ func newHookOutput(eventName string, d llm.Decision) HookOutput {
 	}
 }
 
+// Option customises the runner with target-specific extra inputs
+// the LLM payload should carry. Pass them via Run's variadic.
+type Option func(*runtimeOptions)
+
+type runtimeOptions struct {
+	loadStaticPermissions func(cwd string) any
+	loadRecentTranscript  func(transcriptPath string) any
+}
+
+// WithStaticPermissions injects a target-specific reader for the
+// host tool's static allow/deny patterns (e.g. Claude Code's
+// `~/.claude/settings.json` permissions). Returning nil omits the
+// payload entry. Targets that have no equivalent (Codex today --
+// its `~/.codex/config.toml` prefix_rules ingestion is a separate
+// piece of work) simply do not pass this option.
+func WithStaticPermissions(fn func(cwd string) any) Option {
+	return func(o *runtimeOptions) { o.loadStaticPermissions = fn }
+}
+
+// WithRecentTranscript injects a target-specific transcript reader.
+// Returning nil omits the payload entry. Targets whose transcript
+// format ccgate does not yet model (Codex today) do not pass this
+// option.
+func WithRecentTranscript(fn func(transcriptPath string) any) Option {
+	return func(o *runtimeOptions) { o.loadRecentTranscript = fn }
+}
+
 // Run is the entry point. cmd/<target>/ packages call it with a
-// per-target config.LoadOptions; the rest of the flow is identical.
-func Run(stdin io.Reader, stdout io.Writer, opts config.LoadOptions) int {
+// per-target config.LoadOptions plus any target-specific Options
+// (settings reader, transcript reader, ...). The rest of the flow
+// is identical.
+func Run(stdin io.Reader, stdout io.Writer, opts config.LoadOptions, runOpts ...Option) int {
+	var ro runtimeOptions
+	for _, fn := range runOpts {
+		fn(&ro)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -173,7 +207,7 @@ func Run(stdin io.Reader, stdout io.Writer, opts config.LoadOptions) int {
 	)
 
 	start := time.Now()
-	decision, hasDecision, kind, reason, usage, runErr := decide(ctx, cfg, input)
+	decision, hasDecision, kind, reason, usage, runErr := decide(ctx, cfg, input, ro)
 	elapsed := time.Since(start)
 
 	if !cfg.IsMetricsDisabled() {
@@ -198,7 +232,7 @@ func Run(stdin io.Reader, stdout io.Writer, opts config.LoadOptions) int {
 	return 0
 }
 
-func decide(ctx context.Context, cfg config.Config, in HookInput) (llm.Decision, bool, string, string, *llm.Usage, error) {
+func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOptions) (llm.Decision, bool, string, string, *llm.Usage, error) {
 	// Tools that require user interaction must never be auto-decided.
 	switch in.ToolName {
 	case "ExitPlanMode", "AskUserQuestion":
@@ -230,7 +264,7 @@ func decide(ctx context.Context, cfg config.Config, in HookInput) (llm.Decision,
 		return llm.Decision{}, false, llm.FallthroughKindNoAPIKey, "", nil, nil
 	}
 
-	p, err := buildPrompt(cfg, in)
+	p, err := buildPrompt(cfg, in, ro)
 	if err != nil {
 		return llm.Decision{}, false, "", "", nil, fmt.Errorf("build prompt: %w", err)
 	}
@@ -274,7 +308,7 @@ func decide(ctx context.Context, cfg config.Config, in HookInput) (llm.Decision,
 	}
 }
 
-func buildPrompt(cfg config.Config, in HookInput) (llm.Prompt, error) {
+func buildPrompt(cfg config.Config, in HookInput, ro runtimeOptions) (llm.Prompt, error) {
 	payload := map[string]any{
 		"tool_name":  in.ToolName,
 		"tool_input": in.ToolInputRaw,
@@ -299,14 +333,14 @@ func buildPrompt(cfg config.Config, in HookInput) (llm.Prompt, error) {
 	if paths := referencedPaths(in); len(paths) > 0 {
 		payload["referenced_paths"] = paths
 	}
-	if sp := loadSettingsPermissions(in.Cwd); !sp.empty() {
-		payload["settings_permissions"] = sp
+	if ro.loadStaticPermissions != nil {
+		if sp := ro.loadStaticPermissions(in.Cwd); sp != nil {
+			payload["settings_permissions"] = sp
+		}
 	}
-	if in.TranscriptPath != "" {
-		if t, err := loadRecentTranscript(in.TranscriptPath); err == nil && !t.empty() {
+	if ro.loadRecentTranscript != nil && in.TranscriptPath != "" {
+		if t := ro.loadRecentTranscript(in.TranscriptPath); t != nil {
 			payload["recent_transcript"] = t
-		} else if err != nil {
-			slog.Warn("failed to load transcript, proceeding without it", "error", err)
 		}
 	}
 	user, err := json.MarshalIndent(payload, "", "  ")

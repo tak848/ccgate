@@ -40,12 +40,37 @@ func LoadOptions() config.LoadOptions {
 }
 
 // Run reads a single PermissionRequest from stdin and writes the
-// response to stdout. Delegates the entire orchestration to
-// internal/runner; the only Claude-specific knowledge needed is
-// LoadOptions (where to read config / write log+metrics) and the
-// embedded defaults Init outputs.
+// response to stdout. Delegates the orchestration to internal/runner
+// while injecting Claude-specific extras the runner does not deliver
+// itself: settings.json static patterns and the transcript JSONL
+// tail. Codex has no equivalent to either today (its
+// `~/.codex/config.toml` rules / transcript ingestion is a separate
+// piece of work) so cmd/codex passes neither hook.
 func Run(stdin io.Reader, stdout io.Writer) int {
-	return runner.Run(stdin, stdout, LoadOptions())
+	return runner.Run(stdin, stdout, LoadOptions(),
+		runner.WithStaticPermissions(staticPermissionsHook),
+		runner.WithRecentTranscript(recentTranscriptHook),
+	)
+}
+
+func staticPermissionsHook(cwd string) any {
+	sp := loadSettingsPermissions(cwd)
+	if sp.empty() {
+		return nil
+	}
+	return sp
+}
+
+func recentTranscriptHook(path string) any {
+	t, err := loadRecentTranscript(path)
+	if err != nil {
+		// transcript is best-effort context; never fail the hook on it.
+		return nil
+	}
+	if t.empty() {
+		return nil
+	}
+	return t
 }
 
 // InitOptions describes how `ccgate claude init` should output the
