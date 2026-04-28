@@ -278,14 +278,20 @@ func TestLoadFallsBackToEmbedDefaultsWhenNoGlobalConfig(t *testing.T) {
 	}
 }
 
-func TestLoadUsesGlobalConfigWhenPresent(t *testing.T) {
+func TestLoadGlobalConfigLayersOnTopOfEmbeddedDefaults(t *testing.T) {
 	// t.Setenv is incompatible with t.Parallel.
 	dir := t.TempDir()
 	fakeDir := filepath.Join(dir, ".fake")
 	if err := os.MkdirAll(fakeDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	content := `{ provider: { name: 'anthropic', model: 'claude-haiku-4-5' }, allow: ['Custom allow'] }`
+	// Issue #38: the global layer must compose with embedded defaults
+	// (lists append, scalars overwrite) instead of replacing them
+	// outright. fakeLoadOptions seeds the embedded defaults with
+	// allow=["default-allow"] and deny=["default-deny"]; the global
+	// config below adds one extra allow rule and overrides the model
+	// scalar without touching deny.
+	content := `{ provider: { model: 'claude-sonnet-4-6' }, allow: ['Custom allow'] }`
 	if err := os.WriteFile(filepath.Join(fakeDir, BaseConfigName), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -298,13 +304,16 @@ func TestLoadUsesGlobalConfigWhenPresent(t *testing.T) {
 	if lr.Source != SourceGlobalConfig {
 		t.Fatalf("source = %q, want %q", lr.Source, SourceGlobalConfig)
 	}
-	if len(lr.Config.Allow) != 1 || lr.Config.Allow[0] != "Custom allow" {
-		t.Fatalf("unexpected allow: %v", lr.Config.Allow)
+	wantAllow := []string{"default-allow", "Custom allow"}
+	if !reflect.DeepEqual(lr.Config.Allow, wantAllow) {
+		t.Fatalf("allow = %v, want %v (embedded defaults must survive the global layer)", lr.Config.Allow, wantAllow)
 	}
-	// Deny should be empty (embed defaults not applied because the
-	// global config replaces them).
-	if len(lr.Config.Deny) != 0 {
-		t.Fatalf("expected no deny rules (embed defaults not applied), got %v", lr.Config.Deny)
+	wantDeny := []string{"default-deny"}
+	if !reflect.DeepEqual(lr.Config.Deny, wantDeny) {
+		t.Fatalf("deny = %v, want %v (embedded defaults must survive when global layer omits the field)", lr.Config.Deny, wantDeny)
+	}
+	if lr.Config.Provider.Model != "claude-sonnet-4-6" {
+		t.Fatalf("provider.model = %q, want %q (scalar overwrite must beat embedded default)", lr.Config.Provider.Model, "claude-sonnet-4-6")
 	}
 }
 

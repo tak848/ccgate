@@ -211,21 +211,30 @@ func StateDir(sub string) string {
 	return filepath.Join(stateDir(), sub)
 }
 
-// Load reads the base config from opts.GlobalConfigPath and merges
-// project-local overrides found at opts.ProjectLocalRelativePaths
-// (resolved against the git repo root, or cwd when not in a repo).
-// If no global config exists, opts.EmbedDefaults is used as fallback.
+// Load composes the runtime config from three layers, all using the
+// same merge semantics (lists append, scalars overwrite):
+//
+//  1. opts.EmbedDefaults -- always applied first, the always-present
+//     base ccgate ships with.
+//  2. opts.GlobalConfigPath -- if the file exists, layered on top.
+//  3. opts.ProjectLocalRelativePaths -- each existing untracked file
+//     under the repo root, layered on top in the order given.
+//
+// Pre-v0.6 ccgate skipped step 1 whenever step 2 succeeded, which
+// made the global layer "replace" embedded defaults while project
+// layers always "appended". v0.6 unifies the two so users no longer
+// have to copy the embedded defaults verbatim into their global
+// config just to keep them; see issue #38 for the discussion.
 func Load(opts LoadOptions, cwd string) (LoadResult, error) {
 	cfg := Default()
 
+	if err := mergeConfigString(opts.EmbedDefaults, &cfg); err != nil {
+		return LoadResult{Config: cfg}, fmt.Errorf("embedded defaults: %w", err)
+	}
+
 	source := SourceEmbeddedDefaults
 	if err := mergeConfigFile(opts.GlobalConfigPath, &cfg); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			// No global config: use embedded defaults as fallback.
-			if err := mergeConfigString(opts.EmbedDefaults, &cfg); err != nil {
-				return LoadResult{Config: cfg}, fmt.Errorf("embedded defaults: %w", err)
-			}
-		} else {
+		if !errors.Is(err, os.ErrNotExist) {
 			return LoadResult{Config: cfg}, fmt.Errorf("base config %s: %w", opts.GlobalConfigPath, err)
 		}
 	} else {

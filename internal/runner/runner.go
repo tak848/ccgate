@@ -223,10 +223,6 @@ func Run(stdin io.Reader, stdout io.Writer, opts config.LoadOptions, runOpts ...
 	defer cleanup()
 	slog.SetDefault(logger)
 
-	if lr.Source == config.SourceGlobalConfig && len(cfg.Allow) == 0 && len(cfg.Deny) == 0 {
-		slog.Warn("allow and deny rules are both empty; embedded defaults were not applied because a global config exists")
-	}
-
 	slog.Info("hook invoked",
 		"tool", input.ToolName,
 		"permission_mode", input.PermissionMode,
