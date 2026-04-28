@@ -1,7 +1,6 @@
 package config
 
 import (
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,13 +13,8 @@ import (
 	jsonnet "github.com/google/go-jsonnet"
 
 	"github.com/tak848/ccgate/internal/gitutil"
+	"github.com/tak848/ccgate/internal/llm"
 )
-
-//go:embed defaults.jsonnet
-var DefaultsJsonnet string
-
-//go:embed defaults_project.jsonnet
-var DefaultsProjectJsonnet string
 
 const (
 	DefaultTimeoutMS      = 20_000
@@ -32,28 +26,26 @@ const (
 	LocalConfigName       = "ccgate.local.jsonnet"
 )
 
-// FallthroughStrategy values control what ccgate does when the LLM returns
-// "fallthrough" (or an empty/unexpected behavior). Only the LLM kind is
-// affected — runtime-mode fallthroughs (bypass, dontAsk, no_apikey, etc.)
-// always defer to Claude Code's prompt regardless of this setting.
+// FallthroughStrategy* aliases re-export the canonical values from
+// internal/llm so existing call sites continue to compile.
 const (
-	FallthroughStrategyAsk   = "ask"
-	FallthroughStrategyAllow = "allow"
-	FallthroughStrategyDeny  = "deny"
+	FallthroughStrategyAsk   = llm.FallthroughStrategyAsk
+	FallthroughStrategyAllow = llm.FallthroughStrategyAllow
+	FallthroughStrategyDeny  = llm.FallthroughStrategyDeny
 )
 
 type Config struct {
 	Provider            ProviderConfig `json:"provider"`
-	LogPath             string         `json:"log_path"`
-	LogDisabled         *bool          `json:"log_disabled"`
-	LogMaxSize          *int64         `json:"log_max_size"`
-	MetricsPath         string         `json:"metrics_path"`
-	MetricsDisabled     *bool          `json:"metrics_disabled"`
-	MetricsMaxSize      *int64         `json:"metrics_max_size"`
-	FallthroughStrategy *string        `json:"fallthrough_strategy"`
-	Allow               []string       `json:"allow"`
-	Deny                []string       `json:"deny"`
-	Environment         []string       `json:"environment"`
+	LogPath             string         `json:"log_path,omitempty"`
+	LogDisabled         *bool          `json:"log_disabled,omitempty"`
+	LogMaxSize          *int64         `json:"log_max_size,omitempty"`
+	MetricsPath         string         `json:"metrics_path,omitempty"`
+	MetricsDisabled     *bool          `json:"metrics_disabled,omitempty"`
+	MetricsMaxSize      *int64         `json:"metrics_max_size,omitempty"`
+	FallthroughStrategy *string        `json:"fallthrough_strategy,omitempty"`
+	Allow               []string       `json:"allow,omitempty"`
+	Deny                []string       `json:"deny,omitempty"`
+	Environment         []string       `json:"environment,omitempty"`
 }
 
 // GetFallthroughStrategy returns the configured strategy for LLM fallthrough,
@@ -68,7 +60,7 @@ func (c Config) GetFallthroughStrategy() string {
 type ProviderConfig struct {
 	Name      string `json:"name"`
 	Model     string `json:"model"`
-	TimeoutMS *int   `json:"timeout_ms"`
+	TimeoutMS *int   `json:"timeout_ms,omitempty"`
 }
 
 // GetTimeoutMS returns the timeout in milliseconds.
@@ -80,17 +72,20 @@ func (p ProviderConfig) GetTimeoutMS() int {
 	return *p.TimeoutMS
 }
 
+// Default returns a Config seeded with the provider/log/metrics
+// defaults common to every target. LogPath / MetricsPath are left
+// empty on purpose — Load fills them from LoadOptions so each
+// target writes under its own subdirectory; Resolve* still falls
+// back to the historical stateDir() root if neither is set (kept
+// for the legacy file-format backward-compat tests).
 func Default() Config {
-	sd := stateDir()
 	return Config{
 		Provider: ProviderConfig{
 			Name:      DefaultProvider,
 			Model:     DefaultModel,
 			TimeoutMS: intPtr(DefaultTimeoutMS),
 		},
-		LogPath:        filepath.Join(sd, "ccgate.log"),
 		LogMaxSize:     int64Ptr(DefaultLogMaxSize),
-		MetricsPath:    filepath.Join(sd, "metrics.jsonl"),
 		MetricsMaxSize: int64Ptr(DefaultMetricsMaxSize),
 	}
 }
@@ -183,35 +178,76 @@ type LoadResult struct {
 	Source ConfigSource
 }
 
-// Load reads the base config from ~/.claude/ and merges project-local overrides.
-// If no global config exists, embedded defaults are used as fallback.
-func Load(cwd string) (LoadResult, error) {
+// LoadOptions describes target-specific config search paths, the
+// embedded defaults snippet, and default log/metrics destinations.
+// Callers (cmd/claude, cmd/codex) supply their own values so Load
+// itself stays target-agnostic.
+type LoadOptions struct {
+	// GlobalConfigPath is the absolute path of the per-user config
+	// (e.g. ~/.claude/ccgate.jsonnet, ~/.codex/ccgate.jsonnet).
+	GlobalConfigPath string
+	// ProjectLocalRelativePaths lists project-local config locations
+	// relative to the repo root (or cwd when not in a git repo).
+	// Each candidate is read in order and **appended** on top of the
+	// global / embedded base. Tracked files are skipped via gitutil.
+	ProjectLocalRelativePaths []string
+	// EmbedDefaults is the embedded jsonnet snippet applied when the
+	// global config is absent. Targets ship their own defaults via
+	// //go:embed.
+	EmbedDefaults string
+	// DefaultLogPath is used when neither the global nor any
+	// project-local config sets log_path. Empty string falls back
+	// to the historical stateDir() root (Resolve* compat path).
+	DefaultLogPath string
+	// DefaultMetricsPath behaves like DefaultLogPath but for metrics_path.
+	DefaultMetricsPath string
+}
+
+// StateDir returns the $XDG_STATE_HOME/ccgate/<sub>/ directory used
+// for log / metrics files. `sub` is the per-target subdirectory
+// ("claude", "codex", ...). When XDG_STATE_HOME is unset, it falls
+// back to ~/.local/state/ccgate/<sub>/.
+func StateDir(sub string) string {
+	return filepath.Join(stateDir(), sub)
+}
+
+// Load reads the base config from opts.GlobalConfigPath and merges
+// project-local overrides found at opts.ProjectLocalRelativePaths
+// (resolved against the git repo root, or cwd when not in a repo).
+// If no global config exists, opts.EmbedDefaults is used as fallback.
+func Load(opts LoadOptions, cwd string) (LoadResult, error) {
 	cfg := Default()
 
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return LoadResult{Config: cfg}, fmt.Errorf("user home dir: %w", err)
-	}
-
 	source := SourceEmbeddedDefaults
-	basePath := filepath.Join(home, ".claude", BaseConfigName)
-	if err := mergeConfigFile(basePath, &cfg); err != nil {
+	if err := mergeConfigFile(opts.GlobalConfigPath, &cfg); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			// No global config: use embedded defaults as fallback.
-			if err := mergeConfigString(DefaultsJsonnet, &cfg); err != nil {
+			if err := mergeConfigString(opts.EmbedDefaults, &cfg); err != nil {
 				return LoadResult{Config: cfg}, fmt.Errorf("embedded defaults: %w", err)
 			}
 		} else {
-			return LoadResult{Config: cfg}, fmt.Errorf("base config %s: %w", basePath, err)
+			return LoadResult{Config: cfg}, fmt.Errorf("base config %s: %w", opts.GlobalConfigPath, err)
 		}
 	} else {
 		source = SourceGlobalConfig
 	}
 
-	for _, path := range safeProjectLocalConfigPaths(cwd) {
+	for _, path := range safeProjectLocalConfigPaths(cwd, opts.ProjectLocalRelativePaths) {
 		if err := mergeConfigFile(path, &cfg); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return LoadResult{Config: cfg}, fmt.Errorf("local config %s: %w", path, err)
 		}
+	}
+
+	// Apply target-specific log/metrics defaults only when the user
+	// did not set explicit paths in any of the merged configs. This
+	// is what gives each target its own subdirectory under
+	// $XDG_STATE_HOME/ccgate/<target>/ while still respecting any
+	// log_path / metrics_path the user wrote in their jsonnet.
+	if cfg.LogPath == "" && opts.DefaultLogPath != "" {
+		cfg.LogPath = opts.DefaultLogPath
+	}
+	if cfg.MetricsPath == "" && opts.DefaultMetricsPath != "" {
+		cfg.MetricsPath = opts.DefaultMetricsPath
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -221,8 +257,8 @@ func Load(cwd string) (LoadResult, error) {
 	return LoadResult{Config: cfg, Source: source}, nil
 }
 
-func projectLocalConfigPaths(cwd string) []string {
-	if cwd == "" {
+func projectLocalConfigPaths(cwd string, relativePaths []string) []string {
+	if cwd == "" || len(relativePaths) == 0 {
 		return nil
 	}
 
@@ -231,20 +267,21 @@ func projectLocalConfigPaths(cwd string) []string {
 		root = repoRoot
 	}
 
-	return []string{
-		filepath.Join(root, LocalConfigName),
-		filepath.Join(root, ".claude", LocalConfigName),
+	out := make([]string, 0, len(relativePaths))
+	for _, rel := range relativePaths {
+		out = append(out, filepath.Join(root, rel))
 	}
+	return out
 }
 
-func safeProjectLocalConfigPaths(cwd string) []string {
+func safeProjectLocalConfigPaths(cwd string, relativePaths []string) []string {
 	root := cwd
 	if repoRoot, err := gitutil.RepoRoot(cwd); err == nil {
 		root = repoRoot
 	}
 
 	var safe []string
-	for _, path := range projectLocalConfigPaths(cwd) {
+	for _, path := range projectLocalConfigPaths(cwd, relativePaths) {
 		if _, err := os.Stat(path); err != nil {
 			continue
 		}

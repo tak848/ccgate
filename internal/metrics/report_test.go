@@ -26,7 +26,7 @@ func TestBuildReport(t *testing.T) {
 
 	writeEntries(t, path, entries)
 
-	report, _, err := buildReport(path, ReportOptions{Days: 7})
+	report, _, err := buildReport([]string{path}, ReportOptions{Days: 7})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestBuildReportFiltersOldEntries(t *testing.T) {
 
 	writeEntries(t, path, entries)
 
-	report, _, err := buildReport(path, ReportOptions{Days: 7})
+	report, _, err := buildReport([]string{path}, ReportOptions{Days: 7})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +109,7 @@ func TestPrintReportJSON(t *testing.T) {
 	})
 
 	var buf bytes.Buffer
-	if err := PrintReport(&buf, path, ReportOptions{Days: 7, AsJSON: true}); err != nil {
+	if err := PrintReport(&buf, []string{path}, ReportOptions{Days: 7, AsJSON: true}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -140,7 +140,7 @@ func TestPrintReportTable(t *testing.T) {
 	})
 
 	var buf bytes.Buffer
-	if err := PrintReport(&buf, path, ReportOptions{Days: 7, DetailsTop: 10}); err != nil {
+	if err := PrintReport(&buf, []string{path}, ReportOptions{Days: 7, DetailsTop: 10}); err != nil {
 		t.Fatal(err)
 	}
 

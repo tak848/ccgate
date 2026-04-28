@@ -28,6 +28,14 @@ archives:
           - zip
 release:
   prerelease: auto
+  # Maintainer drafts a release in the GitHub UI before tagging
+  # (breaking-change notes / migration tips / GitHub-auto-generated
+  # "What's Changed" PR list). goreleaser then attaches the build
+  # artifacts to that draft and appends its commit-grouped changelog
+  # below the maintainer's body. Default `mode: keep-existing` would
+  # throw away the auto changelog entirely; we want both.
+  use_existing_draft: true
+  mode: append
 checksum:
   name_template: checksums.txt
 changelog:
@@ -50,7 +58,9 @@ changelog:
       order: 999
   filters:
     exclude:
-      - '^docs'
       - '^test'
       - '^ci'
-      - '^chore'
+      # docs and chore are kept: breaking-change migration notes often
+      # land on docs / chore commits, and dropping them silently from
+      # release notes hides them from users. Maintainers should still
+      # cross-check release notes against CHANGELOG.md before tagging.

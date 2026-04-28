@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/tak848/ccgate/main/schemas/codex.schema.json",
+  "properties": {
+    "provider": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "timeout_ms": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "model"
+      ]
+    },
+    "log_path": {
+      "type": "string"
+    },
+    "log_disabled": {
+      "type": "boolean"
+    },
+    "log_max_size": {
+      "type": "integer"
+    },
+    "metrics_path": {
+      "type": "string"
+    },
+    "metrics_disabled": {
+      "type": "boolean"
+    },
+    "metrics_max_size": {
+      "type": "integer"
+    },
+    "fallthrough_strategy": {
+      "type": "string"
+    },
+    "allow": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "deny": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "environment": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "$schema": {
+      "type": "string",
+      "format": "uri",
+      "description": "JSON schema reference. Editors use this to enable validation; ccgate ignores it at runtime."
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "title": "ccgate codex configuration",
+  "description": "Configuration schema for ccgate's codex PermissionRequest hook. See https://github.com/tak848/ccgate."
+}

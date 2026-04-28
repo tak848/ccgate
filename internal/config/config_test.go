@@ -193,14 +193,20 @@ func TestProjectLocalConfigPaths(t *testing.T) {
 	t.Parallel()
 
 	const cwd = "/tmp/repo/subdir"
-	got := projectLocalConfigPaths(cwd)
+	relativePaths := []string{
+		filepath.Join(".claude", LocalConfigName),
+		filepath.Join(".codex", LocalConfigName),
+	}
+	got := projectLocalConfigPaths(cwd, relativePaths)
 
-	// Contract: two candidates, cwd-direct first (higher priority), cwd/.claude/ second.
-	// Path separators are OS-native, so expected values are composed with filepath.Join
-	// (mirrors Go stdlib's cross-platform path test pattern in path/filepath/path_test.go).
+	// Contract: each relative path is anchored at the repo root (or
+	// cwd when not in a git repo) and returned in the order given.
+	// Path separators are OS-native; expected values are composed
+	// with filepath.Join (mirrors Go stdlib's cross-platform pattern
+	// in path/filepath/path_test.go).
 	want := []string{
-		filepath.Join(cwd, LocalConfigName),
 		filepath.Join(cwd, ".claude", LocalConfigName),
+		filepath.Join(cwd, ".codex", LocalConfigName),
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("projectLocalConfigPaths(%q) = %v, want %v", cwd, got, want)
@@ -210,9 +216,11 @@ func TestProjectLocalConfigPaths(t *testing.T) {
 func TestProjectLocalConfigPathsEmpty(t *testing.T) {
 	t.Parallel()
 
-	got := projectLocalConfigPaths("")
-	if got != nil {
-		t.Fatalf("expected nil, got %v", got)
+	if got := projectLocalConfigPaths("", []string{".claude/" + LocalConfigName}); got != nil {
+		t.Fatalf("empty cwd: expected nil, got %v", got)
+	}
+	if got := projectLocalConfigPaths("/tmp/repo", nil); got != nil {
+		t.Fatalf("empty relativePaths: expected nil, got %v", got)
 	}
 }
 
@@ -220,97 +228,70 @@ func TestSafeProjectLocalConfigPathsSkipsTrackedFile(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, LocalConfigName), []byte("{}"), 0o644); err != nil {
+	claudeDir := filepath.Join(dir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	relPath := filepath.Join(".claude", LocalConfigName)
+	if err := os.WriteFile(filepath.Join(claudeDir, LocalConfigName), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	gitRun(t, dir, "init")
 	gitRun(t, dir, "config", "user.email", "test@test.com")
 	gitRun(t, dir, "config", "user.name", "test")
-	gitRun(t, dir, "add", "-f", LocalConfigName)
+	gitRun(t, dir, "add", "-f", relPath)
 
-	got := safeProjectLocalConfigPaths(dir)
+	got := safeProjectLocalConfigPaths(dir, []string{relPath})
 	if len(got) != 0 {
 		t.Fatalf("expected tracked file to be skipped, got %v", got)
 	}
 }
 
-func TestMergeConfigStringAppliesDefaults(t *testing.T) {
-	t.Parallel()
-
-	cfg := Default()
-	if err := mergeConfigString(DefaultsJsonnet, &cfg); err != nil {
-		t.Fatal(err)
-	}
-	if len(cfg.Allow) == 0 {
-		t.Fatal("expected allow rules from embedded defaults")
-	}
-	if len(cfg.Deny) == 0 {
-		t.Fatal("expected deny rules from embedded defaults")
-	}
-	if len(cfg.Environment) == 0 {
-		t.Fatal("expected environment from embedded defaults")
+// fakeLoadOptions returns a target-agnostic LoadOptions used by the
+// generic Load tests below. The real per-target LoadOptions live in
+// the cmd/<target>/ packages and are tested there.
+func fakeLoadOptions(home string) LoadOptions {
+	return LoadOptions{
+		GlobalConfigPath:          filepath.Join(home, ".fake", BaseConfigName),
+		ProjectLocalRelativePaths: []string{filepath.Join(".fake", LocalConfigName)},
+		EmbedDefaults:             `{ provider: { name: 'anthropic', model: 'claude-haiku-4-5' }, allow: ['default-allow'], deny: ['default-deny'] }`,
+		DefaultLogPath:            filepath.Join(home, ".local/state/ccgate/fake/ccgate.log"),
+		DefaultMetricsPath:        filepath.Join(home, ".local/state/ccgate/fake/metrics.jsonl"),
 	}
 }
 
-func TestEmbeddedDefaultsValidJsonnet(t *testing.T) {
-	t.Parallel()
-
-	snippets := map[string]string{
-		"defaults":         DefaultsJsonnet,
-		"defaults_project": DefaultsProjectJsonnet,
-	}
-	for name, snippet := range snippets {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			cfg := Default()
-			if err := mergeConfigString(snippet, &cfg); err != nil {
-				t.Fatalf("embedded %s is invalid jsonnet: %v", name, err)
-			}
-			if err := cfg.Validate(); err != nil {
-				t.Fatalf("config from embedded %s should be valid: %v", name, err)
-			}
-		})
-	}
-}
-
-func TestLoadFallsBackToDefaultsWhenNoGlobalConfig(t *testing.T) {
+func TestLoadFallsBackToEmbedDefaultsWhenNoGlobalConfig(t *testing.T) {
 	// t.Setenv is incompatible with t.Parallel.
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, ".claude"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	setHomeEnv(t, dir)
 
-	lr, err := Load("")
+	lr, err := Load(fakeLoadOptions(dir), "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if lr.Source != SourceEmbeddedDefaults {
 		t.Fatalf("source = %q, want %q", lr.Source, SourceEmbeddedDefaults)
 	}
-	if len(lr.Config.Allow) == 0 {
-		t.Fatal("expected allow rules from embedded defaults")
-	}
-	if len(lr.Config.Deny) == 0 {
-		t.Fatal("expected deny rules from embedded defaults")
+	if got := lr.Config.Allow; len(got) != 1 || got[0] != "default-allow" {
+		t.Fatalf("unexpected allow from embed defaults: %v", got)
 	}
 }
 
 func TestLoadUsesGlobalConfigWhenPresent(t *testing.T) {
 	// t.Setenv is incompatible with t.Parallel.
 	dir := t.TempDir()
-	claudeDir := filepath.Join(dir, ".claude")
-	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+	fakeDir := filepath.Join(dir, ".fake")
+	if err := os.MkdirAll(fakeDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	content := `{ provider: { name: 'anthropic', model: 'claude-haiku-4-5' }, allow: ['Custom allow'] }`
-	if err := os.WriteFile(filepath.Join(claudeDir, BaseConfigName), []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(fakeDir, BaseConfigName), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	setHomeEnv(t, dir)
 
-	lr, err := Load("")
+	lr, err := Load(fakeLoadOptions(dir), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -320,9 +301,10 @@ func TestLoadUsesGlobalConfigWhenPresent(t *testing.T) {
 	if len(lr.Config.Allow) != 1 || lr.Config.Allow[0] != "Custom allow" {
 		t.Fatalf("unexpected allow: %v", lr.Config.Allow)
 	}
-	// Deny should be empty (defaults not applied).
+	// Deny should be empty (embed defaults not applied because the
+	// global config replaces them).
 	if len(lr.Config.Deny) != 0 {
-		t.Fatalf("expected no deny rules (defaults not applied), got %v", lr.Config.Deny)
+		t.Fatalf("expected no deny rules (embed defaults not applied), got %v", lr.Config.Deny)
 	}
 }
 
