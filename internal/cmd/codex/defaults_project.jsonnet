@@ -14,14 +14,19 @@
   //                                  // (Codex only delivers hook messages on deny, so
   //                                  //  Codex will not see any warning when this fires.)
 
-  deny: [
+  // `allow` / `deny` / `environment` REPLACE the value carried over
+  // from earlier layers (embedded defaults + ~/.codex/ccgate.jsonnet).
+  // For project-local overrides you almost always want to ADD on top
+  // instead -- use the `append_*` keys below.
+
+  append_deny: [
     // Add project-specific deny rules here.
     // Examples:
     // 'Network Access: Deny curl, wget, or HTTP requests to external services. deny_message: Network access is restricted in this project.',
     // 'Script Execution: Deny running shell scripts (.sh, .bash) from this repository. deny_message: Script execution is restricted in this project.',
   ],
 
-  environment: [
+  append_environment: [
     // Describe the project context for the LLM.
     // Examples:
     // '**Untrusted repository**: Apply strict security policies.',

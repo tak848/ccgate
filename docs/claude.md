@@ -96,5 +96,5 @@ See [docs/codex.md](codex.md) for the Codex side.
 ## Known limitations
 
 - **Plan mode is prompt-only** ([#37](https://github.com/tak848/ccgate/issues/37)).
-- **No reset/override for individual embedded default rules.** Layered configs can only **add** rules and **overwrite scalars**; removing a specific embedded `allow` / `deny` rule from a global / project-local config is not supported today.
+- **No surgical reset for a single embedded default rule.** A layer either replaces a list wholesale (`allow: [...]`) or appends to it (`append_allow: [...]`); removing one specific embedded entry while keeping the rest requires re-stating the whole list under `allow` / `deny` minus that one entry.
 - **No deterministic short-circuit on `settings.json` deny patterns**. ccgate routes every Claude Code PermissionRequest through the LLM today; a deterministic prefilter that exits early on a literal `settings.json` deny match is a possible future optimization, not a current behavior.

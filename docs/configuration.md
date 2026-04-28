@@ -23,12 +23,13 @@ ccgate evaluates three layers, in order, per target. Every layer composes with t
 
 | Field group | Merge behavior | Example |
 |---|---|---|
-| Lists: `allow`, `deny`, `environment` | Each layer **appends** its entries on top of the previous result. | Embedded `deny: ["A"]` + global `deny: ["B"]` + project `deny: ["C"]` → final `deny: ["A","B","C"]`. |
-| Scalars: `provider.*`, `log_*`, `metrics_*`, `fallthrough_strategy` | Each layer **overwrites** the previous value when it sets the field; layers that omit it leave the previous value untouched. | Embedded `provider.model: "claude-haiku-4-5"` + global `provider: {model: "claude-sonnet-4-6"}` → final `provider.model: "claude-sonnet-4-6"`, embedded provider.name still in effect. |
+| Lists: `allow`, `deny`, `environment` | A layer that sets the field **replaces** the carried-over list (even with `[]`). A layer that omits the field leaves the carried-over list untouched. | Embedded `allow: ["A","B"]` + global `allow: ["X"]` → final `allow: ["X"]`. |
+| Lists: `append_allow`, `append_deny`, `append_environment` | A layer that sets the field **appends** its entries to whatever the previous layers produced. | Embedded `deny: ["A"]` + project `append_deny: ["P"]` → final `deny: ["A","P"]`. |
+| Scalars: `provider.*`, `log_*`, `metrics_*`, `fallthrough_strategy` | A layer **overwrites** the value per-field when it sets it; layers that omit a field leave the previous value untouched. | Embedded `provider.model: "claude-haiku-4-5"` + global `provider: {model: "claude-sonnet-4-6"}` → final `provider.model: "claude-sonnet-4-6"`, embedded `provider.name` still in effect. |
 
-There is currently no way to **remove** an entry from a list a previous layer added. If you need to drop a specific embedded `allow` / `deny` rule from your overrides, open an issue describing the rule and the motivation. An explicit reset/override syntax is being tracked separately.
+`allow` and `append_allow` (same for the other lists) can coexist in the same layer: the replace runs first, then the append stacks onto the result. Use the pattern when you want to **swap** the embedded list for a curated one and **also** add a couple of project-specific extras: `{ allow: ['only this base'], append_allow: ['plus this project rule'] }`.
 
-> Pre-v0.6 ccgate skipped the embedded defaults whenever a global config existed (the global layer "replaced" instead of layered). v0.6 unified the semantics; see issue [#38](https://github.com/tak848/ccgate/issues/38). If your global config is a copy of `ccgate <target> init`, dedupe it after upgrading -- otherwise rules are applied twice.
+> Pre-v0.6 ccgate skipped the embedded defaults whenever a global config existed (the global layer "replaced" instead of layered). v0.6 makes embedded defaults the always-present base and uses explicit `append_*` for opt-in extension; see issue [#38](https://github.com/tak848/ccgate/issues/38). Pre-v0.6 global configs (which already used `allow:` / `deny:` to fully replace) keep their behavior with no edits. Pre-v0.6 project-local configs that used `allow:` / `deny:` / `environment:` to **add** restrictions need to rename those keys to `append_allow:` / `append_deny:` / `append_environment:` -- otherwise they now wholesale replace the inherited list.
 
 ### Why tracked files are skipped
 
@@ -148,6 +149,6 @@ The same fields exist for the log file (`log_path`, `log_disabled`, `log_max_siz
 ## Known limitations
 
 - **Plan mode (Claude only) is prompt-only.** Under `permission_mode == "plan"`, ccgate relies on the LLM plus prose in the system prompt to (a) reject implementation-side writes and (b) allow read-only queries without an explicit allow-guidance match. Either side can misfire. Tracked in [#37](https://github.com/tak848/ccgate/issues/37).
-- **No reset/override for individual embedded default rules.** Layered configs can only **add** rules and **overwrite scalars**. Removing a specific embedded `allow` / `deny` rule from a global / project-local config is not supported today.
+- **No surgical reset for a single embedded default rule.** A layer either replaces a list wholesale or appends to it; removing one specific embedded entry while keeping the rest requires re-stating the whole list under `allow` / `deny` minus that one entry.
 - **Codex hook is upstream-experimental.** The hook schema may change without notice.
 - **Codex `~/.codex/config.toml` ingestion** (`approval_policy`, `sandbox_mode`, `prefix_rules`) is not implemented yet. ccgate decides purely from the hook payload + ccgate config; if Codex's own settings would have rejected something, that signal does not reach the LLM today.

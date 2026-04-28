@@ -60,6 +60,24 @@
       },
       "type": "array"
     },
+    "append_allow": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "append_deny": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "append_environment": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
     "$schema": {
       "type": "string",
       "format": "uri",

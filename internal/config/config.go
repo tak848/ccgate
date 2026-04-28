@@ -43,9 +43,22 @@ type Config struct {
 	MetricsDisabled     *bool          `json:"metrics_disabled,omitempty"`
 	MetricsMaxSize      *int64         `json:"metrics_max_size,omitempty"`
 	FallthroughStrategy *string        `json:"fallthrough_strategy,omitempty"`
-	Allow               []string       `json:"allow,omitempty"`
-	Deny                []string       `json:"deny,omitempty"`
-	Environment         []string       `json:"environment,omitempty"`
+	// Allow / Deny / Environment replace the value carried over from
+	// previous layers when the layer sets them (even to []). Embedded
+	// defaults are always layer 0, so writing `allow: [...]` in your
+	// global or project-local config completely overrides ccgate's
+	// shipped allow list. Use AppendAllow / AppendDeny / AppendEnvironment
+	// when you want to add on top instead.
+	Allow       []string `json:"allow,omitempty"`
+	Deny        []string `json:"deny,omitempty"`
+	Environment []string `json:"environment,omitempty"`
+	// AppendAllow / AppendDeny / AppendEnvironment append onto the
+	// list carried over from previous layers regardless of whether
+	// the same layer also sets the replace-mode field. Typical
+	// project-local use is `append_deny: ['<repo-specific>']`.
+	AppendAllow       []string `json:"append_allow,omitempty"`
+	AppendDeny        []string `json:"append_deny,omitempty"`
+	AppendEnvironment []string `json:"append_environment,omitempty"`
 }
 
 // GetFallthroughStrategy returns the configured strategy for LLM fallthrough,
@@ -369,9 +382,32 @@ func mergeConfigJSON(data string, cfg *Config) error {
 		cfg.FallthroughStrategy = override.FallthroughStrategy
 	}
 
-	cfg.Allow = append(cfg.Allow, override.Allow...)
-	cfg.Deny = append(cfg.Deny, override.Deny...)
-	cfg.Environment = append(cfg.Environment, override.Environment...)
+	// Lists: `allow` / `deny` / `environment` REPLACE the value
+	// carried over from earlier layers when the current layer sets
+	// the field (non-nil, even an explicit empty list). Layers that
+	// omit the field leave the prior value untouched. `append_*`
+	// extends instead of replacing -- both forms can coexist in the
+	// same layer, in which case the replace runs first and the
+	// append stacks onto the result.
+	if override.Allow != nil {
+		cfg.Allow = override.Allow
+	}
+	cfg.Allow = append(cfg.Allow, override.AppendAllow...)
+	if override.Deny != nil {
+		cfg.Deny = override.Deny
+	}
+	cfg.Deny = append(cfg.Deny, override.AppendDeny...)
+	if override.Environment != nil {
+		cfg.Environment = override.Environment
+	}
+	cfg.Environment = append(cfg.Environment, override.AppendEnvironment...)
+
+	// `append_*` is parse-time-only; clear so the resolved Config
+	// reflects the merged final lists in `Allow` / `Deny` /
+	// `Environment` and never leaks the per-layer extensions.
+	cfg.AppendAllow = nil
+	cfg.AppendDeny = nil
+	cfg.AppendEnvironment = nil
 
 	return nil
 }

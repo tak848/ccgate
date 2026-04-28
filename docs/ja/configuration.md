@@ -23,12 +23,13 @@ ccgate は target ごとに 3 layer を順に評価します。すべての laye
 
 | field 群 | merge 動作 | 例 |
 |---|---|---|
-| list: `allow` / `deny` / `environment` | 各 layer が前の結果に対して **append** する | embedded `deny: ["A"]` + global `deny: ["B"]` + project `deny: ["C"]` → 最終 `deny: ["A","B","C"]` |
-| スカラー: `provider.*` / `log_*` / `metrics_*` / `fallthrough_strategy` | 各 layer が値を設定していれば **overwrite**、設定していなければ前の値を保持 | embedded `provider.model: "claude-haiku-4-5"` + global `provider: {model: "claude-sonnet-4-6"}` → 最終 `provider.model: "claude-sonnet-4-6"`、embedded の `provider.name` は生きたまま |
+| list: `allow` / `deny` / `environment` | 値を設定した layer が前の layer から引き継いだ list を **置き換える** (`[]` でも置換)。設定していない layer は前の値を保持 | embedded `allow: ["A","B"]` + global `allow: ["X"]` → 最終 `allow: ["X"]` |
+| list: `append_allow` / `append_deny` / `append_environment` | 値を設定した layer が前の layer の累積 list の **末尾に追加** | embedded `deny: ["A"]` + project `append_deny: ["P"]` → 最終 `deny: ["A","P"]` |
+| スカラー: `provider.*` / `log_*` / `metrics_*` / `fallthrough_strategy` | 各 layer が値を設定していれば per-field で **overwrite**、設定していなければ前の値を保持 | embedded `provider.model: "claude-haiku-4-5"` + global `provider: {model: "claude-sonnet-4-6"}` → 最終 `provider.model: "claude-sonnet-4-6"`、embedded の `provider.name` は生きたまま |
 
-前の layer が追加した list 要素を **削除** する仕組みは現在ありません。embedded の特定の `allow` / `deny` ルールを削除したい場合は、ルール内容と動機を Issue に書いてもらえれば検討します。明示的な reset/override 構文は別途追跡しています。
+`allow` と `append_allow` (他 list も同じ) は同じ layer に共存可能 — 先に置換、その結果に対して append が積まれる。embedded の list を厳選版に **差し替えつつ** プロジェクト固有のルールを **追加** したいときに使います: `{ allow: ['only this base'], append_allow: ['plus this project rule'] }`。
 
-> v0.6 以前の ccgate はグローバル設定が存在すると埋込デフォルトをスキップしていました (グローバル層が「置換」していた)。v0.6 でセマンティクスを統一しています。詳細は [#38](https://github.com/tak848/ccgate/issues/38) を参照。グローバル設定が `ccgate <target> init` のコピーになっている場合は、アップグレード後に重複ルールを掃除してください (そうしないとルールが二重適用されます)。
+> v0.6 以前の ccgate はグローバル設定が存在すると埋込デフォルトをスキップしていました (グローバル層が「置換」していた)。v0.6 では embedded を常にベースとして適用しつつ、明示的な opt-in 拡張として `append_*` を導入しています。詳細は [#38](https://github.com/tak848/ccgate/issues/38) を参照。v0.6 以前のグローバル設定 (もともと `allow:` / `deny:` で完全置換していた) は無編集で同じ挙動になります。v0.6 以前のプロジェクトローカル設定で `allow:` / `deny:` / `environment:` を **追加** 目的で使っていた人だけ、`append_allow:` / `append_deny:` / `append_environment:` への rename が必要です (そのままだと累積 list を完全置換してしまいます)。
 
 ### tracked file が無視される理由
 
@@ -148,6 +149,6 @@ ccgate codex  metrics --days 7         # codex 側も同 shape
 ## 既知の制約
 
 - **Plan mode (Claude のみ) はプロンプト依存**: `permission_mode == "plan"` では (a) 実装系 write を拒絶する判定と (b) 明示的な allow guidance なしの read-only クエリ許可 を、LLM とシステムプロンプトの指示文に委ねています。どちらの方向にも誤判定の余地あり。[#37](https://github.com/tak848/ccgate/issues/37) で追跡
-- **embedded default ルール単位の reset/override 手段なし**: 重ねる層は **追加 (list)** と **スカラー上書き** のみ。embedded の特定の `allow` / `deny` ルールをグローバル / プロジェクトローカル設定から削除する仕組みは現状なし
+- **embedded default の特定ルールだけを部分削除する手段なし**: layer は list を **完全置換** (`allow: [...]`) するか **末尾追加** (`append_allow: [...]`) するかのどちらかで、embedded の中の 1 ルールだけ消したい場合は残り全部を `allow:` / `deny:` に書き直すしかない
 - **Codex hook は upstream で experimental**: hook schema が予告なく変更される可能性あり
 - **Codex `~/.codex/config.toml` 取り込み未実装** (`approval_policy`, `sandbox_mode`, `prefix_rules`): ccgate は hook payload + ccgate config だけで判定するため、Codex 自身の設定が拒絶するはずだった操作のシグナルは LLM に届かない (現状)

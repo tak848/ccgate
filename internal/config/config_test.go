@@ -135,7 +135,7 @@ func TestValidateZeroTimeoutIsValid(t *testing.T) {
 	}
 }
 
-func TestMergeConfigFileAppendsGuidance(t *testing.T) {
+func TestMergeConfigFileLoadsGuidance(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -148,6 +148,9 @@ func TestMergeConfigFileAppendsGuidance(t *testing.T) {
 	if err := mergeConfigFile(path, &cfg); err != nil {
 		t.Fatal(err)
 	}
+	// Default() ships an empty allow list, so replace and append both
+	// observe the same result here. The replace-vs-append distinction
+	// when the base is non-empty lives in TestLoadLayerSemantics.
 	if len(cfg.Allow) != 1 || cfg.Allow[0] != "Read-only test guidance" {
 		t.Fatalf("unexpected allow: %v", cfg.Allow)
 	}
@@ -278,42 +281,101 @@ func TestLoadFallsBackToEmbedDefaultsWhenNoGlobalConfig(t *testing.T) {
 	}
 }
 
-func TestLoadGlobalConfigLayersOnTopOfEmbeddedDefaults(t *testing.T) {
-	// t.Setenv is incompatible with t.Parallel.
-	dir := t.TempDir()
-	fakeDir := filepath.Join(dir, ".fake")
-	if err := os.MkdirAll(fakeDir, 0o755); err != nil {
-		t.Fatal(err)
+func TestLoadLayerSemantics(t *testing.T) {
+	// fakeLoadOptions seeds the embedded layer with
+	// allow=["default-allow"] and deny=["default-deny"]; each test
+	// layers a global config on top with a different shape so the
+	// per-field merge contract is exercised end-to-end (replace via
+	// `allow`, extend via `append_allow`, scalar overwrite, omitted
+	// fields fall through to the embedded value).
+	type want struct {
+		allow []string
+		deny  []string
+		model string
 	}
-	// Issue #38: the global layer must compose with embedded defaults
-	// (lists append, scalars overwrite) instead of replacing them
-	// outright. fakeLoadOptions seeds the embedded defaults with
-	// allow=["default-allow"] and deny=["default-deny"]; the global
-	// config below adds one extra allow rule and overrides the model
-	// scalar without touching deny.
-	content := `{ provider: { model: 'claude-sonnet-4-6' }, allow: ['Custom allow'] }`
-	if err := os.WriteFile(filepath.Join(fakeDir, BaseConfigName), []byte(content), 0o644); err != nil {
-		t.Fatal(err)
+	cases := map[string]struct {
+		global string
+		want   want
+	}{
+		"global omits lists -- embedded survives": {
+			global: `{ provider: { model: 'claude-sonnet-4-6' } }`,
+			want: want{
+				allow: []string{"default-allow"},
+				deny:  []string{"default-deny"},
+				model: "claude-sonnet-4-6",
+			},
+		},
+		"global allow replaces embedded allow": {
+			global: `{ allow: ['Custom allow'] }`,
+			want: want{
+				allow: []string{"Custom allow"},
+				deny:  []string{"default-deny"},
+				model: "claude-haiku-4-5",
+			},
+		},
+		"global append_allow extends embedded allow": {
+			global: `{ append_allow: ['Custom allow'] }`,
+			want: want{
+				allow: []string{"default-allow", "Custom allow"},
+				deny:  []string{"default-deny"},
+				model: "claude-haiku-4-5",
+			},
+		},
+		"global allow=[] replaces embedded allow with empty": {
+			global: `{ allow: [] }`,
+			want: want{
+				allow: []string{},
+				deny:  []string{"default-deny"},
+				model: "claude-haiku-4-5",
+			},
+		},
+		"global allow + append_allow stack": {
+			global: `{ allow: ['Replaced'], append_allow: ['Then appended'] }`,
+			want: want{
+				allow: []string{"Replaced", "Then appended"},
+				deny:  []string{"default-deny"},
+				model: "claude-haiku-4-5",
+			},
+		},
 	}
-	setHomeEnv(t, dir)
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			// t.Setenv is incompatible with t.Parallel.
+			dir := t.TempDir()
+			fakeDir := filepath.Join(dir, ".fake")
+			if err := os.MkdirAll(fakeDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(fakeDir, BaseConfigName), []byte(tc.global), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			setHomeEnv(t, dir)
 
-	lr, err := Load(fakeLoadOptions(dir), "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if lr.Source != SourceGlobalConfig {
-		t.Fatalf("source = %q, want %q", lr.Source, SourceGlobalConfig)
-	}
-	wantAllow := []string{"default-allow", "Custom allow"}
-	if !reflect.DeepEqual(lr.Config.Allow, wantAllow) {
-		t.Fatalf("allow = %v, want %v (embedded defaults must survive the global layer)", lr.Config.Allow, wantAllow)
-	}
-	wantDeny := []string{"default-deny"}
-	if !reflect.DeepEqual(lr.Config.Deny, wantDeny) {
-		t.Fatalf("deny = %v, want %v (embedded defaults must survive when global layer omits the field)", lr.Config.Deny, wantDeny)
-	}
-	if lr.Config.Provider.Model != "claude-sonnet-4-6" {
-		t.Fatalf("provider.model = %q, want %q (scalar overwrite must beat embedded default)", lr.Config.Provider.Model, "claude-sonnet-4-6")
+			lr, err := Load(fakeLoadOptions(dir), "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if lr.Source != SourceGlobalConfig {
+				t.Fatalf("source = %q, want %q", lr.Source, SourceGlobalConfig)
+			}
+			if !reflect.DeepEqual(lr.Config.Allow, tc.want.allow) {
+				t.Errorf("allow = %v, want %v", lr.Config.Allow, tc.want.allow)
+			}
+			if !reflect.DeepEqual(lr.Config.Deny, tc.want.deny) {
+				t.Errorf("deny = %v, want %v", lr.Config.Deny, tc.want.deny)
+			}
+			if lr.Config.Provider.Model != tc.want.model {
+				t.Errorf("provider.model = %q, want %q", lr.Config.Provider.Model, tc.want.model)
+			}
+			// AppendAllow / AppendDeny / AppendEnvironment are
+			// parse-time-only knobs. They must not leak into the
+			// resolved Config, otherwise downstream consumers (e.g.
+			// schema-export, debug dumps) would see duplicate state.
+			if lr.Config.AppendAllow != nil || lr.Config.AppendDeny != nil || lr.Config.AppendEnvironment != nil {
+				t.Errorf("append_* fields leaked into resolved config: allow=%v deny=%v env=%v",
+					lr.Config.AppendAllow, lr.Config.AppendDeny, lr.Config.AppendEnvironment)
+			}
+		})
 	}
 }
 

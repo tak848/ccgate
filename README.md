@@ -161,7 +161,13 @@ Same env vars as Claude Code (`CCGATE_ANTHROPIC_API_KEY` / `ANTHROPIC_API_KEY`).
 | 2     | `~/.claude/ccgate.jsonnet` — global (layered on top) | `~/.codex/ccgate.jsonnet` — global (same) |
 | 3     | `{repo_root}/.claude/ccgate.local.jsonnet` — project-local (untracked only, layered on top) | `{repo_root}/.codex/ccgate.local.jsonnet` — project-local (same) |
 
-All three layers compose with the same rules: **lists** (`allow` / `deny` / `environment`) are appended, **scalars** (`provider.*`, `log_*`, `metrics_*`, `fallthrough_strategy`) are overwritten when the layer sets them. Embedded defaults are always present, so a global config that only sets `provider.model` keeps every embedded `allow` / `deny` rule.
+All three layers compose with the same rules:
+
+- **Lists** — `allow` / `deny` / `environment` **replace** the value carried over from earlier layers when the layer sets them (even to `[]`). The `append_*` siblings (`append_allow`, `append_deny`, `append_environment`) **add** entries on top of whatever the earlier layers produced.
+- **Scalars** — `provider.*`, `log_*`, `metrics_*`, `fallthrough_strategy` are overwritten per-field when the layer sets them, otherwise the earlier value survives.
+
+So `~/.<target>/ccgate.jsonnet` that only sets `provider.model` keeps every embedded `allow` / `deny` rule. A `~/.<target>/ccgate.jsonnet` that writes `allow: [...]` swaps the embedded allow list for its own (this is what most pre-v0.6 global configs already did, so it stays idempotent). Project-local configs typically use `append_deny: [...]` / `append_environment: [...]` to add restrictions on top of the inherited base.
+
 Project-local configs are loaded only when **not tracked by Git**.
 
 
@@ -179,9 +185,12 @@ Project-local configs are loaded only when **not tracked by Git**.
 | `metrics_disabled`       | bool                              | `false`                                                                       | Disable metrics collection entirely                                                                    |
 | `metrics_max_size`       | int                               | `2097152`                                                                     | Max metrics file size in bytes before rotation (default 2MB). `0` = no rotation.                       |
 | `fallthrough_strategy`   | `"ask"` / `"allow"` / `"deny"`    | `"ask"`                                                                       | How to resolve LLM uncertainty (`fallthrough`). See [Unattended automation](#unattended-automation-fallthrough_strategy). |
-| `allow`                  | string[]                          | `[]`                                                                          | Allow guidance rules (natural language, interpreted by the LLM)                                        |
-| `deny`                   | string[]                          | `[]`                                                                          | Deny guidance rules (mandatory). Supports inline `deny_message:` hints                                 |
-| `environment`            | string[]                          | `[]`                                                                          | Context strings passed to the LLM (trust level, policies, etc.)                                        |
+| `allow`                  | string[]                          | `[]`                                                                          | Allow guidance rules. **Replaces** the value carried over from earlier layers when set.                |
+| `deny`                   | string[]                          | `[]`                                                                          | Deny guidance rules (mandatory). Supports inline `deny_message:` hints. Same replace semantics as `allow`. |
+| `environment`            | string[]                          | `[]`                                                                          | Context strings passed to the LLM (trust level, policies, etc.). Same replace semantics as `allow`.    |
+| `append_allow`           | string[]                          | `[]`                                                                          | Allow guidance rules **appended** on top of the carried-over list. Use this in project-local configs.   |
+| `append_deny`            | string[]                          | `[]`                                                                          | Deny guidance rules appended on top of the carried-over list.                                          |
+| `append_environment`     | string[]                          | `[]`                                                                          | Environment context appended on top of the carried-over list.                                          |
 
 `<target>` is `claude` or `codex` depending on which hook is invoked. When `XDG_STATE_HOME` is unset, ccgate falls back to `~/.local/state/ccgate/<target>/...`.
 
@@ -252,7 +261,7 @@ The daily table shows per-day counts (Allow, Deny, Fall, F.Allow, F.Deny, Err), 
 ## Known limitations
 
 - **Plan mode correctness is prompt-only (Claude only).** Under `permission_mode == "plan"`, ccgate relies on the LLM plus prose in the system prompt to (a) reject implementation-side writes and (b) allow read-only queries without requiring an allow-guidance match. Either side can misfire. Tracked in [#37](https://github.com/tak848/ccgate/issues/37).
-- **No reset/override for individual embedded default rules.** Layered configs can only **add** rules and **overwrite scalars**. Deleting a specific embedded `allow` / `deny` rule from a global or project-local config is not supported today.
+- **No surgical reset for a single embedded default rule.** A layer can either **replace** a list wholesale (`allow: [...]`) or **append** to it (`append_allow: [...]`). Removing one specific embedded `allow` / `deny` rule while keeping the rest of the embedded list requires re-stating the whole list under `allow:` / `deny:` minus that one entry.
 - **Codex hook is upstream-experimental.** Schema and behavior may change. ccgate does not currently expose `permission_mode` from Codex, parse the Codex transcript JSONL, ingest `~/.codex/config.toml`, or apply MCP-server-specific trust hints; classification runs from `tool_name` + `tool_input` + `cwd` only.
 
 ## Documentation

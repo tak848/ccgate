@@ -160,7 +160,12 @@ Claude Code と同じ環境変数 (`CCGATE_ANTHROPIC_API_KEY` / `ANTHROPIC_API_K
 | 2 | `~/.claude/ccgate.jsonnet` — グローバル (上に重ねる) | `~/.codex/ccgate.jsonnet` — グローバル (同じ) |
 | 3 | `{repo_root}/.claude/ccgate.local.jsonnet` — プロジェクトローカル (Git 未追跡のみ、上に重ねる) | `{repo_root}/.codex/ccgate.local.jsonnet` — プロジェクトローカル (同じ) |
 
-3 つの layer はすべて同じ merge ルールで合成されます: **list** (`allow` / `deny` / `environment`) は append、**スカラー** (`provider.*`, `log_*`, `metrics_*`, `fallthrough_strategy`) はその layer が値を設定していれば overwrite。組み込みデフォルトは常に適用されるため、グローバル設定で `provider.model` だけ書き換えても embedded の `allow` / `deny` ルールはすべて生きたままです。
+3 つの layer はすべて同じ merge ルールで合成されます:
+
+- **list**: `allow` / `deny` / `environment` は値を設定した layer が前の layer から引き継いだ list を **置き換える** (`[]` を書けば空 list に置き換え)。`append_*` 系 (`append_allow` / `append_deny` / `append_environment`) は前の layer の累積 list の **末尾に追加** する。
+- **スカラー**: `provider.*` / `log_*` / `metrics_*` / `fallthrough_strategy` はその layer がフィールドを設定していれば per-field で上書き、設定していなければ前の値を保持。
+
+`~/.<target>/ccgate.jsonnet` で `provider.model` だけ書き換えれば embedded の `allow` / `deny` はそのまま残ります。`allow: [...]` を書けば embedded の allow を完全に差し替え (これは v0.6 以前のグローバル設定がすでに行っていた挙動なので、そのまま冪等)。プロジェクトローカル設定は典型的に `append_deny: [...]` / `append_environment: [...]` で追加制限を載せます。
 プロジェクトローカル設定は **Git に追跡されていないファイルのみ** 読み込まれます。
 
 
@@ -178,9 +183,12 @@ Claude Code と同じ環境変数 (`CCGATE_ANTHROPIC_API_KEY` / `ANTHROPIC_API_K
 | `metrics_disabled`       | bool                              | `false`                                                                         | メトリクス収集を完全に無効化                                                                               |
 | `metrics_max_size`       | int                               | `2097152`                                                                       | ローテーション閾値 (bytes, デフォルト 2MB)。`0` = ローテーションなし                                       |
 | `fallthrough_strategy`   | `"ask"` / `"allow"` / `"deny"`    | `"ask"`                                                                         | LLM が判定に迷った (`fallthrough`) 際の扱い。[完全自動運転モード](#完全自動運転モード-fallthrough_strategy) 参照 |
-| `allow`                  | string[]                          | `[]`                                                                            | 許可ルール (自然言語、LLM が解釈)                                                                          |
-| `deny`                   | string[]                          | `[]`                                                                            | 拒否ルール (mandatory)。`deny_message:` ヒント対応                                                         |
-| `environment`            | string[]                          | `[]`                                                                            | LLM に渡すコンテキスト (信頼レベル、ポリシー等)                                                            |
+| `allow`                  | string[]                          | `[]`                                                                            | 許可ルール。設定すると前の layer から引き継いだ list を **完全置換**                                       |
+| `deny`                   | string[]                          | `[]`                                                                            | 拒否ルール (mandatory)。`deny_message:` ヒント対応。`allow` と同じく置換                                   |
+| `environment`            | string[]                          | `[]`                                                                            | LLM に渡すコンテキスト (信頼レベル、ポリシー等)。`allow` と同じく置換                                       |
+| `append_allow`           | string[]                          | `[]`                                                                            | 引き継いだ list の末尾に **追加**。プロジェクトローカル設定で典型的に使用                                  |
+| `append_deny`            | string[]                          | `[]`                                                                            | 引き継いだ deny list の末尾に追加                                                                          |
+| `append_environment`     | string[]                          | `[]`                                                                            | 引き継いだ environment list の末尾に追加                                                                   |
 
 `<target>` は Claude / Codex どちらの hook が呼ばれたかで `claude` / `codex` になります。`XDG_STATE_HOME` が未設定の場合は `~/.local/state/ccgate/<target>/...` が fallback として使われます。
 
@@ -251,7 +259,7 @@ ccgate codex  metrics --days 7        # codex 側、同じシェイプ
 ## 既知の制約
 
 - **Plan mode の正しさはプロンプトのみに依存 (Claude のみ)。** `permission_mode == "plan"` では、(a) 実装系 write を拒絶する判定と (b) allow guidance に載っていない read-only クエリを許可する判定の両方を、LLM とシステムプロンプトの指示文に委ねています。プロンプトで記述する以上、どちらの方向にも誤判定の余地があります。[#37](https://github.com/tak848/ccgate/issues/37) で追跡しています。
-- **embedded default ルール単位の reset/override 手段なし。** 重ねる層は **追加 (list)** と **スカラー上書き** しかできません。embedded の特定の `allow` / `deny` ルールをグローバル / プロジェクトローカル設定から削除する仕組みは現状ありません。
+- **embedded default の特定ルールだけを部分削除する手段なし。** layer は list を **完全置換** (`allow: [...]`) するか **末尾追加** (`append_allow: [...]`) するかのどちらかです。embedded の中の 1 ルールだけ消したい場合は、その 1 件を除いた残り全部を `allow:` / `deny:` に書き直すしかありません。
 - **Codex hook は upstream で experimental。** スキーマや挙動が変わる可能性があります。ccgate は現在 Codex 側の `permission_mode` を expose せず、transcript JSONL を parse せず、`~/.codex/config.toml` も取り込まず、MCP server 単位の trust hint も適用しません。判定は `tool_name` + `tool_input` + `cwd` のみで行います。
 
 ## ドキュメント
