@@ -21,6 +21,9 @@ import (
 //go:embed defaults.jsonnet
 var defaultsJsonnet string
 
+//go:embed defaults_project.jsonnet
+var defaultsProjectJsonnet string
+
 // Defaults exposes the embedded Codex defaults.
 func Defaults() string { return defaultsJsonnet }
 
@@ -46,27 +49,43 @@ func LoadOptions() (config.LoadOptions, error) {
 }
 
 // Run reads a single PermissionRequest from stdin and writes the
-// response to stdout. Delegates to internal/runner.
+// response to stdout. Delegates the orchestration to internal/runner.
+// The only Codex-specific knob the runner needs is the target-name
+// label for the system prompt header. Codex delivers no
+// recent_transcript, no settings.json equivalent, and no
+// permission_mode today, so we pass none of the corresponding
+// runner options -- the LLM is told via the (empty) TargetSection
+// not to expect those fields.
 func Run(stdin io.Reader, stdout io.Writer) int {
 	opts, err := LoadOptions()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ccgate codex: %v\n", err)
 		return 1
 	}
-	return runner.Run(stdin, stdout, opts)
+	return runner.Run(stdin, stdout, opts,
+		runner.WithTargetName("Codex CLI"),
+	)
 }
 
 // InitOptions describes how `ccgate codex init` should output the
 // embedded defaults.
 type InitOptions struct {
-	Output string
-	Force  bool
+	Project bool
+	Output  string
+	Force   bool
 }
 
 // Init writes the embedded Codex defaults to stdout or opts.Output.
+// When opts.Project is set, the project-local template (which
+// appends restrictions on top of the global config) is written
+// instead of the global defaults.
 func Init(stdout io.Writer, stderr io.Writer, opts InitOptions) int {
+	content := defaultsJsonnet
+	if opts.Project {
+		content = defaultsProjectJsonnet
+	}
 	if opts.Output == "" {
-		fmt.Fprint(stdout, defaultsJsonnet)
+		fmt.Fprint(stdout, content)
 		return 0
 	}
 	if !opts.Force {
@@ -80,7 +99,7 @@ func Init(stdout io.Writer, stderr io.Writer, opts InitOptions) int {
 		fmt.Fprintf(stderr, "error: failed to create directory %s: %v\n", dir, err)
 		return 1
 	}
-	if err := os.WriteFile(opts.Output, []byte(defaultsJsonnet), 0o644); err != nil {
+	if err := os.WriteFile(opts.Output, []byte(content), 0o644); err != nil {
 		fmt.Fprintf(stderr, "error: failed to write file %s: %v\n", opts.Output, err)
 		return 1
 	}

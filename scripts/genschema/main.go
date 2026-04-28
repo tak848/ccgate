@@ -73,6 +73,20 @@ func writeSchema(path, target string) error {
 	// nested name / model) is still emitted by the reflector.
 	schema.Required = nil
 
+	// AdditionalProperties=false at the root rejects any key not in
+	// properties. The shipped templates start with `['$schema']: '...'`
+	// so editors can pick the right schema; without an explicit entry
+	// here that line gets flagged invalid. Declare it as a string so
+	// the template validates without loosening the strict-additional
+	// guarantee on real config keys.
+	if schema.Properties != nil {
+		schema.Properties.Set("$schema", &jsonschema.Schema{
+			Type:        "string",
+			Format:      "uri",
+			Description: "JSON schema reference. Editors use this to enable validation; ccgate ignores it at runtime.",
+		})
+	}
+
 	data, err := json.MarshalIndent(schema, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)

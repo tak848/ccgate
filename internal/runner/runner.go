@@ -62,20 +62,21 @@ type HookInput struct {
 	TurnID string `json:"turn_id,omitempty"`
 }
 
-// HookToolInput is the parsed view of tool_input that the metrics
-// layer understands. Targets emit different tool_input shapes; the
-// fields that overlap (command / description / file_path / path /
-// pattern / content / content_updates) are surfaced here for
-// consistent metrics, while ToolInputRaw retains the full payload
-// for the LLM.
+// HookToolInput is the canonical parsed view of tool_input shared by
+// all targets. Fields are emitted unconditionally (no omitempty) so
+// the LLM sees the full schema and can address fields by name even
+// when the upstream tool left them empty -- the JSON shape itself
+// documents what ccgate models. ToolInputRaw carries the verbatim
+// upstream bytes alongside this view for tool shapes ccgate has not
+// canonicalized yet.
 type HookToolInput struct {
-	Command        string              `json:"command,omitempty"`
-	Description    string              `json:"description,omitempty"`
-	FilePath       string              `json:"file_path,omitempty"`
-	Path           string              `json:"path,omitempty"`
-	Pattern        string              `json:"pattern,omitempty"`
-	Content        string              `json:"content,omitempty"`
-	ContentUpdates []HookContentUpdate `json:"content_updates,omitempty"`
+	Command        string              `json:"command"`
+	Description    string              `json:"description"`
+	FilePath       string              `json:"file_path"`
+	Path           string              `json:"path"`
+	Pattern        string              `json:"pattern"`
+	Content        string              `json:"content"`
+	ContentUpdates []HookContentUpdate `json:"content_updates"`
 }
 
 // HookContentUpdate is the per-hunk Edit / apply_patch payload.
@@ -138,12 +139,40 @@ func newHookOutput(eventName string, d llm.Decision) HookOutput {
 }
 
 // Option customises the runner with target-specific extra inputs
-// the LLM payload should carry. Pass them via Run's variadic.
+// the LLM payload + system prompt should carry. Pass them via Run's
+// variadic.
 type Option func(*runtimeOptions)
 
 type runtimeOptions struct {
+	targetName            string
+	promptSection         string
+	hasRecentTranscript   bool
 	loadStaticPermissions func(cwd string) any
 	loadRecentTranscript  func(transcriptPath string) any
+}
+
+// WithTargetName labels the host tool in the system prompt header
+// (e.g. "Claude Code", "Codex CLI"). The default header text falls
+// back to a generic phrasing if unset.
+func WithTargetName(name string) Option {
+	return func(o *runtimeOptions) { o.targetName = name }
+}
+
+// WithPromptSection injects target-specific guidance about which
+// payload fields the target delivers and how the LLM should
+// interpret them. Inserted between the decision rules and the
+// allow/deny lists. Targets that have nothing target-specific to
+// say (Codex today) simply do not pass this option.
+func WithPromptSection(section string) Option {
+	return func(o *runtimeOptions) { o.promptSection = section }
+}
+
+// WithHasRecentTranscript declares that the user payload carries a
+// `recent_transcript` field. The decision-rule wording adjusts so
+// the LLM is not told to consult a field that isn't there. Targets
+// that have no equivalent (Codex today) leave this false.
+func WithHasRecentTranscript(has bool) Option {
+	return func(o *runtimeOptions) { o.hasRecentTranscript = has }
 }
 
 // WithStaticPermissions injects a target-specific reader for the
@@ -308,51 +337,68 @@ func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOpti
 	}
 }
 
+// PromptInput is the user-message JSON the LLM sees. It is the
+// shared payload shape across targets: fields that one of the two
+// targets does not deliver carry omitempty so they disappear from
+// the JSON instead of showing up as empty values. The prompt's
+// TargetSection (set via WithPromptSection) tells the LLM which
+// fields are / are not present.
+type PromptInput struct {
+	ToolName              string            `json:"tool_name"`
+	ToolInput             HookToolInput     `json:"tool_input"`
+	ToolInputRaw          json.RawMessage   `json:"tool_input_raw,omitempty"`
+	PermissionMode        string            `json:"permission_mode,omitempty"`
+	PermissionSuggestions []json.RawMessage `json:"permission_suggestions,omitempty"`
+	Context               Context           `json:"context"`
+	SettingsPermissions   any               `json:"settings_permissions,omitempty"`
+	RecentTranscript      any               `json:"recent_transcript,omitempty"`
+	Model                 string            `json:"model,omitempty"`
+	TurnID                string            `json:"turn_id,omitempty"`
+}
+
+// Context bundles the working-directory + git information ccgate
+// surfaces to the LLM together with the tool-derived
+// referenced_paths. Wraps gitutil.Context with the path-extraction
+// output so both live in one nested object the LLM can navigate by
+// name.
+type Context struct {
+	gitutil.Context
+	ReferencedPaths []string `json:"referenced_paths,omitempty"`
+}
+
 func buildPrompt(cfg config.Config, in HookInput, ro runtimeOptions) (llm.Prompt, error) {
-	payload := map[string]any{
-		"tool_name":  in.ToolName,
-		"tool_input": in.ToolInputRaw,
-		"cwd":        in.Cwd,
-		"context":    gitutil.BuildContext(in.Cwd),
-	}
-	if in.ToolInput.Description != "" {
-		payload["description"] = in.ToolInput.Description
-	}
-	if in.PermissionMode != "" {
-		payload["permission_mode"] = in.PermissionMode
-	}
-	if len(in.PermissionSuggestions) > 0 {
-		payload["permission_suggestions"] = in.PermissionSuggestions
-	}
-	if in.Model != "" {
-		payload["model"] = in.Model
-	}
-	if in.TurnID != "" {
-		payload["turn_id"] = in.TurnID
-	}
-	if paths := referencedPaths(in); len(paths) > 0 {
-		payload["referenced_paths"] = paths
+	pi := PromptInput{
+		ToolName:              in.ToolName,
+		ToolInput:             in.ToolInput,
+		ToolInputRaw:          in.ToolInputRaw,
+		PermissionMode:        in.PermissionMode,
+		PermissionSuggestions: in.PermissionSuggestions,
+		Model:                 in.Model,
+		TurnID:                in.TurnID,
+		Context: Context{
+			Context:         gitutil.BuildContext(in.Cwd),
+			ReferencedPaths: referencedPaths(in),
+		},
 	}
 	if ro.loadStaticPermissions != nil {
-		if sp := ro.loadStaticPermissions(in.Cwd); sp != nil {
-			payload["settings_permissions"] = sp
-		}
+		pi.SettingsPermissions = ro.loadStaticPermissions(in.Cwd)
 	}
 	if ro.loadRecentTranscript != nil && in.TranscriptPath != "" {
-		if t := ro.loadRecentTranscript(in.TranscriptPath); t != nil {
-			payload["recent_transcript"] = t
-		}
+		pi.RecentTranscript = ro.loadRecentTranscript(in.TranscriptPath)
 	}
-	user, err := json.MarshalIndent(payload, "", "  ")
+	user, err := json.MarshalIndent(pi, "", "  ")
 	if err != nil {
 		return llm.Prompt{}, fmt.Errorf("marshal prompt input: %w", err)
 	}
 	p := prompt.Build(prompt.Args{
-		PlanMode:    in.PermissionMode == PermissionModePlan,
-		Allow:       cfg.Allow,
-		Deny:        cfg.Deny,
-		Environment: cfg.Environment,
-		UserPayload: string(user),
+		TargetName:          ro.targetName,
+		PlanMode:            in.PermissionMode == PermissionModePlan,
+		HasRecentTranscript: ro.hasRecentTranscript,
+		TargetSection:       ro.promptSection,
+		Allow:               cfg.Allow,
+		Deny:                cfg.Deny,
+		Environment:         cfg.Environment,
+		UserPayload:         string(user),
 	})
 	p.Model = cfg.Provider.Model
 	p.TimeoutMS = cfg.GetTimeoutMS()

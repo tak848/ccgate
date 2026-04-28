@@ -47,13 +47,26 @@ func LoadOptions() (config.LoadOptions, error) {
 	}, nil
 }
 
+// claudeTargetSection is the Claude-Code-specific guidance the
+// runner inserts between the decision rules and the allow/deny
+// lists. It teaches the LLM how to read settings_permissions and
+// recent_transcript -- both fields ccgate adds to the user payload
+// only for Claude. Codex has no equivalent to either today and
+// passes no TargetSection. Wording is editorial and intentionally
+// not asserted in tests; only the wiring (that the section reaches
+// the system prompt) is.
+const claudeTargetSection = "The user message includes settings_permissions and recent_transcript as background context.\n" +
+	"settings_permissions lists the user's Claude Code static allow/deny/ask patterns. Claude Code already matched them BEFORE invoking ccgate, so by design every request that reaches ccgate did NOT auto-match allow (often composite constructs like `$()` or pipelines that slip past literal matchers, or MCP tools without a static matcher). Absence from settings_permissions.allow is therefore the normal, expected case -- use it only as a hint about user preferences, never as a whitelist requirement.\n" +
+	"recent_transcript shows recent user messages and tool calls. Use it to understand what the user asked for. If the user explicitly requested the operation, prefer fallthrough over deny so Claude Code can confirm with the user. Explicit user intent never escalates a deny rule to allow.\n"
+
 // Run reads a single PermissionRequest from stdin and writes the
 // response to stdout. Delegates the orchestration to internal/runner
-// while injecting Claude-specific extras the runner does not deliver
-// itself: settings.json static patterns and the transcript JSONL
-// tail. Codex has no equivalent to either today (its
-// `~/.codex/config.toml` rules / transcript ingestion is a separate
-// piece of work) so cmd/codex passes neither hook.
+// while injecting the Claude-Code-specific extras the runner does not
+// know about: target-name labelling, the Claude-only TargetSection
+// guidance, the settings.json static-permissions reader, and the
+// transcript JSONL tail. Codex has no equivalent to any of these
+// today (its `~/.codex/config.toml` rules / transcript ingestion is
+// a separate piece of work) so cmd/codex passes none of them.
 func Run(stdin io.Reader, stdout io.Writer) int {
 	opts, err := LoadOptions()
 	if err != nil {
@@ -61,6 +74,9 @@ func Run(stdin io.Reader, stdout io.Writer) int {
 		return 1
 	}
 	return runner.Run(stdin, stdout, opts,
+		runner.WithTargetName("Claude Code"),
+		runner.WithPromptSection(claudeTargetSection),
+		runner.WithHasRecentTranscript(true),
 		runner.WithStaticPermissions(staticPermissionsHook),
 		runner.WithRecentTranscript(recentTranscriptHook),
 	)

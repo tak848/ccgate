@@ -8,7 +8,7 @@ package cli
 type ClaudeCmd struct {
 	Hook    ClaudeHookCmd    `cmd:"" default:"withargs" name:"hook" help:"Run the Claude Code hook from stdin (default; same as bare 'ccgate' or 'ccgate claude')."`
 	Init    ClaudeInitCmd    `cmd:""                                help:"Output the embedded Claude Code default configuration."`
-	Metrics ClaudeMetricsCmd `cmd:""                                help:"Show Claude Code usage metrics (combined with legacy path)."`
+	Metrics ClaudeMetricsCmd `cmd:""                                help:"Show Claude Code usage metrics."`
 }
 
 // ClaudeHookCmd is a marker struct so kong has a "subcommand" to make

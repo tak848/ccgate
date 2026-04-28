@@ -120,8 +120,9 @@ func dispatch(kctx *kong.Context, cli *CLI, stdin io.Reader, stdout, stderr io.W
 		return codex.Run(stdin, stdout)
 	case "codex init":
 		return codex.Init(stdout, stderr, codex.InitOptions{
-			Output: cli.Codex.Init.Output,
-			Force:  cli.Codex.Init.Force,
+			Project: cli.Codex.Init.Project,
+			Output:  cli.Codex.Init.Output,
+			Force:   cli.Codex.Init.Force,
 		})
 	case "codex metrics":
 		cwd, err := os.Getwd()
@@ -181,10 +182,10 @@ Usage:
                                              Equivalent to 'ccgate claude'. Permanent default.
   ccgate claude                              Same as above (explicit form).
   ccgate claude init [-p] [-o FILE] [-f]     Output the embedded Claude Code defaults.
-  ccgate claude metrics [--days N] [--json]  Show Claude Code metrics (current + legacy paths).
+  ccgate claude metrics [--days N] [--json]  Show Claude Code metrics.
 
   ccgate codex                               Read HookInput JSON from stdin (Codex CLI hook, experimental).
-  ccgate codex init [-o FILE] [-f]           Output the embedded Codex CLI defaults.
+  ccgate codex init [-p] [-o FILE] [-f]      Output the embedded Codex CLI defaults.
   ccgate codex metrics [--days N] [--json]   Show Codex CLI metrics.
 
   ccgate clm [--days N] [--json]             Shortcut for 'ccgate claude metrics'.

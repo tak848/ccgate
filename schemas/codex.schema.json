@@ -59,6 +59,11 @@
         "type": "string"
       },
       "type": "array"
+    },
+    "$schema": {
+      "type": "string",
+      "format": "uri",
+      "description": "JSON schema reference. Editors use this to enable validation; ccgate ignores it at runtime."
     }
   },
   "additionalProperties": false,

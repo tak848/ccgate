@@ -15,12 +15,11 @@ type CodexCmd struct {
 // default. The actual hook orchestration is dispatched in cli.go.
 type CodexHookCmd struct{}
 
-// CodexInitCmd backs `ccgate codex init`. Codex defaults are a single
-// jsonnet file (no project-vs-global split) so we only carry --output
-// / --force here.
+// CodexInitCmd backs `ccgate codex init`.
 type CodexInitCmd struct {
-	Output string `help:"Write to FILE instead of stdout."   short:"o" type:"path"`
-	Force  bool   `help:"Overwrite an existing file at --output." short:"f"`
+	Project bool   `help:"Output the project-local configuration template instead of the global one." short:"p"`
+	Output  string `help:"Write to FILE instead of stdout."                                            short:"o" type:"path"`
+	Force   bool   `help:"Overwrite an existing file at --output."                                     short:"f"`
 }
 
 // CodexMetricsCmd backs `ccgate codex metrics`.
