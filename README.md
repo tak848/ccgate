@@ -157,12 +157,11 @@ Same env vars as Claude Code (`CCGATE_ANTHROPIC_API_KEY` / `ANTHROPIC_API_KEY`).
 
 | Order | Claude Code | Codex CLI |
 |------:|-------------|-----------|
-| 1     | Embedded defaults (fallback when no global config exists) | Embedded defaults (same) |
-| 2     | `~/.claude/ccgate.jsonnet` — global (**replaces** embedded defaults entirely) | `~/.codex/ccgate.jsonnet` — global (same) |
-| 3     | `{repo_root}/.claude/ccgate.local.jsonnet` — project-local (untracked only, **appended**) | `{repo_root}/.codex/ccgate.local.jsonnet` — project-local (same) |
+| 1     | Embedded defaults (always applied as the base) | Embedded defaults (same) |
+| 2     | `~/.claude/ccgate.jsonnet` — global (layered on top) | `~/.codex/ccgate.jsonnet` — global (same) |
+| 3     | `{repo_root}/.claude/ccgate.local.jsonnet` — project-local (untracked only, layered on top) | `{repo_root}/.codex/ccgate.local.jsonnet` — project-local (same) |
 
-If a global config file exists, embedded defaults are **not** used. The global config is the complete base.
-Project-local configs always **append** to the base (allow/deny/environment are appended, provider fields are overwritten).
+All three layers compose with the same rules: **lists** (`allow` / `deny` / `environment`) are appended, **scalars** (`provider.*`, `log_*`, `metrics_*`, `fallthrough_strategy`) are overwritten when the layer sets them. Embedded defaults are always present, so a global config that only sets `provider.model` keeps every embedded `allow` / `deny` rule.
 Project-local configs are loaded only when **not tracked by Git**.
 
 
@@ -188,19 +187,22 @@ Project-local configs are loaded only when **not tracked by Git**.
 
 ## Default Rules
 
-When no global config file exists, ccgate uses built-in default rules (per target):
+ccgate ships built-in default rules per target. They are always applied as the base; your global / project-local configs layer on top.
 
 **Allow:** Read-only operations, local development commands (build / test against project scripts), git feature-branch operations, package-manager installs scoped to the repo.
 
 **Deny:** Download-and-execute (`curl|bash`), direct one-shot remote package execution (`npx`/`pnpx`/`bunx` etc.), git destructive operations on protected branches, out-of-repo deletion, privilege escalation.
 
-Run `ccgate claude init` / `ccgate codex init` to inspect the full default configuration. To customize, redirect to a file and edit:
+Run `ccgate claude init` / `ccgate codex init` to inspect the full default configuration. The `init` output is the **embedded defaults** -- a reference document, not the starting template. For your own overrides, write a minimal jsonnet that adds / overrides only what you need:
 
 ```bash
-ccgate claude init    > ~/.claude/ccgate.jsonnet           # Global, claude (replaces defaults)
-ccgate claude init -p > .claude/ccgate.local.jsonnet       # Project-local template, claude (appended)
-ccgate codex  init    > ~/.codex/ccgate.jsonnet            # Global, codex
+ccgate claude init           | less                   # Read the embedded Claude defaults.
+ccgate codex  init           | less                   # Same for Codex.
+ccgate claude init -p > .claude/ccgate.local.jsonnet  # Project-local skeleton you can extend.
+ccgate codex  init -p > .codex/ccgate.local.jsonnet   # Same for Codex.
 ```
+
+Need to drop one of the embedded default rules? That requires an explicit reset/override syntax which does not exist yet -- open an issue describing the rule and your motivation.
 
 ## Unattended automation (`fallthrough_strategy`)
 
@@ -250,7 +252,7 @@ The daily table shows per-day counts (Allow, Deny, Fall, F.Allow, F.Deny, Err), 
 ## Known limitations
 
 - **Plan mode correctness is prompt-only (Claude only).** Under `permission_mode == "plan"`, ccgate relies on the LLM plus prose in the system prompt to (a) reject implementation-side writes and (b) allow read-only queries without requiring an allow-guidance match. Either side can misfire. Tracked in [#37](https://github.com/tak848/ccgate/issues/37).
-- **Config file layering is asymmetric.** Global config *replaces* embedded defaults while project-local files only *append*. Narrowing / overriding rules from the project layer is not supported today. Tracked as a breaking-change refactor in [#38](https://github.com/tak848/ccgate/issues/38).
+- **No reset/override for individual embedded default rules.** Layered configs can only **add** rules and **overwrite scalars**. Deleting a specific embedded `allow` / `deny` rule from a global or project-local config is not supported today.
 - **Codex hook is upstream-experimental.** Schema and behavior may change. ccgate does not currently expose `permission_mode` from Codex, parse the Codex transcript JSONL, ingest `~/.codex/config.toml`, or apply MCP-server-specific trust hints; classification runs from `tool_name` + `tool_input` + `cwd` only.
 
 ## Documentation

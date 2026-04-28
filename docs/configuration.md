@@ -6,26 +6,29 @@ Cross-target configuration reference. The [root README](../README.md) lists the 
 
 ## Where ccgate looks for config
 
-ccgate evaluates three layers, in order, per target:
+ccgate evaluates three layers, in order, per target. Every layer composes with the same merge semantics (see "How layers compose" below):
 
-1. **Embedded defaults.** Compiled into the binary. Used only when no global config exists. Inspect with `ccgate <target> init`.
-2. **Global config**, replaces the embedded defaults entirely (no merge):
+1. **Embedded defaults.** Compiled into the binary. Always applied as the base. Inspect with `ccgate <target> init`.
+2. **Global config**, layered on top of the embedded defaults if present:
    - Claude Code: `~/.claude/ccgate.jsonnet`
    - Codex CLI:   `~/.codex/ccgate.jsonnet`
-3. **Project-local overrides**, appended on top of the active base. Tracked files are ignored (see "Why tracked files are skipped" below):
+3. **Project-local overrides**, layered on top of (1)+(2). Tracked files are ignored (see "Why tracked files are skipped" below):
    - Claude Code: `{repo_root}/.claude/ccgate.local.jsonnet`
    - Codex CLI:   `{repo_root}/.codex/ccgate.local.jsonnet`
 
 `{repo_root}` is the git repo root, resolved via `git rev-parse --show-toplevel` from the hook's `cwd`. Outside a git repo the `cwd` itself is used.
 
 
-### What "replaces" vs "appends" means
+### How layers compose
 
-When the global config exists, `provider`, `log_*`, `metrics_*`, `fallthrough_strategy`, `allow`, `deny`, and `environment` are taken **entirely** from there. The embedded defaults are not merged in -- so a global config with an empty `allow` list means there is no allow guidance at all.
+| Field group | Merge behavior | Example |
+|---|---|---|
+| Lists: `allow`, `deny`, `environment` | Each layer **appends** its entries on top of the previous result. | Embedded `deny: ["A"]` + global `deny: ["B"]` + project `deny: ["C"]` → final `deny: ["A","B","C"]`. |
+| Scalars: `provider.*`, `log_*`, `metrics_*`, `fallthrough_strategy` | Each layer **overwrites** the previous value when it sets the field; layers that omit it leave the previous value untouched. | Embedded `provider.model: "claude-haiku-4-5"` + global `provider: {model: "claude-sonnet-4-6"}` → final `provider.model: "claude-sonnet-4-6"`, embedded provider.name still in effect. |
 
-Project-local configs always **append**: `allow`, `deny`, and `environment` are concatenated to the base; scalar fields (`provider`, `log_*`, `metrics_*`, `fallthrough_strategy`) are overwritten.
+There is currently no way to **remove** an entry from a list a previous layer added. If you need to drop a specific embedded `allow` / `deny` rule from your overrides, open an issue describing the rule and the motivation. An explicit reset/override syntax is being tracked separately.
 
-This asymmetry is a known wart and is tracked as a refactor in [#38](https://github.com/tak848/ccgate/issues/38).
+> Pre-v0.6 ccgate skipped the embedded defaults whenever a global config existed (the global layer "replaced" instead of layered). v0.6 unified the semantics; see issue [#38](https://github.com/tak848/ccgate/issues/38). If your global config is a copy of `ccgate <target> init`, dedupe it after upgrading -- otherwise rules are applied twice.
 
 ### Why tracked files are skipped
 
@@ -145,6 +148,6 @@ The same fields exist for the log file (`log_path`, `log_disabled`, `log_max_siz
 ## Known limitations
 
 - **Plan mode (Claude only) is prompt-only.** Under `permission_mode == "plan"`, ccgate relies on the LLM plus prose in the system prompt to (a) reject implementation-side writes and (b) allow read-only queries without an explicit allow-guidance match. Either side can misfire. Tracked in [#37](https://github.com/tak848/ccgate/issues/37).
-- **Layering asymmetry** between global (replaces) and project-local (appends). See "What 'replaces' vs 'appends' means" above. Tracked in [#38](https://github.com/tak848/ccgate/issues/38).
+- **No reset/override for individual embedded default rules.** Layered configs can only **add** rules and **overwrite scalars**. Removing a specific embedded `allow` / `deny` rule from a global / project-local config is not supported today.
 - **Codex hook is upstream-experimental.** The hook schema may change without notice.
 - **Codex `~/.codex/config.toml` ingestion** (`approval_policy`, `sandbox_mode`, `prefix_rules`) is not implemented yet. ccgate decides purely from the hook payload + ccgate config; if Codex's own settings would have rejected something, that signal does not reach the LLM today.

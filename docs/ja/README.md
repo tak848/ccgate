@@ -156,12 +156,11 @@ Claude Code と同じ環境変数 (`CCGATE_ANTHROPIC_API_KEY` / `ANTHROPIC_API_K
 
 | 順序 | Claude Code | Codex CLI |
 |----:|-------------|-----------|
-| 1 | 組み込みデフォルト (グローバル設定がない場合のフォールバック) | 同じ |
-| 2 | `~/.claude/ccgate.jsonnet` — グローバル (組み込みデフォルトを**完全に置換**) | `~/.codex/ccgate.jsonnet` — グローバル (同じ) |
-| 3 | `{repo_root}/.claude/ccgate.local.jsonnet` — プロジェクトローカル (Git 未追跡のみ、**追加**) | `{repo_root}/.codex/ccgate.local.jsonnet` — プロジェクトローカル (同じ) |
+| 1 | 組み込みデフォルト (常にベースとして適用) | 同じ |
+| 2 | `~/.claude/ccgate.jsonnet` — グローバル (上に重ねる) | `~/.codex/ccgate.jsonnet` — グローバル (同じ) |
+| 3 | `{repo_root}/.claude/ccgate.local.jsonnet` — プロジェクトローカル (Git 未追跡のみ、上に重ねる) | `{repo_root}/.codex/ccgate.local.jsonnet` — プロジェクトローカル (同じ) |
 
-グローバル設定が存在する場合、組み込みデフォルトは**使われません**。グローバル設定が完全なベースです。
-プロジェクトローカル設定は常にベースに**追加**されます (allow/deny/environment は append、provider 系は overwrite)。
+3 つの layer はすべて同じ merge ルールで合成されます: **list** (`allow` / `deny` / `environment`) は append、**スカラー** (`provider.*`, `log_*`, `metrics_*`, `fallthrough_strategy`) はその layer が値を設定していれば overwrite。組み込みデフォルトは常に適用されるため、グローバル設定で `provider.model` だけ書き換えても embedded の `allow` / `deny` ルールはすべて生きたままです。
 プロジェクトローカル設定は **Git に追跡されていないファイルのみ** 読み込まれます。
 
 
@@ -187,19 +186,22 @@ Claude Code と同じ環境変数 (`CCGATE_ANTHROPIC_API_KEY` / `ANTHROPIC_API_K
 
 ## デフォルトルール
 
-グローバル設定がない場合、ccgate は組み込みのデフォルトルールを使用します (target ごと):
+ccgate は target ごとに組み込みのデフォルトルールを持っています。常にベースとして適用され、その上にグローバル / プロジェクトローカル設定が重なります。
 
 **許可:** 読み取り専用操作、ローカル開発コマンド (project script 経由の build / test)、git フィーチャーブランチ操作、リポジトリ内に閉じたパッケージインストール。
 
 **拒否:** リモートコードのダウンロード実行 (`curl|bash`)、direct one-shot remote package execution (`npx`/`pnpx`/`bunx` 等)、git 破壊的操作 (protected branch 含む)、リポジトリ外の削除、特権昇格。
 
-`ccgate claude init` / `ccgate codex init` でデフォルト設定の全容を確認できます。カスタマイズする場合:
+`ccgate claude init` / `ccgate codex init` でデフォルト設定の全容を確認できます。`init` の出力は **embedded defaults そのもの** = リファレンス文書であって、コピペして使う出発点ではありません。自分のオーバーライドは追加 / 上書きしたい分だけを書く最小限の jsonnet にしてください:
 
 ```bash
-ccgate claude init    > ~/.claude/ccgate.jsonnet           # グローバル, claude (デフォルトを置換)
-ccgate claude init -p > .claude/ccgate.local.jsonnet       # プロジェクトローカルテンプレート, claude (追加)
-ccgate codex  init    > ~/.codex/ccgate.jsonnet            # グローバル, codex
+ccgate claude init           | less                   # Claude embedded defaults を確認
+ccgate codex  init           | less                   # Codex も同じ
+ccgate claude init -p > .claude/ccgate.local.jsonnet  # プロジェクトローカルのスケルトン
+ccgate codex  init -p > .codex/ccgate.local.jsonnet   # Codex も同じ
 ```
+
+embedded のルールを **削除** したい場合は明示的な reset/override 構文が必要ですが、現状そのような仕組みはありません。ルールと動機を Issue に書いてもらえれば検討します。
 
 ## 完全自動運転モード (`fallthrough_strategy`)
 
@@ -249,7 +251,7 @@ ccgate codex  metrics --days 7        # codex 側、同じシェイプ
 ## 既知の制約
 
 - **Plan mode の正しさはプロンプトのみに依存 (Claude のみ)。** `permission_mode == "plan"` では、(a) 実装系 write を拒絶する判定と (b) allow guidance に載っていない read-only クエリを許可する判定の両方を、LLM とシステムプロンプトの指示文に委ねています。プロンプトで記述する以上、どちらの方向にも誤判定の余地があります。[#37](https://github.com/tak848/ccgate/issues/37) で追跡しています。
-- **設定ファイル layering の非対称。** グローバル設定は組み込みデフォルトを*置換*するのに対し、プロジェクトローカルは*追加のみ*。プロジェクト層からルールを狭める/上書きする手段がありません。互換性を壊す破壊的リファクタとして [#38](https://github.com/tak848/ccgate/issues/38) で追跡しています。
+- **embedded default ルール単位の reset/override 手段なし。** 重ねる層は **追加 (list)** と **スカラー上書き** しかできません。embedded の特定の `allow` / `deny` ルールをグローバル / プロジェクトローカル設定から削除する仕組みは現状ありません。
 - **Codex hook は upstream で experimental。** スキーマや挙動が変わる可能性があります。ccgate は現在 Codex 側の `permission_mode` を expose せず、transcript JSONL を parse せず、`~/.codex/config.toml` も取り込まず、MCP server 単位の trust hint も適用しません。判定は `tool_name` + `tool_input` + `cwd` のみで行います。
 
 ## ドキュメント
