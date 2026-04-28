@@ -201,12 +201,14 @@ type LoadOptions struct {
 	GlobalConfigPath string
 	// ProjectLocalRelativePaths lists project-local config locations
 	// relative to the repo root (or cwd when not in a git repo).
-	// Each candidate is read in order and **appended** on top of the
-	// global / embedded base. Tracked files are skipped via gitutil.
+	// Each candidate is read in order and layered on top of the
+	// global / embedded base using the same replace-or-append-*
+	// semantics every layer follows (see Load). Tracked files are
+	// skipped via gitutil.
 	ProjectLocalRelativePaths []string
-	// EmbedDefaults is the embedded jsonnet snippet applied when the
-	// global config is absent. Targets ship their own defaults via
-	// //go:embed.
+	// EmbedDefaults is the embedded jsonnet snippet always applied
+	// as the first layer (the always-present base ccgate ships
+	// with). Targets ship their own defaults via //go:embed.
 	EmbedDefaults string
 	// DefaultLogPath is used when neither the global nor any
 	// project-local config sets log_path. Empty string falls back
@@ -225,7 +227,17 @@ func StateDir(sub string) string {
 }
 
 // Load composes the runtime config from three layers, all using the
-// same merge semantics (lists append, scalars overwrite):
+// same merge semantics:
+//
+//   - lists `allow` / `deny` / `environment` REPLACE the carried-over
+//     value when the layer sets them (an explicit empty list clears),
+//   - lists `append_allow` / `append_deny` / `append_environment` ADD
+//     onto the carried-over value (can coexist with the replace-mode
+//     field; replace runs first, append stacks),
+//   - scalars (`provider.*` / `log_*` / `metrics_*` /
+//     `fallthrough_strategy`) overwrite per-field when set.
+//
+// Layers, applied in order:
 //
 //  1. opts.EmbedDefaults -- always applied first, the always-present
 //     base ccgate ships with.
@@ -235,9 +247,9 @@ func StateDir(sub string) string {
 //
 // Pre-v0.6 ccgate skipped step 1 whenever step 2 succeeded, which
 // made the global layer "replace" embedded defaults while project
-// layers always "appended". v0.6 unifies the two so users no longer
-// have to copy the embedded defaults verbatim into their global
-// config just to keep them; see issue #38 for the discussion.
+// layers always "appended". v0.6 makes embedded defaults the
+// always-present base and adds explicit `append_*` keys for opt-in
+// extension; see issue #38 for the discussion.
 func Load(opts LoadOptions, cwd string) (LoadResult, error) {
 	cfg := Default()
 
