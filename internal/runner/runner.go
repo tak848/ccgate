@@ -410,7 +410,11 @@ func redactedUserMessage(user string) string {
 	if err := json.Unmarshal([]byte(user), &m); err != nil {
 		return "{}"
 	}
-	for _, k := range []string{"tool_input", "permission_suggestions", "recent_transcript"} {
+	// tool_input_raw carries the verbatim upstream payload alongside
+	// the parsed view -- redact both so file bodies (Edit/Write
+	// content_updates) and Bash arguments (tokens, secrets) never
+	// reach ccgate.log even when the parsed view alone would have.
+	for _, k := range []string{"tool_input", "tool_input_raw", "permission_suggestions", "recent_transcript"} {
 		if _, ok := m[k]; ok {
 			m[k] = "[REDACTED]"
 		}
