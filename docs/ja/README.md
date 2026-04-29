@@ -130,11 +130,11 @@ ccgate claude init > ~/.claude/ccgate.jsonnet
 
 選択した provider の API キーを設定してください。`CCGATE_*_API_KEY` が優先され bare 変数を上書きするので、AI ツール本体の API キーと ccgate 用キーを分離できます。
 
-| `provider.name` | 優先                       | フォールバック        |
-|-----------------|----------------------------|-----------------------|
-| `anthropic`     | `CCGATE_ANTHROPIC_API_KEY` | `ANTHROPIC_API_KEY`   |
-| `openai`        | `CCGATE_OPENAI_API_KEY`    | `OPENAI_API_KEY`      |
-| `gemini`        | `CCGATE_GEMINI_API_KEY`    | `GEMINI_API_KEY`      |
+| `provider.name` | 優先                       | フォールバック        | API キー発行ページ |
+|-----------------|----------------------------|-----------------------|--------------------|
+| `anthropic`     | `CCGATE_ANTHROPIC_API_KEY` | `ANTHROPIC_API_KEY`   | <https://platform.claude.com/settings/keys> |
+| `openai`        | `CCGATE_OPENAI_API_KEY`    | `OPENAI_API_KEY`      | <https://platform.openai.com/api-keys>      |
+| `gemini`        | `CCGATE_GEMINI_API_KEY`    | `GEMINI_API_KEY`      | <https://aistudio.google.com/app/api-keys>  |
 
 ## セットアップ — Codex CLI (experimental)
 

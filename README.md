@@ -131,11 +131,11 @@ If `ccgate` is not on your `PATH` (e.g. when relying on `mise exec` instead of a
 
 Set the API key for your chosen provider. `CCGATE_*_API_KEY` is preferred and overrides the bare variable, so you can keep ccgate's key separate from the AI tool's own key.
 
-| `provider.name` | Preferred                  | Fallback             |
-|-----------------|----------------------------|----------------------|
-| `anthropic`     | `CCGATE_ANTHROPIC_API_KEY` | `ANTHROPIC_API_KEY`  |
-| `openai`        | `CCGATE_OPENAI_API_KEY`    | `OPENAI_API_KEY`     |
-| `gemini`        | `CCGATE_GEMINI_API_KEY`    | `GEMINI_API_KEY`     |
+| `provider.name` | Preferred                  | Fallback             | Get API key |
+|-----------------|----------------------------|----------------------|-------------|
+| `anthropic`     | `CCGATE_ANTHROPIC_API_KEY` | `ANTHROPIC_API_KEY`  | <https://platform.claude.com/settings/keys> |
+| `openai`        | `CCGATE_OPENAI_API_KEY`    | `OPENAI_API_KEY`     | <https://platform.openai.com/api-keys>      |
+| `gemini`        | `CCGATE_GEMINI_API_KEY`    | `GEMINI_API_KEY`     | <https://aistudio.google.com/app/api-keys>  |
 
 ## Setup — Codex CLI (experimental)
 
