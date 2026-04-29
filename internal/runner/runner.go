@@ -289,7 +289,7 @@ func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOpti
 			return llm.Decision{}, false, llm.FallthroughKindNoAPIKey, "", nil, nil
 		default:
 			slog.Info("unknown provider, falling through", "provider", cfg.Provider.Name)
-			return llm.Decision{}, false, llm.FallthroughKindNonAnthropic, "", nil, nil
+			return llm.Decision{}, false, llm.FallthroughKindUnknownProvider, "", nil, nil
 		}
 	}
 

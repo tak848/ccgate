@@ -57,7 +57,7 @@ Only LLM-driven uncertainty is affected. The runtime-mode fallthroughs continue 
 
 - API call truncated or refused (`api_unusable`)
 - No API key set (`no_apikey`)
-- `provider.name` is not one of `anthropic` / `openai` / `gemini` (`non_anthropic` — kind name kept for backward compatibility)
+- `provider.name` is not one of `anthropic` / `openai` / `gemini` (`unknown_provider`)
 - Claude `permission_mode == "bypassPermissions"` or `"dontAsk"`
 - Claude `tool_name` in `{ExitPlanMode, AskUserQuestion}` (user-interaction tools)
 
@@ -120,7 +120,7 @@ ccgate codex  metrics --days 7         # same shape, codex side
 }
 ```
 
-`ft_kind` is filled when the LLM returned (or the runtime forced) a fallthrough; the value tells you which fallback path fired (`llm`, `api_unusable`, `no_apikey`, `non_anthropic`, `bypass`, `dontask`, `user_interaction`). `forced=true` means `fallthrough_strategy` promoted an LLM `fallthrough` into the recorded `decision`.
+`ft_kind` is filled when the LLM returned (or the runtime forced) a fallthrough; the value tells you which fallback path fired (`llm`, `api_unusable`, `no_apikey`, `unknown_provider`, `bypass`, `dontask`, `user_interaction`). `forced=true` means `fallthrough_strategy` promoted an LLM `fallthrough` into the recorded `decision`.
 
 ### Drill-down sections
 

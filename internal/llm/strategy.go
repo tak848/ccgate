@@ -21,7 +21,7 @@ const (
 	FallthroughKindUserInteraction = "user_interaction"
 	FallthroughKindBypass          = "bypass"
 	FallthroughKindDontAsk         = "dontask"
-	FallthroughKindNonAnthropic    = "non_anthropic"
+	FallthroughKindUnknownProvider = "unknown_provider"
 	FallthroughKindNoAPIKey        = "no_apikey"
 	FallthroughKindLLM             = "llm"
 	FallthroughKindAPIUnusable     = "api_unusable"
