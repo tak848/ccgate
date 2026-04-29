@@ -31,6 +31,8 @@ import (
 	"github.com/tak848/ccgate/internal/gitutil"
 	"github.com/tak848/ccgate/internal/llm"
 	"github.com/tak848/ccgate/internal/llm/anthropic"
+	"github.com/tak848/ccgate/internal/llm/gemini"
+	"github.com/tak848/ccgate/internal/llm/openai"
 	"github.com/tak848/ccgate/internal/metrics"
 	"github.com/tak848/ccgate/internal/prompt"
 )
@@ -278,15 +280,17 @@ func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOpti
 		return llm.Decision{}, false, llm.FallthroughKindDontAsk, "", nil, nil
 	}
 
-	if !strings.EqualFold(cfg.Provider.Name, "anthropic") {
-		slog.Info("provider not anthropic, falling through", "provider", cfg.Provider.Name)
-		return llm.Decision{}, false, llm.FallthroughKindNonAnthropic, "", nil, nil
-	}
-
-	apiKey, ok := resolveAPIKey()
+	providerName := strings.ToLower(cfg.Provider.Name)
+	apiKey, ok := resolveAPIKey(providerName)
 	if !ok {
-		slog.Warn("no API key found (CCGATE_ANTHROPIC_API_KEY / ANTHROPIC_API_KEY)")
-		return llm.Decision{}, false, llm.FallthroughKindNoAPIKey, "", nil, nil
+		switch providerName {
+		case "anthropic", "openai", "gemini":
+			slog.Warn("no API key found", "provider", cfg.Provider.Name)
+			return llm.Decision{}, false, llm.FallthroughKindNoAPIKey, "", nil, nil
+		default:
+			slog.Info("unknown provider, falling through", "provider", cfg.Provider.Name)
+			return llm.Decision{}, false, llm.FallthroughKindNonAnthropic, "", nil, nil
+		}
 	}
 
 	p, err := buildPrompt(cfg, in, ro)
@@ -294,14 +298,15 @@ func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOpti
 		return llm.Decision{}, false, "", "", nil, fmt.Errorf("build prompt: %w", err)
 	}
 
-	slog.Info("anthropic request",
+	slog.Info("llm request",
+		"provider", cfg.Provider.Name,
 		"model", p.Model,
 		"timeout_ms", p.TimeoutMS,
 		"system_prompt", p.System,
 		"user_message", redactedUserMessage(p.User),
 	)
 
-	client := &anthropic.Client{APIKey: apiKey}
+	client := newProviderClient(providerName, apiKey)
 	res, err := client.Decide(ctx, p)
 	if err != nil {
 		return llm.Decision{}, false, "", "", res.Usage, err
@@ -422,14 +427,34 @@ func redactedUserMessage(user string) string {
 	return string(out)
 }
 
-func resolveAPIKey() (string, bool) {
-	if key := strings.TrimSpace(os.Getenv("CCGATE_ANTHROPIC_API_KEY")); key != "" {
+func resolveAPIKey(providerName string) (string, bool) {
+	var primary, fallback string
+	switch providerName {
+	case "openai":
+		primary, fallback = "CCGATE_OPENAI_API_KEY", "OPENAI_API_KEY"
+	case "gemini":
+		primary, fallback = "CCGATE_GEMINI_API_KEY", "GEMINI_API_KEY"
+	default: // anthropic
+		primary, fallback = "CCGATE_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"
+	}
+	if key := strings.TrimSpace(os.Getenv(primary)); key != "" {
 		return key, true
 	}
-	if key := strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")); key != "" {
+	if key := strings.TrimSpace(os.Getenv(fallback)); key != "" {
 		return key, true
 	}
 	return "", false
+}
+
+func newProviderClient(providerName, apiKey string) llm.Provider {
+	switch providerName {
+	case "openai":
+		return &openai.Client{APIKey: apiKey}
+	case "gemini":
+		return &gemini.Client{APIKey: apiKey}
+	default: // anthropic
+		return &anthropic.Client{APIKey: apiKey}
+	}
 }
 
 const maxTruncateLen = 200
