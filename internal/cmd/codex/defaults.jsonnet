@@ -18,6 +18,9 @@
   provider: {
     name: 'anthropic',
     model: 'claude-haiku-4-5',
+    // Alternatives:
+    //   name: 'openai',  model: 'gpt-4o-mini',       (env: OPENAI_API_KEY)
+    //   name: 'gemini',  model: 'gemini-2.0-flash',   (env: GEMINI_API_KEY)
   },
 
   // What to do when the LLM is uncertain (returns "fallthrough"):
