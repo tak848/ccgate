@@ -57,7 +57,7 @@ Only LLM-driven uncertainty is affected. The runtime-mode fallthroughs continue 
 
 - API call truncated or refused (`api_unusable`)
 - No API key set (`no_apikey`)
-- `provider.name != "anthropic"` (`non_anthropic`)
+- `provider.name` is not one of `anthropic` / `openai` / `gemini` (`non_anthropic` — kind name kept for backward compatibility)
 - Claude `permission_mode == "bypassPermissions"` or `"dontAsk"`
 - Claude `tool_name` in `{ExitPlanMode, AskUserQuestion}` (user-interaction tools)
 

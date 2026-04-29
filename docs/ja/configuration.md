@@ -57,7 +57,7 @@ LLM は `allow` / `deny` / `fallthrough` のいずれかを返します。`fallt
 
 - API 応答が truncate / refused された (`api_unusable`)
 - API キー未設定 (`no_apikey`)
-- `provider.name != "anthropic"` (`non_anthropic`)
+- `provider.name` が `anthropic` / `openai` / `gemini` のいずれでもない (`non_anthropic` — kind 名は後方互換のため維持)
 - Claude `permission_mode == "bypassPermissions"` または `"dontAsk"`
 - Claude `tool_name` が `{ExitPlanMode, AskUserQuestion}` (ユーザーインタラクション専用 tool)
 

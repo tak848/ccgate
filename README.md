@@ -129,7 +129,13 @@ If `ccgate` is not on your `PATH` (e.g. when relying on `mise exec` instead of a
 
 ### 3. API key
 
-Set the `CCGATE_ANTHROPIC_API_KEY` or `ANTHROPIC_API_KEY` environment variable.
+Set the API key for your chosen provider. `CCGATE_*_API_KEY` is preferred and overrides the bare variable, so you can keep ccgate's key separate from the AI tool's own key.
+
+| `provider.name` | Preferred                  | Fallback             | Get API key |
+|-----------------|----------------------------|----------------------|-------------|
+| `anthropic`     | `CCGATE_ANTHROPIC_API_KEY` | `ANTHROPIC_API_KEY`  | <https://platform.claude.com/settings/keys> |
+| `openai`        | `CCGATE_OPENAI_API_KEY`    | `OPENAI_API_KEY`     | <https://platform.openai.com/api-keys>      |
+| `gemini`        | `CCGATE_GEMINI_API_KEY`    | `GEMINI_API_KEY`     | <https://aistudio.google.com/app/api-keys>  |
 
 ## Setup — Codex CLI (experimental)
 
@@ -149,7 +155,7 @@ Refer to the [Codex hooks documentation](https://developers.openai.com/codex/hoo
 
 ### 3. API key
 
-Same env vars as Claude Code (`CCGATE_ANTHROPIC_API_KEY` / `ANTHROPIC_API_KEY`).
+Same env vars as Claude Code — see the [provider table](#3-api-key).
 
 ## Configuration
 
@@ -175,8 +181,8 @@ Project-local configs are loaded only when **not tracked by Git**.
 
 | Field                    | Type                              | Default                                                                       | Description                                                                                            |
 |--------------------------|-----------------------------------|-------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------|
-| `provider.name`          | string                            | `"anthropic"`                                                                 | Provider name. Only `"anthropic"` is supported.                                                        |
-| `provider.model`         | string                            | `"claude-haiku-4-5"`                                                          | Model name (e.g. `claude-haiku-4-5`, `claude-sonnet-4-6`, `claude-opus-4-6`)                           |
+| `provider.name`          | string                            | `"anthropic"`                                                                 | Provider name. One of `"anthropic"`, `"openai"`, `"gemini"`.                                            |
+| `provider.model`         | string                            | `"claude-haiku-4-5"`                                                          | Model name. Examples: `claude-haiku-4-5` / `claude-sonnet-4-6` (anthropic), `gpt-5.4-nano-2026-03-17` (openai), `gemini-3-flash-preview` (gemini). |
 | `provider.timeout_ms`    | int                               | `20000`                                                                       | API timeout (ms). `0` = no timeout.                                                                    |
 | `log_path`               | string                            | `$XDG_STATE_HOME/ccgate/<target>/ccgate.log`                                  | Log file path. Supports `~` for home directory.                                                        |
 | `log_disabled`           | bool                              | `false`                                                                       | Disable logging entirely                                                                               |
@@ -193,6 +199,21 @@ Project-local configs are loaded only when **not tracked by Git**.
 | `append_environment`     | string[]                          | `[]`                                                                          | Environment context appended on top of the carried-over list.                                          |
 
 `<target>` is `claude` or `codex` depending on which hook is invoked. When `XDG_STATE_HOME` is unset, ccgate falls back to `~/.local/state/ccgate/<target>/...`.
+
+### Switching to OpenAI / Gemini
+
+Set `provider.name` (and optionally `provider.model`) in any layer:
+
+```jsonnet
+{
+  provider: {
+    name: 'openai',
+    model: 'gpt-5.4-nano-2026-03-17',
+  },
+}
+```
+
+Then export the matching API key (`CCGATE_OPENAI_API_KEY` / `CCGATE_GEMINI_API_KEY` — see the [provider table](#3-api-key)). If the key is missing, ccgate falls through to the upstream tool's permission prompt, so flipping providers cannot break the hook.
 
 ## Default Rules
 

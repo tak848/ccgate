@@ -128,7 +128,13 @@ ccgate claude init > ~/.claude/ccgate.jsonnet
 
 ### 3. API キー
 
-環境変数 `CCGATE_ANTHROPIC_API_KEY` または `ANTHROPIC_API_KEY` を設定してください。
+選択した provider の API キーを設定してください。`CCGATE_*_API_KEY` が優先され bare 変数を上書きするので、AI ツール本体の API キーと ccgate 用キーを分離できます。
+
+| `provider.name` | 優先                       | フォールバック        | API キー発行ページ |
+|-----------------|----------------------------|-----------------------|--------------------|
+| `anthropic`     | `CCGATE_ANTHROPIC_API_KEY` | `ANTHROPIC_API_KEY`   | <https://platform.claude.com/settings/keys> |
+| `openai`        | `CCGATE_OPENAI_API_KEY`    | `OPENAI_API_KEY`      | <https://platform.openai.com/api-keys>      |
+| `gemini`        | `CCGATE_GEMINI_API_KEY`    | `GEMINI_API_KEY`      | <https://aistudio.google.com/app/api-keys>  |
 
 ## セットアップ — Codex CLI (experimental)
 
@@ -148,7 +154,7 @@ defaults は Claude Code と同じ思想 (allow + deny + environment)。Codex ho
 
 ### 3. API キー
 
-Claude Code と同じ環境変数 (`CCGATE_ANTHROPIC_API_KEY` / `ANTHROPIC_API_KEY`) を共有します。
+Claude Code と同じ環境変数を使います — [provider table](#3-api-キー) を参照してください。
 
 ## 設定
 
@@ -173,8 +179,8 @@ Claude Code と同じ環境変数 (`CCGATE_ANTHROPIC_API_KEY` / `ANTHROPIC_API_K
 
 | フィールド               | 型                                | デフォルト                                                                       | 説明                                                                                                       |
 |--------------------------|-----------------------------------|---------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------|
-| `provider.name`          | string                            | `"anthropic"`                                                                   | プロバイダー名。`"anthropic"` のみ対応                                                                     |
-| `provider.model`         | string                            | `"claude-haiku-4-5"`                                                            | モデル名 (例: `claude-haiku-4-5`, `claude-sonnet-4-6`, `claude-opus-4-6`)                                  |
+| `provider.name`          | string                            | `"anthropic"`                                                                   | プロバイダー名。`"anthropic"` / `"openai"` / `"gemini"` のいずれか                                          |
+| `provider.model`         | string                            | `"claude-haiku-4-5"`                                                            | モデル名。例: `claude-haiku-4-5` / `claude-sonnet-4-6` (anthropic)、`gpt-5.4-nano-2026-03-17` (openai)、`gemini-3-flash-preview` (gemini) |
 | `provider.timeout_ms`    | int                               | `20000`                                                                         | API タイムアウト (ms)。`0` = タイムアウトなし                                                              |
 | `log_path`               | string                            | `$XDG_STATE_HOME/ccgate/<target>/ccgate.log`                                    | ログファイルパス。`~` でホームディレクトリ展開                                                             |
 | `log_disabled`           | bool                              | `false`                                                                         | ログ出力を完全に無効化                                                                                     |
@@ -191,6 +197,21 @@ Claude Code と同じ環境変数 (`CCGATE_ANTHROPIC_API_KEY` / `ANTHROPIC_API_K
 | `append_environment`     | string[]                          | `[]`                                                                            | 引き継いだ environment list の末尾に追加                                                                   |
 
 `<target>` は Claude / Codex どちらの hook が呼ばれたかで `claude` / `codex` になります。`XDG_STATE_HOME` が未設定の場合は `~/.local/state/ccgate/<target>/...` が fallback として使われます。
+
+### OpenAI / Gemini に切り替える
+
+任意の layer で `provider.name`（必要に応じて `provider.model` も）を書き換えるだけです:
+
+```jsonnet
+{
+  provider: {
+    name: 'openai',
+    model: 'gpt-5.4-nano-2026-03-17',
+  },
+}
+```
+
+対応する API キー (`CCGATE_OPENAI_API_KEY` / `CCGATE_GEMINI_API_KEY` — [provider table](#3-api-キー)) を export してください。キーが見つからない場合 ccgate は上流ツールの確認画面に fallthrough するため、provider 切替で hook が壊れることはありません。
 
 ## デフォルトルール
 
