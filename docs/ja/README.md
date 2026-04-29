@@ -150,7 +150,45 @@ defaults は Claude Code と同じ思想 (allow + deny + environment)。Codex ho
 
 ### 2. Codex hook として登録
 
-[Codex hooks ドキュメント](https://developers.openai.com/codex/hooks) を参照して `PermissionRequest` hook の `command` に ccgate を指定してください。Codex のバージョンによっては `~/.codex/config.toml` で hooks の feature flag を有効化する必要があります。
+Codex は `~/.codex/hooks.json` と `~/.codex/config.toml` から hook を読み込みます (project が trusted なら `<repo>/.codex/{hooks.json,config.toml}` も overlay)。好きな方で登録してください。
+
+`~/.codex/hooks.json`:
+
+```json
+{
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "ccgate codex",
+            "statusMessage": "ccgate evaluating request"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+`~/.codex/config.toml`:
+
+```toml
+[features]
+codex_hooks = true   # hooks を feature flag で gate している Codex バージョンでは必須
+
+[[hooks.PermissionRequest]]
+matcher = ""
+
+[[hooks.PermissionRequest.hooks]]
+type    = "command"
+command = "ccgate codex"
+statusMessage = "ccgate evaluating request"
+```
+
+lookup 順序、project-local overlay、in-tree dev build 用の `go run` レシピは [docs/codex.md](../codex.md) を参照。upstream の [Codex hooks ドキュメント](https://developers.openai.com/codex/hooks) が schema の正本です。
 
 ### 3. API キー
 

@@ -151,7 +151,45 @@ The defaults follow Claude Code parity (allow + deny + environment guidance). Co
 
 ### 2. Register as a Codex hook
 
-Refer to the [Codex hooks documentation](https://developers.openai.com/codex/hooks) for the canonical setup; ccgate plugs in as a `PermissionRequest` hook command. Make sure your `~/.codex/config.toml` enables the hooks feature flag if your Codex version still gates them behind one.
+Codex reads hooks from `~/.codex/hooks.json` and `~/.codex/config.toml` (with `<repo>/.codex/{hooks.json,config.toml}` overlays once the project is trusted). Pick whichever fits your setup.
+
+`~/.codex/hooks.json`:
+
+```json
+{
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "ccgate codex",
+            "statusMessage": "ccgate evaluating request"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+`~/.codex/config.toml`:
+
+```toml
+[features]
+codex_hooks = true   # required on Codex versions that still gate hooks behind a feature flag
+
+[[hooks.PermissionRequest]]
+matcher = ""
+
+[[hooks.PermissionRequest.hooks]]
+type    = "command"
+command = "ccgate codex"
+statusMessage = "ccgate evaluating request"
+```
+
+See [docs/codex.md](docs/codex.md) for the full lookup order, project-local overlays, and a `go run` recipe for in-tree dev builds. Refer to the upstream [Codex hooks documentation](https://developers.openai.com/codex/hooks) for the authoritative schema.
 
 ### 3. API key
 
