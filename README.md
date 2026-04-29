@@ -178,7 +178,7 @@ Codex reads hooks from `~/.codex/hooks.json` and `~/.codex/config.toml` (with `<
 
 ```toml
 [features]
-codex_hooks = true   # required on Codex versions that still gate hooks behind a feature flag
+codex_hooks = true   # required: Codex hooks are still experimental and gated behind this feature flag
 
 [[hooks.PermissionRequest]]
 matcher = ""

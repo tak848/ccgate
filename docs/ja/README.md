@@ -177,7 +177,7 @@ Codex は `~/.codex/hooks.json` と `~/.codex/config.toml` から hook を読み
 
 ```toml
 [features]
-codex_hooks = true   # hooks を feature flag で gate している Codex バージョンでは必須
+codex_hooks = true   # 必須: Codex hooks は experimental で、この feature flag で gate されている
 
 [[hooks.PermissionRequest]]
 matcher = ""

@@ -49,7 +49,7 @@ Codex 設定全体を 1 ファイルにまとめたい場合:
 
 ```toml
 [features]
-codex_hooks = true   # Codex のバージョンによっては feature flag が必要
+codex_hooks = true   # 必須: Codex hooks は experimental で、この feature flag で gate されている
 
 [[hooks.PermissionRequest]]
 matcher = ""

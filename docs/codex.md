@@ -49,7 +49,7 @@ If you want to keep hooks alongside the rest of your Codex config:
 
 ```toml
 [features]
-codex_hooks = true   # gate is still required on some Codex versions
+codex_hooks = true   # required: Codex hooks are still experimental and gated behind this feature flag
 
 [[hooks.PermissionRequest]]
 matcher = ""
