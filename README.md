@@ -207,13 +207,13 @@ Set `provider.name` (and optionally `provider.model`) in any layer:
 ```jsonnet
 {
   provider: {
-    name: 'gemini',
-    model: 'gemini-3-flash-preview',
+    name: 'openai',
+    model: 'gpt-5.4-nano-2026-03-17',
   },
 }
 ```
 
-Then export the matching API key (`CCGATE_GEMINI_API_KEY` / `CCGATE_OPENAI_API_KEY` — see the [provider table](#3-api-key)). If the key is missing, ccgate falls through to the upstream tool's permission prompt, so flipping providers cannot break the hook.
+Then export the matching API key (`CCGATE_OPENAI_API_KEY` / `CCGATE_GEMINI_API_KEY` — see the [provider table](#3-api-key)). If the key is missing, ccgate falls through to the upstream tool's permission prompt, so flipping providers cannot break the hook.
 
 ## Default Rules
 

@@ -205,13 +205,13 @@ Claude Code と同じ環境変数を使います — [provider table](#3-api-キ
 ```jsonnet
 {
   provider: {
-    name: 'gemini',
-    model: 'gemini-3-flash-preview',
+    name: 'openai',
+    model: 'gpt-5.4-nano-2026-03-17',
   },
 }
 ```
 
-対応する API キー (`CCGATE_GEMINI_API_KEY` / `CCGATE_OPENAI_API_KEY` — [provider table](#3-api-キー)) を export してください。キーが見つからない場合 ccgate は上流ツールの確認画面に fallthrough するため、provider 切替で hook が壊れることはありません。
+対応する API キー (`CCGATE_OPENAI_API_KEY` / `CCGATE_GEMINI_API_KEY` — [provider table](#3-api-キー)) を export してください。キーが見つからない場合 ccgate は上流ツールの確認画面に fallthrough するため、provider 切替で hook が壊れることはありません。
 
 ## デフォルトルール
 
