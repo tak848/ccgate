@@ -259,7 +259,15 @@ Then export the matching API key (`CCGATE_OPENAI_API_KEY` / `CCGATE_GEMINI_API_K
 
 ### Routing through a compatible proxy
 
-ccgate calls the same chat-completions API every Anthropic / OpenAI client uses, so it works against any **OpenAI- or Anthropic-compatible** endpoint — including [LiteLLM proxy](https://docs.litellm.ai/docs/proxy/quick_start), Azure OpenAI, on-prem gateways, and regional endpoints. Pick the protocol the proxy speaks and set `provider.base_url`:
+ccgate calls the same chat-completions API every Anthropic / OpenAI client uses, so it works against any **OpenAI- or Anthropic-compatible** endpoint — including [LiteLLM proxy](https://docs.litellm.ai/docs/proxy/quick_start), Azure OpenAI, on-prem gateways, and regional endpoints. Pick the protocol the proxy speaks and set `provider.base_url`.
+
+`provider.base_url` is passed verbatim to the underlying SDK's `WithBaseURL`, so the path you write follows that SDK's convention — **not** something ccgate normalizes:
+
+| `provider.name` | Underlying SDK | Default base URL                | What you put in `base_url`           |
+|-----------------|----------------|---------------------------------|--------------------------------------|
+| `openai`        | `openai-go`    | `https://api.openai.com/v1/`    | host **+ `/v1`** (SDK appends `chat/completions`) |
+| `anthropic`     | `anthropic-sdk-go` | `https://api.anthropic.com/` | host root only (SDK appends `/v1/messages`) |
+| `gemini`        | `openai-go` against Gemini's OpenAI-compat endpoint | `https://generativelanguage.googleapis.com/v1beta/openai/` | host **+ `/v1beta/openai`** if overriding |
 
 **OpenAI-compatible endpoint** (e.g. LiteLLM proxy's `/v1/chat/completions`):
 

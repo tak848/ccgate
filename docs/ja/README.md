@@ -257,7 +257,15 @@ Claude Code と同じ環境変数を使います — [provider table](#3-api-キ
 
 ### 互換 proxy 経由で叩く
 
-ccgate は Anthropic / OpenAI クライアントが使うのと同じ chat completions API を喋るので、**OpenAI 互換 / Anthropic 互換**の任意の endpoint — [LiteLLM proxy](https://docs.litellm.ai/docs/proxy/quick_start), Azure OpenAI, オンプレ gateway, 地域別 endpoint など — に対して動きます。proxy が話すプロトコルに合わせて `provider.base_url` を設定:
+ccgate は Anthropic / OpenAI クライアントが使うのと同じ chat completions API を喋るので、**OpenAI 互換 / Anthropic 互換**の任意の endpoint — [LiteLLM proxy](https://docs.litellm.ai/docs/proxy/quick_start), Azure OpenAI, オンプレ gateway, 地域別 endpoint など — に対して動きます。proxy が話すプロトコルに合わせて `provider.base_url` を設定します。
+
+`provider.base_url` は underlying SDK の `WithBaseURL` にそのまま渡されるので、書く path は **その SDK の慣習**に従います (ccgate 側で正規化しません):
+
+| `provider.name` | underlying SDK | default base URL                  | `base_url` に書く形              |
+|-----------------|----------------|-----------------------------------|----------------------------------|
+| `openai`        | `openai-go`    | `https://api.openai.com/v1/`      | host **+ `/v1`** (SDK が `chat/completions` を追加) |
+| `anthropic`     | `anthropic-sdk-go` | `https://api.anthropic.com/` | host root のみ (SDK が `/v1/messages` を追加) |
+| `gemini`        | Gemini の OpenAI 互換 endpoint 経由で `openai-go` | `https://generativelanguage.googleapis.com/v1beta/openai/` | override する場合は host **+ `/v1beta/openai`** |
 
 **OpenAI 互換 endpoint** (LiteLLM proxy の `/v1/chat/completions` 等):
 
