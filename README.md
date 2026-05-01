@@ -5,6 +5,8 @@
 
 A **PermissionRequest** hook for AI coding tools that delegates tool-execution permission decisions to an LLM (Claude Haiku) based on rules defined in a configuration file.
 
+![ccgate in action: a safe `echo` is allowed while `curl ... | bash` is denied with a deny_message](docs/images/gate.png)
+
 Supported targets:
 
 - **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — stable

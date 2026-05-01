@@ -5,6 +5,8 @@
 
 AI コーディングツール向けの **PermissionRequest** フックです。ツール実行の許可判定を LLM (Claude Haiku) に委任し、設定ファイルに記述したルールに基づいて allow / deny / fallthrough を返します。
 
+![ccgate の動作例: 安全な `echo` は allow、`curl ... | bash` は deny_message 付きで deny](../images/gate.png)
+
 対応ターゲット:
 
 - **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — 安定
