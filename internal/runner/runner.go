@@ -293,7 +293,12 @@ func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOpti
 			return llm.Decision{}, false, llm.FallthroughKindUnknownProvider, "", nil, nil
 		}
 	}
-	if providerName == "litellm" && cfg.Provider.BaseURL == "" {
+	// Trim whitespace so a templating mistake like `base_url: '   '`
+	// is treated as missing rather than passed through to the SDK
+	// (which would surface as a hard config error and exit 1 instead
+	// of the intended graceful fallthrough).
+	baseURL := strings.TrimSpace(cfg.Provider.BaseURL)
+	if providerName == "litellm" && baseURL == "" {
 		slog.Warn("litellm requires provider.base_url; falling through", "provider", cfg.Provider.Name)
 		return llm.Decision{}, false, llm.FallthroughKindNoBaseURL, "", nil, nil
 	}
@@ -311,7 +316,7 @@ func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOpti
 		"user_message", redactedUserMessage(p.User),
 	)
 
-	client := newProviderClient(providerName, apiKey, cfg.Provider.BaseURL)
+	client := newProviderClient(providerName, apiKey, baseURL)
 	res, err := client.Decide(ctx, p)
 	if err != nil {
 		return llm.Decision{}, false, "", "", res.Usage, err
