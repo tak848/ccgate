@@ -257,6 +257,8 @@ Set `provider.name` (and optionally `provider.model`) in any layer:
 
 Then export the matching API key (`CCGATE_OPENAI_API_KEY` / `CCGATE_GEMINI_API_KEY` — see the [provider table](#3-api-key)). If the key is missing, ccgate falls through to the upstream tool's permission prompt, so flipping providers cannot break the hook.
 
+> **Avoid reasoning models** (`gpt-5`, `gpt-5-mini`, `gpt-5-nano`, `gpt-5-chat`, `o1*`, `o3*`, `o4-mini`): they reject `temperature=0` (every request fails) and add seconds of chain-of-thought that ccgate's classification doesn't need. Use `gpt-4.1-nano`, `gpt-4o-mini`, or `gpt-5.4-nano-2026-03-17`.
+
 ### Routing through a compatible proxy
 
 ccgate calls the same chat-completions API every Anthropic / OpenAI client uses, so it works against any **OpenAI- or Anthropic-compatible** endpoint — including [LiteLLM proxy](https://docs.litellm.ai/docs/proxy/quick_start), Azure OpenAI, on-prem gateways, and regional endpoints. Pick the protocol the proxy speaks and set `provider.base_url`.

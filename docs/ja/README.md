@@ -255,6 +255,8 @@ Claude Code と同じ環境変数を使います — [provider table](#3-api-キ
 
 対応する API キー (`CCGATE_OPENAI_API_KEY` / `CCGATE_GEMINI_API_KEY` — [provider table](#3-api-キー)) を export してください。キーが見つからない場合 ccgate は上流ツールの確認画面に fallthrough するため、provider 切替で hook が壊れることはありません。
 
+> **reasoning model は避ける** (`gpt-5`, `gpt-5-mini`, `gpt-5-nano`, `gpt-5-chat`, `o1*`, `o3*`, `o4-mini`): `temperature=0` を拒否するため全リクエストが失敗し、分類タスクには不要な chain-of-thought に数秒かかります。`gpt-4.1-nano` / `gpt-4o-mini` / `gpt-5.4-nano-2026-03-17` を推奨。
+
 ### 互換 proxy 経由で叩く
 
 ccgate は Anthropic / OpenAI クライアントが使うのと同じ chat completions API を喋るので、**OpenAI 互換 / Anthropic 互換**の任意の endpoint — [LiteLLM proxy](https://docs.litellm.ai/docs/proxy/quick_start), Azure OpenAI, オンプレ gateway, 地域別 endpoint など — に対して動きます。proxy が話すプロトコルに合わせて `provider.base_url` を設定します。
