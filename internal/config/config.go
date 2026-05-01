@@ -364,17 +364,18 @@ func mergeConfigJSON(data string, cfg *Config) error {
 		return fmt.Errorf("unmarshal config: %w", err)
 	}
 
-	if override.Provider.Name != "" {
-		cfg.Provider.Name = override.Provider.Name
+	// `provider` is a tightly-coupled block: name / model / base_url /
+	// timeout_ms describe one provider together, and per-field merge
+	// across layers produces incoherent combinations (e.g. switching
+	// name from "litellm" to "anthropic" while leaving the litellm
+	// base_url stuck from a lower layer). When a layer specifies
+	// `provider`, replace the block atomically.
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(data), &keys); err != nil {
+		return fmt.Errorf("unmarshal config keys: %w", err)
 	}
-	if override.Provider.Model != "" {
-		cfg.Provider.Model = override.Provider.Model
-	}
-	if override.Provider.BaseURL != "" {
-		cfg.Provider.BaseURL = override.Provider.BaseURL
-	}
-	if override.Provider.TimeoutMS != nil {
-		cfg.Provider.TimeoutMS = override.Provider.TimeoutMS
+	if _, ok := keys["provider"]; ok {
+		cfg.Provider = override.Provider
 	}
 	if override.LogPath != "" {
 		cfg.LogPath = override.LogPath

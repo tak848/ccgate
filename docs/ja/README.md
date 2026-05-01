@@ -210,9 +210,10 @@ Claude Code と同じ環境変数を使います — [provider table](#3-api-キ
 3 つの layer はすべて同じ merge ルールで合成されます:
 
 - **list**: `allow` / `deny` / `environment` は値を設定した layer が前の layer から引き継いだ list を **置き換える** (`[]` を書けば空 list に置き換え)。`append_*` 系 (`append_allow` / `append_deny` / `append_environment`) は前の layer の累積 list の **末尾に追加** する。
-- **スカラー**: `provider.*` / `log_*` / `metrics_*` / `fallthrough_strategy` はその layer がフィールドを設定していれば per-field で上書き、設定していなければ前の値を保持。
+- **スカラー**: `log_*` / `metrics_*` / `fallthrough_strategy` はその layer がフィールドを設定していれば per-field で上書き、設定していなければ前の値を保持。
+- **`provider` block**: `provider` を書いた layer は block 全体 (`name` + `model` + `base_url` + `timeout_ms`) を **丸ごと置換**。書かなかった layer は前の block をそのまま継承。`name` を切り替えると `model` の名前空間も `base_url` も意味が変わる密結合なので、per-field merge にすると下位 layer の値が残って壊れるため block 単位で扱う。
 
-`~/.<target>/ccgate.jsonnet` で `provider.model` だけ書き換えれば embedded の `allow` / `deny` はそのまま残ります。`allow: [...]` を書けば embedded の allow を完全に差し替え (これは v0.6 以前のグローバル設定がすでに行っていた挙動なので、そのまま冪等)。プロジェクトローカル設定は典型的に `append_deny: [...]` / `append_environment: [...]` で追加制限を載せます。
+`~/.<target>/ccgate.jsonnet` で model だけ変えたい場合でも `provider: {name: 'anthropic', model: 'claude-sonnet-4-6'}` のように block 全体を書き直す必要があります (embedded の `allow` / `deny` はそのまま残ります)。`allow: [...]` を書けば embedded の allow を完全に差し替え (これは v0.6 以前のグローバル設定がすでに行っていた挙動なので、そのまま冪等)。プロジェクトローカル設定は典型的に `append_deny: [...]` / `append_environment: [...]` で追加制限を載せます。
 プロジェクトローカル設定は **Git に追跡されていないファイルのみ** 読み込まれます。
 
 

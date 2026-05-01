@@ -211,9 +211,10 @@ Same env vars as Claude Code — see the [provider table](#3-api-key).
 All three layers compose with the same rules:
 
 - **Lists** — `allow` / `deny` / `environment` **replace** the value carried over from earlier layers when the layer sets them (even to `[]`). The `append_*` siblings (`append_allow`, `append_deny`, `append_environment`) **add** entries on top of whatever the earlier layers produced.
-- **Scalars** — `provider.*`, `log_*`, `metrics_*`, `fallthrough_strategy` are overwritten per-field when the layer sets them, otherwise the earlier value survives.
+- **Scalars** — `log_*`, `metrics_*`, `fallthrough_strategy` are overwritten per-field when the layer sets them, otherwise the earlier value survives.
+- **`provider` block** — a layer that writes `provider` **replaces the entire block** (`name` + `model` + `base_url` + `timeout_ms`). Layers that omit `provider` inherit the earlier block unchanged. The block is replaced as a unit because the fields are tightly coupled (different `name` typically means a different `model` namespace and `base_url`); per-field merge would let stale settings from a lower layer leak through.
 
-So `~/.<target>/ccgate.jsonnet` that only sets `provider.model` keeps every embedded `allow` / `deny` rule. A `~/.<target>/ccgate.jsonnet` that writes `allow: [...]` swaps the embedded allow list for its own (this is what most pre-v0.6 global configs already did, so it stays idempotent). Project-local configs typically use `append_deny: [...]` / `append_environment: [...]` to add restrictions on top of the inherited base.
+So `~/.<target>/ccgate.jsonnet` that wants to bump just the model still has to restate the whole `provider` block (e.g. `provider: {name: 'anthropic', model: 'claude-sonnet-4-6'}`). A `~/.<target>/ccgate.jsonnet` that writes `allow: [...]` swaps the embedded allow list for its own (this is what most pre-v0.6 global configs already did, so it stays idempotent). Project-local configs typically use `append_deny: [...]` / `append_environment: [...]` to add restrictions on top of the inherited base.
 
 Project-local configs are loaded only when **not tracked by Git**.
 

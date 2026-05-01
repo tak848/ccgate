@@ -166,19 +166,32 @@ func TestMergeConfigFileNotFound(t *testing.T) {
 	}
 }
 
-func TestMergeConfigFileOverridesProvider(t *testing.T) {
+// TestMergeConfigFileReplacesProviderBlock verifies that `provider`
+// is merged atomically: when an override layer writes the block, the
+// whole struct is replaced so unrelated fields (e.g. base_url left
+// over from a lower layer's litellm config) cannot leak into a new
+// provider's settings. timeout_ms uses *int so a missing override
+// falls back to the package default via GetTimeoutMS().
+func TestMergeConfigFileReplacesProviderBlock(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.jsonnet")
-	content := `{ provider: { model: "custom-model", base_url: "https://proxy.example/v1", timeout_ms: 30000 } }`
+	content := `{ provider: { name: "openai", model: "custom-model", base_url: "https://proxy.example/v1", timeout_ms: 30000 } }`
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	cfg := Default()
+	// Pre-seed a base_url that should NOT leak through after the
+	// override replaces the block.
+	cfg.Provider.BaseURL = "https://stale.example/v1"
+
 	if err := mergeConfigFile(path, &cfg); err != nil {
 		t.Fatal(err)
+	}
+	if cfg.Provider.Name != "openai" {
+		t.Fatalf("name = %q, want %q", cfg.Provider.Name, "openai")
 	}
 	if cfg.Provider.Model != "custom-model" {
 		t.Fatalf("model = %q, want %q", cfg.Provider.Model, "custom-model")
@@ -189,9 +202,68 @@ func TestMergeConfigFileOverridesProvider(t *testing.T) {
 	if cfg.Provider.GetTimeoutMS() != 30000 {
 		t.Fatalf("timeout_ms = %d, want 30000", cfg.Provider.GetTimeoutMS())
 	}
-	// Name should remain default
-	if cfg.Provider.Name != DefaultProvider {
-		t.Fatalf("name = %q, want %q", cfg.Provider.Name, DefaultProvider)
+}
+
+// TestMergeConfigFileProviderBlockClearsBaseURL guards the specific
+// regression that motivated the atomic-block semantics: switching
+// provider in an upper layer must not leave the previous provider's
+// base_url behind.
+func TestMergeConfigFileProviderBlockClearsBaseURL(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.jsonnet")
+	// Upper layer switches to anthropic without specifying base_url.
+	content := `{ provider: { name: "anthropic", model: "claude-haiku-4-5" } }`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Default()
+	// Lower layer had been configured for litellm with a base_url.
+	cfg.Provider = ProviderConfig{
+		Name:    "litellm",
+		Model:   "anthropic/claude-haiku-4-5",
+		BaseURL: "http://localhost:4000/v1",
+	}
+
+	if err := mergeConfigFile(path, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Provider.Name != "anthropic" {
+		t.Fatalf("name = %q, want %q", cfg.Provider.Name, "anthropic")
+	}
+	if cfg.Provider.BaseURL != "" {
+		t.Fatalf("base_url = %q, want empty (atomic replace must clear stale URL)", cfg.Provider.BaseURL)
+	}
+}
+
+// TestMergeConfigFileOmittedProviderKeepsExisting verifies that a
+// layer that does not write `provider` at all leaves the carried-over
+// block intact (only an explicit `provider: {...}` triggers the
+// atomic replace).
+func TestMergeConfigFileOmittedProviderKeepsExisting(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.jsonnet")
+	content := `{ allow: ["something"] }`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Default()
+	cfg.Provider = ProviderConfig{
+		Name:    "litellm",
+		Model:   "anthropic/claude-haiku-4-5",
+		BaseURL: "http://localhost:4000/v1",
+	}
+
+	if err := mergeConfigFile(path, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Provider.Name != "litellm" || cfg.Provider.BaseURL != "http://localhost:4000/v1" {
+		t.Fatalf("provider was clobbered when override omitted the key: %+v", cfg.Provider)
 	}
 }
 
@@ -301,7 +373,12 @@ func TestLoadLayerSemantics(t *testing.T) {
 		want   want
 	}{
 		"global omits lists -- embedded survives": {
-			global: `{ provider: { model: 'claude-sonnet-4-6' } }`,
+			// `provider` is merged atomically (not per-field), so an
+			// override that wants to bump just the model must restate
+			// the whole block; otherwise embedded name/timeout are
+			// also replaced. This case verifies that embedded list
+			// fields survive when the global only writes `provider`.
+			global: `{ provider: { name: 'anthropic', model: 'claude-sonnet-4-6' } }`,
 			want: want{
 				allow: []string{"default-allow"},
 				deny:  []string{"default-deny"},
