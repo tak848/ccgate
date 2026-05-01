@@ -64,7 +64,7 @@ func (c *Client) Decide(ctx context.Context, p llm.Prompt) (llm.Result, error) {
 		return llm.Result{}, fmt.Errorf("generate output schema: %w", err)
 	}
 
-	message, err := client.Chat.Completions.New(ctx, openaigo.ChatCompletionNewParams{
+	params := openaigo.ChatCompletionNewParams{
 		Model: openaigo.ChatModel(p.Model),
 		Messages: []openaigo.ChatCompletionMessageParamUnion{
 			openaigo.SystemMessage(p.System),
@@ -81,7 +81,16 @@ func (c *Client) Decide(ctx context.Context, p llm.Prompt) (llm.Result, error) {
 		},
 		MaxCompletionTokens: param.NewOpt(int64(maxTokens)),
 		Temperature:         param.NewOpt(float64(0)),
-	})
+	}
+
+	message, err := client.Chat.Completions.New(ctx, params)
+	if isTemperatureUnsupported(err) {
+		// Reasoning-only models (gpt-5, gpt-5-mini, gpt-5-nano, gpt-5-chat,
+		// o-series, etc.) reject temperature != 1. Retry once without it.
+		slog.Info("openai rejected temperature; retrying without it", "model", p.Model)
+		params.Temperature = param.Opt[float64]{}
+		message, err = client.Chat.Completions.New(ctx, params)
+	}
 	if err != nil {
 		return llm.Result{}, fmt.Errorf("openai API: %w", err)
 	}
@@ -119,6 +128,17 @@ func (c *Client) Decide(ctx context.Context, p llm.Prompt) (llm.Result, error) {
 	}
 
 	return llm.Result{Output: output, Usage: usage}, nil
+}
+
+// isTemperatureUnsupported reports whether err is the OpenAI 400 returned by
+// reasoning-only models when a non-default temperature is supplied.
+// The error response is shaped: {code: "unsupported_value", param: "temperature", ...}.
+func isTemperatureUnsupported(err error) bool {
+	var apiErr *openaigo.Error
+	return errors.As(err, &apiErr) &&
+		apiErr.StatusCode == 400 &&
+		apiErr.Code == "unsupported_value" &&
+		apiErr.Param == "temperature"
 }
 
 func outputSchema() (map[string]any, error) {
