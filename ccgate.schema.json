@@ -16,6 +16,10 @@
         "model": {
           "type": "string"
         },
+        "base_url": {
+          "type": "string",
+          "description": "Override the provider's API base URL. Required for `litellm` (point at your proxy, e.g. http://localhost:4000/v1). Optional for `anthropic` / `openai` / `gemini` and useful for Azure-compatible / regional / on-prem endpoints."
+        },
         "timeout_ms": {
           "type": "integer",
           "minimum": 0,

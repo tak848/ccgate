@@ -135,6 +135,9 @@ ccgate claude init > ~/.claude/ccgate.jsonnet
 | `anthropic`     | `CCGATE_ANTHROPIC_API_KEY` | `ANTHROPIC_API_KEY`   | <https://platform.claude.com/settings/keys> |
 | `openai`        | `CCGATE_OPENAI_API_KEY`    | `OPENAI_API_KEY`      | <https://platform.openai.com/api-keys>      |
 | `gemini`        | `CCGATE_GEMINI_API_KEY`    | `GEMINI_API_KEY`      | <https://aistudio.google.com/app/api-keys>  |
+| `litellm`       | `CCGATE_LITELLM_API_KEY`   | `LITELLM_API_KEY`     | LiteLLM proxy の virtual key — <https://docs.litellm.ai/docs/proxy/quick_start> |
+
+`litellm` を使う場合は追加で `provider.base_url` を proxy のエンドポイント (例: `http://localhost:4000/v1`) に向ける必要があります。OpenAI Chat Completions 互換 API を喋るので、LiteLLM がサポートする任意のバックエンド (Claude, GPT, Bedrock, Ollama, …) を経由できます。
 
 ## セットアップ — Codex CLI (experimental)
 
@@ -217,8 +220,9 @@ Claude Code と同じ環境変数を使います — [provider table](#3-api-キ
 
 | フィールド               | 型                                | デフォルト                                                                       | 説明                                                                                                       |
 |--------------------------|-----------------------------------|---------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------|
-| `provider.name`          | string                            | `"anthropic"`                                                                   | プロバイダー名。`"anthropic"` / `"openai"` / `"gemini"` のいずれか                                          |
-| `provider.model`         | string                            | `"claude-haiku-4-5"`                                                            | モデル名。例: `claude-haiku-4-5` / `claude-sonnet-4-6` (anthropic)、`gpt-5.4-nano-2026-03-17` (openai)、`gemini-3-flash-preview` (gemini) |
+| `provider.name`          | string                            | `"anthropic"`                                                                   | プロバイダー名。`"anthropic"` / `"openai"` / `"gemini"` / `"litellm"` のいずれか                            |
+| `provider.model`         | string                            | `"claude-haiku-4-5"`                                                            | モデル名。例: `claude-haiku-4-5` / `claude-sonnet-4-6` (anthropic)、`gpt-5.4-nano-2026-03-17` (openai)、`gemini-3-flash-preview` (gemini)、`anthropic/claude-haiku-4-5` (litellm — proxy が公開している任意の名前) |
+| `provider.base_url`      | string                            | `""`                                                                            | API base URL の上書き。**`litellm` では必須** (proxy のエンドポイントを指定)。他 provider では省略可で、Azure 互換 / 地域別 / オンプレ endpoint で活用 |
 | `provider.timeout_ms`    | int                               | `20000`                                                                         | API タイムアウト (ms)。`0` = タイムアウトなし                                                              |
 | `log_path`               | string                            | `$XDG_STATE_HOME/ccgate/<target>/ccgate.log`                                    | ログファイルパス。`~` でホームディレクトリ展開                                                             |
 | `log_disabled`           | bool                              | `false`                                                                         | ログ出力を完全に無効化                                                                                     |
@@ -236,7 +240,7 @@ Claude Code と同じ環境変数を使います — [provider table](#3-api-キ
 
 `<target>` は Claude / Codex どちらの hook が呼ばれたかで `claude` / `codex` になります。`XDG_STATE_HOME` が未設定の場合は `~/.local/state/ccgate/<target>/...` が fallback として使われます。
 
-### OpenAI / Gemini に切り替える
+### OpenAI / Gemini / LiteLLM に切り替える
 
 任意の layer で `provider.name`（必要に応じて `provider.model` も）を書き換えるだけです:
 
@@ -250,6 +254,20 @@ Claude Code と同じ環境変数を使います — [provider table](#3-api-キ
 ```
 
 対応する API キー (`CCGATE_OPENAI_API_KEY` / `CCGATE_GEMINI_API_KEY` — [provider table](#3-api-キー)) を export してください。キーが見つからない場合 ccgate は上流ツールの確認画面に fallthrough するため、provider 切替で hook が壊れることはありません。
+
+`litellm` の場合は加えて `provider.base_url` を proxy に向けます:
+
+```jsonnet
+{
+  provider: {
+    name: 'litellm',
+    model: 'anthropic/claude-haiku-4-5',
+    base_url: 'http://localhost:4000/v1',
+  },
+}
+```
+
+`CCGATE_LITELLM_API_KEY`（または `LITELLM_API_KEY`）に proxy の virtual key を export してください。`base_url` が未指定の場合 ccgate はエラーにせず metrics に `ft_kind: "no_base_url"` を残して fallthrough します。
 
 ## デフォルトルール
 

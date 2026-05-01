@@ -9,8 +9,11 @@
     name: 'anthropic',
     model: 'claude-haiku-4-5',
     // Alternatives:
-    //   name: 'openai',  model: 'gpt-4o-mini',       (env: OPENAI_API_KEY)
-    //   name: 'gemini',  model: 'gemini-2.0-flash',   (env: GEMINI_API_KEY)
+    //   name: 'openai',   model: 'gpt-4o-mini',                (env: OPENAI_API_KEY)
+    //   name: 'gemini',   model: 'gemini-2.0-flash',           (env: GEMINI_API_KEY)
+    //   name: 'litellm',  model: 'anthropic/claude-haiku-4-5', (env: LITELLM_API_KEY)
+    //     base_url: 'http://localhost:4000/v1',  (required for litellm; point at your proxy)
+    // base_url: '...' is also accepted on anthropic / openai / gemini (e.g. Azure, regional).
     // timeout_ms defaults to 20000 (from Go constant DefaultTimeoutMS).
     // Uncomment to override: timeout_ms: 40000,
   },

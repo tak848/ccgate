@@ -23,6 +23,7 @@ const (
 	FallthroughKindDontAsk         = "dontask"
 	FallthroughKindUnknownProvider = "unknown_provider"
 	FallthroughKindNoAPIKey        = "no_apikey"
+	FallthroughKindNoBaseURL       = "no_base_url"
 	FallthroughKindLLM             = "llm"
 	FallthroughKindAPIUnusable     = "api_unusable"
 )

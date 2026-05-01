@@ -73,6 +73,7 @@ func (c Config) GetFallthroughStrategy() string {
 type ProviderConfig struct {
 	Name      string `json:"name"`
 	Model     string `json:"model"`
+	BaseURL   string `json:"base_url,omitempty"`
 	TimeoutMS *int   `json:"timeout_ms,omitempty"`
 }
 
@@ -368,6 +369,9 @@ func mergeConfigJSON(data string, cfg *Config) error {
 	}
 	if override.Provider.Model != "" {
 		cfg.Provider.Model = override.Provider.Model
+	}
+	if override.Provider.BaseURL != "" {
+		cfg.Provider.BaseURL = override.Provider.BaseURL
 	}
 	if override.Provider.TimeoutMS != nil {
 		cfg.Provider.TimeoutMS = override.Provider.TimeoutMS

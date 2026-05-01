@@ -171,7 +171,7 @@ func TestMergeConfigFileOverridesProvider(t *testing.T) {
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.jsonnet")
-	content := `{ provider: { model: "custom-model", timeout_ms: 30000 } }`
+	content := `{ provider: { model: "custom-model", base_url: "https://proxy.example/v1", timeout_ms: 30000 } }`
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -182,6 +182,9 @@ func TestMergeConfigFileOverridesProvider(t *testing.T) {
 	}
 	if cfg.Provider.Model != "custom-model" {
 		t.Fatalf("model = %q, want %q", cfg.Provider.Model, "custom-model")
+	}
+	if cfg.Provider.BaseURL != "https://proxy.example/v1" {
+		t.Fatalf("base_url = %q, want %q", cfg.Provider.BaseURL, "https://proxy.example/v1")
 	}
 	if cfg.Provider.GetTimeoutMS() != 30000 {
 		t.Fatalf("timeout_ms = %d, want 30000", cfg.Provider.GetTimeoutMS())

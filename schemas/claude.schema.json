@@ -10,6 +10,9 @@
         "model": {
           "type": "string"
         },
+        "base_url": {
+          "type": "string"
+        },
         "timeout_ms": {
           "type": "integer"
         }

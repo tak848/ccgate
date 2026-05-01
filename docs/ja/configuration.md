@@ -57,7 +57,8 @@ LLM は `allow` / `deny` / `fallthrough` のいずれかを返します。`fallt
 
 - API 応答が truncate / refused された (`api_unusable`)
 - API キー未設定 (`no_apikey`)
-- `provider.name` が `anthropic` / `openai` / `gemini` のいずれでもない (`unknown_provider`)
+- `provider.name` が `litellm` で `provider.base_url` が空 (`no_base_url`)
+- `provider.name` が `anthropic` / `openai` / `gemini` / `litellm` のいずれでもない (`unknown_provider`)
 - Claude `permission_mode == "bypassPermissions"` または `"dontAsk"`
 - Claude `tool_name` が `{ExitPlanMode, AskUserQuestion}` (ユーザーインタラクション専用 tool)
 
@@ -120,7 +121,7 @@ ccgate codex  metrics --days 7         # codex 側も同 shape
 }
 ```
 
-`ft_kind` は LLM (またはランタイム) が fallthrough を返したときに埋まり、どの fallback path が発火したかを示します (`llm`, `api_unusable`, `no_apikey`, `unknown_provider`, `bypass`, `dontask`, `user_interaction`)。`forced=true` は `fallthrough_strategy` が LLM `fallthrough` を `decision` に promote したことを意味します。
+`ft_kind` は LLM (またはランタイム) が fallthrough を返したときに埋まり、どの fallback path が発火したかを示します (`llm`, `api_unusable`, `no_apikey`, `no_base_url`, `unknown_provider`, `bypass`, `dontask`, `user_interaction`)。`forced=true` は `fallthrough_strategy` が LLM `fallthrough` を `decision` に promote したことを意味します。
 
 ### ドリルダウン節
 

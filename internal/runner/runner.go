@@ -32,6 +32,7 @@ import (
 	"github.com/tak848/ccgate/internal/llm"
 	"github.com/tak848/ccgate/internal/llm/anthropic"
 	"github.com/tak848/ccgate/internal/llm/gemini"
+	"github.com/tak848/ccgate/internal/llm/litellm"
 	"github.com/tak848/ccgate/internal/llm/openai"
 	"github.com/tak848/ccgate/internal/metrics"
 	"github.com/tak848/ccgate/internal/prompt"
@@ -284,13 +285,17 @@ func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOpti
 	apiKey, ok := resolveAPIKey(providerName)
 	if !ok {
 		switch providerName {
-		case "anthropic", "openai", "gemini":
+		case "anthropic", "openai", "gemini", "litellm":
 			slog.Warn("no API key found", "provider", cfg.Provider.Name)
 			return llm.Decision{}, false, llm.FallthroughKindNoAPIKey, "", nil, nil
 		default:
 			slog.Info("unknown provider, falling through", "provider", cfg.Provider.Name)
 			return llm.Decision{}, false, llm.FallthroughKindUnknownProvider, "", nil, nil
 		}
+	}
+	if providerName == "litellm" && cfg.Provider.BaseURL == "" {
+		slog.Warn("litellm requires provider.base_url; falling through", "provider", cfg.Provider.Name)
+		return llm.Decision{}, false, llm.FallthroughKindNoBaseURL, "", nil, nil
 	}
 
 	p, err := buildPrompt(cfg, in, ro)
@@ -306,7 +311,7 @@ func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOpti
 		"user_message", redactedUserMessage(p.User),
 	)
 
-	client := newProviderClient(providerName, apiKey)
+	client := newProviderClient(providerName, apiKey, cfg.Provider.BaseURL)
 	res, err := client.Decide(ctx, p)
 	if err != nil {
 		return llm.Decision{}, false, "", "", res.Usage, err
@@ -434,6 +439,8 @@ func resolveAPIKey(providerName string) (string, bool) {
 		primary, fallback = "CCGATE_OPENAI_API_KEY", "OPENAI_API_KEY"
 	case "gemini":
 		primary, fallback = "CCGATE_GEMINI_API_KEY", "GEMINI_API_KEY"
+	case "litellm":
+		primary, fallback = "CCGATE_LITELLM_API_KEY", "LITELLM_API_KEY"
 	default: // anthropic
 		primary, fallback = "CCGATE_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"
 	}
@@ -446,14 +453,16 @@ func resolveAPIKey(providerName string) (string, bool) {
 	return "", false
 }
 
-func newProviderClient(providerName, apiKey string) llm.Provider {
+func newProviderClient(providerName, apiKey, baseURL string) llm.Provider {
 	switch providerName {
 	case "openai":
-		return &openai.Client{APIKey: apiKey}
+		return &openai.Client{APIKey: apiKey, BaseURL: baseURL}
 	case "gemini":
-		return &gemini.Client{APIKey: apiKey}
+		return &gemini.Client{APIKey: apiKey, BaseURL: baseURL}
+	case "litellm":
+		return &litellm.Client{APIKey: apiKey, BaseURL: baseURL}
 	default: // anthropic
-		return &anthropic.Client{APIKey: apiKey}
+		return &anthropic.Client{APIKey: apiKey, BaseURL: baseURL}
 	}
 }
 
