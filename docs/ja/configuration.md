@@ -26,7 +26,7 @@ ccgate は target ごとに 3 layer を順に評価します。すべての laye
 | list: `allow` / `deny` / `environment` | 値を設定した layer が前の layer から引き継いだ list を **置き換える** (`[]` でも置換)。設定していない layer は前の値を保持 | embedded `allow: ["A","B"]` + global `allow: ["X"]` → 最終 `allow: ["X"]` |
 | list: `append_allow` / `append_deny` / `append_environment` | 値を設定した layer が前の layer の累積 list の **末尾に追加** | embedded `deny: ["A"]` + project `append_deny: ["P"]` → 最終 `deny: ["A","P"]` |
 | スカラー: `log_*` / `metrics_*` / `fallthrough_strategy` | 各 layer が値を設定していれば per-field で **overwrite**、設定していなければ前の値を保持 | embedded `log_max_size: 5MB` + global `log_max_size: 10MB` → 最終 `log_max_size: 10MB` |
-| ブロック: `provider` (`name` / `model` / `base_url` / `timeout_ms`) | `provider` を書いた layer は **block 全体を置換**、書かなかった layer はそのまま継承。per-field merge にすると、下位 layer の `litellm` 用 `base_url` が `name` を切り替えただけの上位 layer に残る等の不整合が起きるため | embedded `provider: {name: anthropic, model: haiku}` + global `provider: {name: openai, model: gpt-5.4-nano-2026-03-17}` → 最終 `provider: {name: openai, model: gpt-5.4-nano-2026-03-17}`。model だけ変えたい場合は `provider: {name: anthropic, model: claude-sonnet-4-6}` のように block 全体を書き直す |
+| ブロック: `provider` (`name` / `model` / `base_url` / `timeout_ms`) | `provider` を書いた layer は **block 全体を置換**、書かなかった layer はそのまま継承。per-field merge にすると、下位 layer の proxy 用 `base_url` が `name` を切り替えただけの上位 layer に残る等の不整合が起きるため | embedded `provider: {name: anthropic, model: haiku}` + global `provider: {name: openai, model: gpt-5.4-nano-2026-03-17}` → 最終 `provider: {name: openai, model: gpt-5.4-nano-2026-03-17}`。model だけ変えたい場合は `provider: {name: anthropic, model: claude-sonnet-4-6}` のように block 全体を書き直す |
 
 `allow` と `append_allow` (他 list も同じ) は同じ layer に共存可能 — 先に置換、その結果に対して append が積まれる。embedded の list を厳選版に **差し替えつつ** プロジェクト固有のルールを **追加** したいときに使います: `{ allow: ['only this base'], append_allow: ['plus this project rule'] }`。
 
@@ -58,8 +58,7 @@ LLM は `allow` / `deny` / `fallthrough` のいずれかを返します。`fallt
 
 - API 応答が truncate / refused された (`api_unusable`)
 - API キー未設定 (`no_apikey`)
-- `provider.name` が `litellm` で `provider.base_url` が空 (`no_base_url`)
-- `provider.name` が `anthropic` / `openai` / `gemini` / `litellm` のいずれでもない (`unknown_provider`)
+- `provider.name` が `anthropic` / `openai` / `gemini` のいずれでもない (`unknown_provider`)
 - Claude `permission_mode == "bypassPermissions"` または `"dontAsk"`
 - Claude `tool_name` が `{ExitPlanMode, AskUserQuestion}` (ユーザーインタラクション専用 tool)
 
@@ -122,7 +121,7 @@ ccgate codex  metrics --days 7         # codex 側も同 shape
 }
 ```
 
-`ft_kind` は LLM (またはランタイム) が fallthrough を返したときに埋まり、どの fallback path が発火したかを示します (`llm`, `api_unusable`, `no_apikey`, `no_base_url`, `unknown_provider`, `bypass`, `dontask`, `user_interaction`)。`forced=true` は `fallthrough_strategy` が LLM `fallthrough` を `decision` に promote したことを意味します。
+`ft_kind` は LLM (またはランタイム) が fallthrough を返したときに埋まり、どの fallback path が発火したかを示します (`llm`, `api_unusable`, `no_apikey`, `unknown_provider`, `bypass`, `dontask`, `user_interaction`)。`forced=true` は `fallthrough_strategy` が LLM `fallthrough` を `decision` に promote したことを意味します。
 
 ### ドリルダウン節
 

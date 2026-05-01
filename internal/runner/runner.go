@@ -32,7 +32,6 @@ import (
 	"github.com/tak848/ccgate/internal/llm"
 	"github.com/tak848/ccgate/internal/llm/anthropic"
 	"github.com/tak848/ccgate/internal/llm/gemini"
-	"github.com/tak848/ccgate/internal/llm/litellm"
 	"github.com/tak848/ccgate/internal/llm/openai"
 	"github.com/tak848/ccgate/internal/metrics"
 	"github.com/tak848/ccgate/internal/prompt"
@@ -285,7 +284,7 @@ func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOpti
 	apiKey, ok := resolveAPIKey(providerName)
 	if !ok {
 		switch providerName {
-		case "anthropic", "openai", "gemini", "litellm":
+		case "anthropic", "openai", "gemini":
 			slog.Warn("no API key found", "provider", cfg.Provider.Name)
 			return llm.Decision{}, false, llm.FallthroughKindNoAPIKey, "", nil, nil
 		default:
@@ -294,14 +293,10 @@ func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOpti
 		}
 	}
 	// Trim whitespace so a templating mistake like `base_url: '   '`
-	// is treated as missing rather than passed through to the SDK
-	// (which would surface as a hard config error and exit 1 instead
-	// of the intended graceful fallthrough).
+	// is treated as missing rather than passed through to the SDK,
+	// which would surface as a hard config error and exit 1 instead of
+	// quietly using the provider's default endpoint.
 	baseURL := strings.TrimSpace(cfg.Provider.BaseURL)
-	if providerName == "litellm" && baseURL == "" {
-		slog.Warn("litellm requires provider.base_url; falling through", "provider", cfg.Provider.Name)
-		return llm.Decision{}, false, llm.FallthroughKindNoBaseURL, "", nil, nil
-	}
 
 	p, err := buildPrompt(cfg, in, ro)
 	if err != nil {
@@ -444,8 +439,6 @@ func resolveAPIKey(providerName string) (string, bool) {
 		primary, fallback = "CCGATE_OPENAI_API_KEY", "OPENAI_API_KEY"
 	case "gemini":
 		primary, fallback = "CCGATE_GEMINI_API_KEY", "GEMINI_API_KEY"
-	case "litellm":
-		primary, fallback = "CCGATE_LITELLM_API_KEY", "LITELLM_API_KEY"
 	default: // anthropic
 		primary, fallback = "CCGATE_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"
 	}
@@ -464,8 +457,6 @@ func newProviderClient(providerName, apiKey, baseURL string) llm.Provider {
 		return &openai.Client{APIKey: apiKey, BaseURL: baseURL}
 	case "gemini":
 		return &gemini.Client{APIKey: apiKey, BaseURL: baseURL}
-	case "litellm":
-		return &litellm.Client{APIKey: apiKey, BaseURL: baseURL}
 	default: // anthropic
 		return &anthropic.Client{APIKey: apiKey, BaseURL: baseURL}
 	}

@@ -19,11 +19,14 @@
     name: 'anthropic',
     model: 'claude-haiku-4-5',
     // Alternatives:
-    //   name: 'openai',   model: 'gpt-4o-mini',                (env: OPENAI_API_KEY)
-    //   name: 'gemini',   model: 'gemini-2.0-flash',           (env: GEMINI_API_KEY)
-    //   name: 'litellm',  model: 'anthropic/claude-haiku-4-5', (env: LITELLM_API_KEY)
-    //     base_url: 'http://localhost:4000/v1',  (required for litellm; point at your proxy)
-    // base_url: '...' is also accepted on anthropic / openai / gemini (e.g. Azure, regional).
+    //   name: 'openai',  model: 'gpt-4o-mini',        (env: OPENAI_API_KEY)
+    //   name: 'gemini',  model: 'gemini-2.0-flash',    (env: GEMINI_API_KEY)
+    // base_url: '...' overrides the provider's API endpoint. Point it
+    // at an OpenAI-/Anthropic-compatible proxy (LiteLLM proxy, Azure
+    // OpenAI, on-prem gateway, regional endpoint, ...) when you don't
+    // want ccgate to hit the vendor directly. Required path for
+    // OpenAI-compatible endpoints is `.../v1`; Anthropic-compatible
+    // endpoints take the host root and the SDK appends `/v1/messages`.
   },
 
   // What to do when the LLM is uncertain (returns "fallthrough"):

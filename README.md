@@ -136,9 +136,8 @@ Set the API key for your chosen provider. `CCGATE_*_API_KEY` is preferred and ov
 | `anthropic`     | `CCGATE_ANTHROPIC_API_KEY` | `ANTHROPIC_API_KEY`  | <https://platform.claude.com/settings/keys> |
 | `openai`        | `CCGATE_OPENAI_API_KEY`    | `OPENAI_API_KEY`     | <https://platform.openai.com/api-keys>      |
 | `gemini`        | `CCGATE_GEMINI_API_KEY`    | `GEMINI_API_KEY`     | <https://aistudio.google.com/app/api-keys>  |
-| `litellm`       | `CCGATE_LITELLM_API_KEY`   | `LITELLM_API_KEY`    | Your LiteLLM proxy's virtual key — see <https://docs.litellm.ai/docs/proxy/quick_start> |
 
-`litellm` additionally requires `provider.base_url` pointing at your proxy (e.g. `http://localhost:4000/v1`). It speaks the OpenAI Chat Completions API, so any LiteLLM-supported backend (Claude, GPT, Bedrock, Ollama, …) works.
+To route through an OpenAI- or Anthropic-compatible proxy (LiteLLM proxy, Azure OpenAI, on-prem gateway, ...), set `provider.base_url` and use the matching native provider — see [Routing through a compatible proxy](#routing-through-a-compatible-proxy).
 
 ## Setup — Codex CLI (experimental)
 
@@ -223,9 +222,9 @@ Project-local configs are loaded only when **not tracked by Git**.
 
 | Field                    | Type                              | Default                                                                       | Description                                                                                            |
 |--------------------------|-----------------------------------|-------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------|
-| `provider.name`          | string                            | `"anthropic"`                                                                 | Provider name. One of `"anthropic"`, `"openai"`, `"gemini"`, `"litellm"`.                              |
-| `provider.model`         | string                            | `"claude-haiku-4-5"`                                                          | Model name. Examples: `claude-haiku-4-5` / `claude-sonnet-4-6` (anthropic), `gpt-5.4-nano-2026-03-17` (openai), `gemini-3-flash-preview` (gemini), `anthropic/claude-haiku-4-5` (litellm — whatever your proxy exposes). |
-| `provider.base_url`      | string                            | `""`                                                                          | Override the provider's API base URL. **Required for `litellm`** (point at your proxy). Optional for the other providers — useful for Azure-compatible / regional / on-prem endpoints. |
+| `provider.name`          | string                            | `"anthropic"`                                                                 | Provider name. One of `"anthropic"`, `"openai"`, `"gemini"`.                                            |
+| `provider.model`         | string                            | `"claude-haiku-4-5"`                                                          | Model name. Examples: `claude-haiku-4-5` / `claude-sonnet-4-6` (anthropic), `gpt-5.4-nano-2026-03-17` (openai), `gemini-3-flash-preview` (gemini). When routing through a compatible proxy, use whatever model name the proxy exposes (e.g. `anthropic/claude-haiku-4-5`). |
+| `provider.base_url`      | string                            | `""`                                                                          | Override the provider's API base URL. Empty = use the SDK default. Use this to route through an OpenAI- / Anthropic-compatible proxy (LiteLLM proxy, Azure OpenAI, on-prem gateway, regional endpoint, ...). |
 | `provider.timeout_ms`    | int                               | `20000`                                                                       | API timeout (ms). `0` = no timeout.                                                                    |
 | `log_path`               | string                            | `$XDG_STATE_HOME/ccgate/<target>/ccgate.log`                                  | Log file path. Supports `~` for home directory.                                                        |
 | `log_disabled`           | bool                              | `false`                                                                       | Disable logging entirely                                                                               |
@@ -243,7 +242,7 @@ Project-local configs are loaded only when **not tracked by Git**.
 
 `<target>` is `claude` or `codex` depending on which hook is invoked. When `XDG_STATE_HOME` is unset, ccgate falls back to `~/.local/state/ccgate/<target>/...`.
 
-### Switching to OpenAI / Gemini / LiteLLM
+### Switching to OpenAI / Gemini
 
 Set `provider.name` (and optionally `provider.model`) in any layer:
 
@@ -258,19 +257,37 @@ Set `provider.name` (and optionally `provider.model`) in any layer:
 
 Then export the matching API key (`CCGATE_OPENAI_API_KEY` / `CCGATE_GEMINI_API_KEY` — see the [provider table](#3-api-key)). If the key is missing, ccgate falls through to the upstream tool's permission prompt, so flipping providers cannot break the hook.
 
-For `litellm`, also set `provider.base_url` to point at your proxy:
+### Routing through a compatible proxy
+
+ccgate calls the same chat-completions API every Anthropic / OpenAI client uses, so it works against any **OpenAI- or Anthropic-compatible** endpoint — including [LiteLLM proxy](https://docs.litellm.ai/docs/proxy/quick_start), Azure OpenAI, on-prem gateways, and regional endpoints. Pick the protocol the proxy speaks and set `provider.base_url`:
+
+**OpenAI-compatible endpoint** (e.g. LiteLLM proxy's `/v1/chat/completions`):
 
 ```jsonnet
 {
   provider: {
-    name: 'litellm',
-    model: 'anthropic/claude-haiku-4-5',
-    base_url: 'http://localhost:4000/v1',
+    name: 'openai',
+    model: 'anthropic/claude-haiku-4-5', // whatever the proxy exposes
+    base_url: 'https://your-proxy.example/v1',
   },
 }
 ```
 
-Export `CCGATE_LITELLM_API_KEY` (or `LITELLM_API_KEY`) with the proxy's virtual key. If `base_url` is missing ccgate falls through with `ft_kind: "no_base_url"` in metrics rather than erroring.
+Export the proxy's API key as `CCGATE_OPENAI_API_KEY`. The trailing `/v1` is required because the OpenAI SDK appends `/chat/completions` directly to the base URL.
+
+**Anthropic-compatible endpoint** (e.g. LiteLLM proxy's `/v1/messages`):
+
+```jsonnet
+{
+  provider: {
+    name: 'anthropic',
+    model: 'claude-haiku-4-5',
+    base_url: 'https://your-proxy.example',
+  },
+}
+```
+
+Export the proxy's API key as `CCGATE_ANTHROPIC_API_KEY`. The Anthropic SDK appends `/v1/messages` itself, so the base URL stops at the host root.
 
 ## Default Rules
 

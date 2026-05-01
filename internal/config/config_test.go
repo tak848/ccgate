@@ -168,8 +168,8 @@ func TestMergeConfigFileNotFound(t *testing.T) {
 
 // TestMergeConfigFileReplacesProviderBlock verifies that `provider`
 // is merged atomically: when an override layer writes the block, the
-// whole struct is replaced so unrelated fields (e.g. base_url left
-// over from a lower layer's litellm config) cannot leak into a new
+// whole struct is replaced so unrelated fields (e.g. a base_url left
+// over from a lower layer's proxy config) cannot leak into a new
 // provider's settings. timeout_ms uses *int so a missing override
 // falls back to the package default via GetTimeoutMS().
 func TestMergeConfigFileReplacesProviderBlock(t *testing.T) {
@@ -220,9 +220,10 @@ func TestMergeConfigFileProviderBlockClearsBaseURL(t *testing.T) {
 	}
 
 	cfg := Default()
-	// Lower layer had been configured for litellm with a base_url.
+	// Lower layer had been configured for an OpenAI-compatible proxy
+	// (base_url override pointing at the proxy's /v1 endpoint).
 	cfg.Provider = ProviderConfig{
-		Name:    "litellm",
+		Name:    "openai",
 		Model:   "anthropic/claude-haiku-4-5",
 		BaseURL: "http://localhost:4000/v1",
 	}
@@ -254,7 +255,7 @@ func TestMergeConfigFileOmittedProviderKeepsExisting(t *testing.T) {
 
 	cfg := Default()
 	cfg.Provider = ProviderConfig{
-		Name:    "litellm",
+		Name:    "openai",
 		Model:   "anthropic/claude-haiku-4-5",
 		BaseURL: "http://localhost:4000/v1",
 	}
@@ -262,7 +263,7 @@ func TestMergeConfigFileOmittedProviderKeepsExisting(t *testing.T) {
 	if err := mergeConfigFile(path, &cfg); err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Provider.Name != "litellm" || cfg.Provider.BaseURL != "http://localhost:4000/v1" {
+	if cfg.Provider.Name != "openai" || cfg.Provider.BaseURL != "http://localhost:4000/v1" {
 		t.Fatalf("provider was clobbered when override omitted the key: %+v", cfg.Provider)
 	}
 }

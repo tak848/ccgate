@@ -26,7 +26,7 @@ ccgate evaluates three layers, in order, per target. Every layer composes with t
 | Lists: `allow`, `deny`, `environment` | A layer that sets the field **replaces** the carried-over list (even with `[]`). A layer that omits the field leaves the carried-over list untouched. | Embedded `allow: ["A","B"]` + global `allow: ["X"]` → final `allow: ["X"]`. |
 | Lists: `append_allow`, `append_deny`, `append_environment` | A layer that sets the field **appends** its entries to whatever the previous layers produced. | Embedded `deny: ["A"]` + project `append_deny: ["P"]` → final `deny: ["A","P"]`. |
 | Scalars: `log_*`, `metrics_*`, `fallthrough_strategy` | A layer **overwrites** the value per-field when it sets it; layers that omit a field leave the previous value untouched. | Embedded `log_max_size: 5MB` + global `log_max_size: 10MB` → final `log_max_size: 10MB`. |
-| Block: `provider` (`name` / `model` / `base_url` / `timeout_ms`) | A layer that writes `provider` **replaces the entire block**; layers that omit `provider` leave it untouched. Per-field merge would let stale fields from a lower layer (e.g. a `litellm` `base_url`) leak into a different provider when a higher layer switches `name`. | Embedded `provider: {name: anthropic, model: haiku}` + global `provider: {name: openai, model: gpt-5.4-nano-2026-03-17}` → final `provider: {name: openai, model: gpt-5.4-nano-2026-03-17}`. To bump only the model, restate the whole block: `provider: {name: anthropic, model: claude-sonnet-4-6}`. |
+| Block: `provider` (`name` / `model` / `base_url` / `timeout_ms`) | A layer that writes `provider` **replaces the entire block**; layers that omit `provider` leave it untouched. Per-field merge would let stale fields from a lower layer (e.g. a proxy `base_url`) leak into a different provider when a higher layer switches `name`. | Embedded `provider: {name: anthropic, model: haiku}` + global `provider: {name: openai, model: gpt-5.4-nano-2026-03-17}` → final `provider: {name: openai, model: gpt-5.4-nano-2026-03-17}`. To bump only the model, restate the whole block: `provider: {name: anthropic, model: claude-sonnet-4-6}`. |
 
 `allow` and `append_allow` (same for the other lists) can coexist in the same layer: the replace runs first, then the append stacks onto the result. Use the pattern when you want to **swap** the embedded list for a curated one and **also** add a couple of project-specific extras: `{ allow: ['only this base'], append_allow: ['plus this project rule'] }`.
 
@@ -58,8 +58,7 @@ Only LLM-driven uncertainty is affected. The runtime-mode fallthroughs continue 
 
 - API call truncated or refused (`api_unusable`)
 - No API key set (`no_apikey`)
-- `provider.name` is `litellm` but `provider.base_url` is empty (`no_base_url`)
-- `provider.name` is not one of `anthropic` / `openai` / `gemini` / `litellm` (`unknown_provider`)
+- `provider.name` is not one of `anthropic` / `openai` / `gemini` (`unknown_provider`)
 - Claude `permission_mode == "bypassPermissions"` or `"dontAsk"`
 - Claude `tool_name` in `{ExitPlanMode, AskUserQuestion}` (user-interaction tools)
 
@@ -122,7 +121,7 @@ ccgate codex  metrics --days 7         # same shape, codex side
 }
 ```
 
-`ft_kind` is filled when the LLM returned (or the runtime forced) a fallthrough; the value tells you which fallback path fired (`llm`, `api_unusable`, `no_apikey`, `no_base_url`, `unknown_provider`, `bypass`, `dontask`, `user_interaction`). `forced=true` means `fallthrough_strategy` promoted an LLM `fallthrough` into the recorded `decision`.
+`ft_kind` is filled when the LLM returned (or the runtime forced) a fallthrough; the value tells you which fallback path fired (`llm`, `api_unusable`, `no_apikey`, `unknown_provider`, `bypass`, `dontask`, `user_interaction`). `forced=true` means `fallthrough_strategy` promoted an LLM `fallthrough` into the recorded `decision`.
 
 ### Drill-down sections
 
