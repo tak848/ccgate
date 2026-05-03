@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"runtime"
 	"testing"
+	"time"
 )
 
 // setHomeEnv sets the env var that os.UserHomeDir consults on the current OS.
@@ -79,6 +80,82 @@ func TestValidateErrors(t *testing.T) {
 				t.Fatal("expected validation error")
 			}
 		})
+	}
+}
+
+func TestValidateAPIKeyFields(t *testing.T) {
+	t.Parallel()
+
+	base := func(p ProviderConfig) Config {
+		// Required fields filled in so the only validation outcome we
+		// observe is whatever the table case targets.
+		return Config{Provider: ProviderConfig{
+			Name:                 "anthropic",
+			Model:                "m",
+			TimeoutMS:            intPtr(1000),
+			APIKeyCommand:        p.APIKeyCommand,
+			APIKeyFile:           p.APIKeyFile,
+			APIKeyRefreshMargin:  p.APIKeyRefreshMargin,
+			APIKeyCommandTimeout: p.APIKeyCommandTimeout,
+		}}
+	}
+
+	cases := map[string]struct {
+		provider ProviderConfig
+		wantErr  bool
+	}{
+		// refresh_margin: >= 0 accepted, "0s" allowed, negative/garbage rejected.
+		"refresh_margin empty defaults": {provider: ProviderConfig{}, wantErr: false},
+		"refresh_margin 30s":            {provider: ProviderConfig{APIKeyRefreshMargin: "30s"}, wantErr: false},
+		"refresh_margin 0s allowed":     {provider: ProviderConfig{APIKeyRefreshMargin: "0s"}, wantErr: false},
+		"refresh_margin negative":       {provider: ProviderConfig{APIKeyRefreshMargin: "-5s"}, wantErr: true},
+		"refresh_margin garbage":        {provider: ProviderConfig{APIKeyRefreshMargin: "garbage"}, wantErr: true},
+
+		// command_timeout: > 0 required, "0s" rejected (would wedge hot path).
+		"command_timeout empty defaults": {provider: ProviderConfig{}, wantErr: false},
+		"command_timeout 5s":             {provider: ProviderConfig{APIKeyCommandTimeout: "5s"}, wantErr: false},
+		"command_timeout 0s rejected":    {provider: ProviderConfig{APIKeyCommandTimeout: "0s"}, wantErr: true},
+		"command_timeout negative":       {provider: ProviderConfig{APIKeyCommandTimeout: "-1s"}, wantErr: true},
+		"command_timeout garbage":        {provider: ProviderConfig{APIKeyCommandTimeout: "garbage"}, wantErr: true},
+
+		// api_key_file: absolute or ~/ accepted, relative rejected.
+		"file abs":      {provider: ProviderConfig{APIKeyFile: "/etc/ccgate/key"}, wantErr: false},
+		"file home":     {provider: ProviderConfig{APIKeyFile: "~/.ccgate/key"}, wantErr: false},
+		"file relative": {provider: ProviderConfig{APIKeyFile: "./key"}, wantErr: true},
+		"file bare":     {provider: ProviderConfig{APIKeyFile: "key"}, wantErr: true},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			err := base(tc.provider).Validate()
+			if tc.wantErr && err == nil {
+				t.Fatal("expected validation error, got nil")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("unexpected validation error: %v", err)
+			}
+		})
+	}
+}
+
+func TestProviderGetAPIKeyDurationDefaults(t *testing.T) {
+	t.Parallel()
+
+	p := ProviderConfig{}
+	if got := p.GetAPIKeyRefreshMargin(); got != DefaultAPIKeyRefreshMargin {
+		t.Fatalf("GetAPIKeyRefreshMargin() default = %s, want %s", got, DefaultAPIKeyRefreshMargin)
+	}
+	if got := p.GetAPIKeyCommandTimeout(); got != DefaultAPIKeyCommandTimeout {
+		t.Fatalf("GetAPIKeyCommandTimeout() default = %s, want %s", got, DefaultAPIKeyCommandTimeout)
+	}
+
+	p.APIKeyRefreshMargin = "1m30s"
+	p.APIKeyCommandTimeout = "12s"
+	if got := p.GetAPIKeyRefreshMargin(); got != 90*time.Second {
+		t.Fatalf("GetAPIKeyRefreshMargin() = %s, want 90s", got)
+	}
+	if got := p.GetAPIKeyCommandTimeout(); got != 12*time.Second {
+		t.Fatalf("GetAPIKeyCommandTimeout() = %s, want 12s", got)
 	}
 }
 
@@ -177,7 +254,16 @@ func TestMergeConfigFileReplacesProviderBlock(t *testing.T) {
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.jsonnet")
-	content := `{ provider: { name: "openai", model: "custom-model", base_url: "https://proxy.example/v1", timeout_ms: 30000 } }`
+	content := `{ provider: {
+		name: "openai",
+		model: "custom-model",
+		base_url: "https://proxy.example/v1",
+		api_key_command: "echo sk-test",
+		api_key_file: "/tmp/key",
+		api_key_refresh_margin: "45s",
+		api_key_command_timeout: "8s",
+		timeout_ms: 30000,
+	} }`
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -198,6 +284,24 @@ func TestMergeConfigFileReplacesProviderBlock(t *testing.T) {
 	}
 	if cfg.Provider.BaseURL != "https://proxy.example/v1" {
 		t.Fatalf("base_url = %q, want %q", cfg.Provider.BaseURL, "https://proxy.example/v1")
+	}
+	if cfg.Provider.APIKeyCommand != "echo sk-test" {
+		t.Fatalf("api_key_command = %q, want %q", cfg.Provider.APIKeyCommand, "echo sk-test")
+	}
+	if cfg.Provider.APIKeyFile != "/tmp/key" {
+		t.Fatalf("api_key_file = %q, want %q", cfg.Provider.APIKeyFile, "/tmp/key")
+	}
+	if cfg.Provider.APIKeyRefreshMargin != "45s" {
+		t.Fatalf("api_key_refresh_margin = %q, want %q", cfg.Provider.APIKeyRefreshMargin, "45s")
+	}
+	if got := cfg.Provider.GetAPIKeyRefreshMargin(); got != 45*time.Second {
+		t.Fatalf("GetAPIKeyRefreshMargin() = %s, want 45s", got)
+	}
+	if cfg.Provider.APIKeyCommandTimeout != "8s" {
+		t.Fatalf("api_key_command_timeout = %q, want %q", cfg.Provider.APIKeyCommandTimeout, "8s")
+	}
+	if got := cfg.Provider.GetAPIKeyCommandTimeout(); got != 8*time.Second {
+		t.Fatalf("GetAPIKeyCommandTimeout() = %s, want 8s", got)
 	}
 	if cfg.Provider.GetTimeoutMS() != 30000 {
 		t.Fatalf("timeout_ms = %d, want 30000", cfg.Provider.GetTimeoutMS())

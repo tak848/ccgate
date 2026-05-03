@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	jsonnet "github.com/google/go-jsonnet"
@@ -24,6 +25,19 @@ const (
 	DefaultMetricsMaxSize = 2 * 1024 * 1024 // 2MB
 	BaseConfigName        = "ccgate.jsonnet"
 	LocalConfigName       = "ccgate.local.jsonnet"
+
+	// DefaultAPIKeyRefreshMargin is the early-refresh slack used when
+	// deciding whether a cached helper credential is still valid:
+	// `now + margin < expires_at` keeps the cache, anything else
+	// triggers a refresh. Picked at 30s as a balance between burning
+	// the helper too often and exposing the SDK to a key that expires
+	// mid-request.
+	DefaultAPIKeyRefreshMargin = 30 * time.Second
+	// DefaultAPIKeyCommandTimeout caps the hot-path cost of resolving
+	// a credential (lock acquisition + helper exec). 5s is enough for
+	// most STS / OAuth-style helpers while still bounding hook latency
+	// when something is wrong upstream.
+	DefaultAPIKeyCommandTimeout = 5 * time.Second
 )
 
 // FallthroughStrategy* aliases re-export the canonical values from
@@ -84,8 +98,43 @@ type ProviderConfig struct {
 	//                   appends "v1/messages" itself, so overrides
 	//                   stop at the host root (e.g. "https://my-proxy").
 	// Empty value uses the SDK default.
-	BaseURL   string `json:"base_url,omitempty"`
-	TimeoutMS *int   `json:"timeout_ms,omitempty"`
+	BaseURL string `json:"base_url,omitempty"`
+	// APIKeyCommand is a shell command (run via `/bin/sh -c`) that
+	// prints the API key on stdout. The command is exec'd on the hot
+	// path of every hook fire that is missing a cached credential, so
+	// it should be fast and side-effect free. Output formats:
+	//   - JSON object `{"version":1,"key":"...","expires_at":"<RFC3339>"}`:
+	//     parsed strictly. With a future `expires_at`, the result is
+	//     memoized to a per-target cache file under
+	//     $XDG_CACHE_HOME/ccgate/<target>/ and refreshed early via
+	//     APIKeyRefreshMargin.
+	//   - Plain (non-JSON) stdout: trimmed and returned as-is, no
+	//     caching. Intended for low-frequency or experimental setups.
+	// Helper failures fall through with kind=credential_unavailable
+	// rather than falling back to env vars (silent fallback hides
+	// configuration errors). Unix-only.
+	APIKeyCommand string `json:"api_key_command,omitempty"`
+	// APIKeyFile is the absolute (or `~/`-prefixed) path of a file
+	// whose contents are the API key, in the same JSON / plain string
+	// shape as APIKeyCommand. Read on every hook fire. Used when
+	// APIKeyCommand is empty, intended for setups where an external
+	// rotator (cron / launchd / systemd timer) writes the file
+	// atomically on its own schedule, so the hook itself never exec's
+	// a helper. Unix-only.
+	APIKeyFile string `json:"api_key_file,omitempty"`
+	// APIKeyRefreshMargin is parsed via time.ParseDuration. Cache
+	// entries are considered stale once `now + margin >= expires_at`,
+	// which forces a refresh through APIKeyCommand. Empty string
+	// means DefaultAPIKeyRefreshMargin. Negative values are rejected
+	// at validate time; "0s" is allowed and means "no early refresh".
+	APIKeyRefreshMargin string `json:"api_key_refresh_margin,omitempty"`
+	// APIKeyCommandTimeout is parsed via time.ParseDuration and caps
+	// the hot-path cost of running APIKeyCommand (including any flock
+	// retry). Empty string means DefaultAPIKeyCommandTimeout.
+	// Non-positive values are rejected at validate time so a
+	// misconfigured "0s" cannot wedge every hook fire.
+	APIKeyCommandTimeout string `json:"api_key_command_timeout,omitempty"`
+	TimeoutMS            *int   `json:"timeout_ms,omitempty"`
 }
 
 // GetTimeoutMS returns the timeout in milliseconds.
@@ -95,6 +144,35 @@ func (p ProviderConfig) GetTimeoutMS() int {
 		return DefaultTimeoutMS
 	}
 	return *p.TimeoutMS
+}
+
+// GetAPIKeyRefreshMargin returns the parsed refresh margin, falling
+// back to DefaultAPIKeyRefreshMargin when unset. Validation guarantees
+// the string parses cleanly with a non-negative duration, so this
+// method never errors at runtime.
+func (p ProviderConfig) GetAPIKeyRefreshMargin() time.Duration {
+	if strings.TrimSpace(p.APIKeyRefreshMargin) == "" {
+		return DefaultAPIKeyRefreshMargin
+	}
+	d, err := time.ParseDuration(p.APIKeyRefreshMargin)
+	if err != nil {
+		return DefaultAPIKeyRefreshMargin
+	}
+	return d
+}
+
+// GetAPIKeyCommandTimeout returns the parsed command timeout, falling
+// back to DefaultAPIKeyCommandTimeout when unset. Validation
+// guarantees a positive duration so this method never returns 0.
+func (p ProviderConfig) GetAPIKeyCommandTimeout() time.Duration {
+	if strings.TrimSpace(p.APIKeyCommandTimeout) == "" {
+		return DefaultAPIKeyCommandTimeout
+	}
+	d, err := time.ParseDuration(p.APIKeyCommandTimeout)
+	if err != nil {
+		return DefaultAPIKeyCommandTimeout
+	}
+	return d
 }
 
 // Default returns a Config seeded with the provider/log/metrics

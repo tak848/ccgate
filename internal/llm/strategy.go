@@ -10,6 +10,15 @@
 // fallthrough_strategy because the LLM never actually expressed an
 // uncertain decision — auto-allowing on a refused/truncated response
 // would silently weaken security.
+//
+// FallthroughKindCredentialUnavailable covers credential-resolution
+// failure on the helper / file path (api_key_command, api_key_file,
+// the cache layer behind them, and provider 401/403 responses that
+// suggest a stale or invalid key). It is distinct from
+// FallthroughKindNoAPIKey, which is reserved for "the user never set
+// any key at all". Like the other runtime-mode kinds, it is not
+// affected by fallthrough_strategy: helper failure is not LLM
+// uncertainty.
 package llm
 
 import (
@@ -18,13 +27,14 @@ import (
 )
 
 const (
-	FallthroughKindUserInteraction = "user_interaction"
-	FallthroughKindBypass          = "bypass"
-	FallthroughKindDontAsk         = "dontask"
-	FallthroughKindUnknownProvider = "unknown_provider"
-	FallthroughKindNoAPIKey        = "no_apikey"
-	FallthroughKindLLM             = "llm"
-	FallthroughKindAPIUnusable     = "api_unusable"
+	FallthroughKindUserInteraction       = "user_interaction"
+	FallthroughKindBypass                = "bypass"
+	FallthroughKindDontAsk               = "dontask"
+	FallthroughKindUnknownProvider       = "unknown_provider"
+	FallthroughKindNoAPIKey              = "no_apikey"
+	FallthroughKindCredentialUnavailable = "credential_unavailable"
+	FallthroughKindLLM                   = "llm"
+	FallthroughKindAPIUnusable           = "api_unusable"
 )
 
 // FallthroughStrategy values control what ccgate does when the LLM
