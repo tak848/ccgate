@@ -213,7 +213,7 @@ All three layers compose with the same rules:
 
 - **Lists** — `allow` / `deny` / `environment` **replace** the value carried over from earlier layers when the layer sets them (even to `[]`). The `append_*` siblings (`append_allow`, `append_deny`, `append_environment`) **add** entries on top of whatever the earlier layers produced.
 - **Scalars** — `log_*`, `metrics_*`, `fallthrough_strategy` are overwritten per-field when the layer sets them, otherwise the earlier value survives.
-- **`provider` block** — a layer that writes `provider` **replaces the entire block** (`name` + `model` + `base_url` + `timeout_ms`). Layers that omit `provider` inherit the earlier block unchanged. The block is replaced as a unit because the fields are tightly coupled (different `name` typically means a different `model` namespace and `base_url`); per-field merge would let stale settings from a lower layer leak through.
+- **`provider` block** — a layer that writes `provider` **replaces the entire block** (`name` + `model` + `base_url` + `api_key_command` + `api_key_file` + `api_key_refresh_margin` + `api_key_command_timeout` + `timeout_ms`, i.e. every `provider.*` field). Layers that omit `provider` inherit the earlier block unchanged. The block is replaced as a unit because the fields are tightly coupled (different `name` typically means a different `model` namespace and `base_url`); per-field merge would let stale settings from a lower layer leak through. Important: when a project-local config restates `provider`, it must repeat any `api_key_command` / `api_key_file` from the global layer too — otherwise the helper config is silently dropped on that project.
 
 So `~/.<target>/ccgate.jsonnet` that wants to bump just the model still has to restate the whole `provider` block (e.g. `provider: {name: 'anthropic', model: 'claude-sonnet-4-6'}`). A `~/.<target>/ccgate.jsonnet` that writes `allow: [...]` swaps the embedded allow list for its own (this is what most pre-v0.6 global configs already did, so it stays idempotent). Project-local configs typically use `append_deny: [...]` / `append_environment: [...]` to add restrictions on top of the inherited base.
 
@@ -347,6 +347,12 @@ Or, when an external rotator (cron / launchd / systemd timer) writes the credent
 ```
 
 Resolution order: `api_key_command` > `api_key_file` > `CCGATE_*_API_KEY` > `*_API_KEY`. When a helper or file is configured ccgate will **not** silently fall back to env vars on failure — that would mask the helper bug. Instead the hook falls through with `kind=credential_unavailable` and a reason that points at exactly which step failed (see `ccgate <target> metrics`).
+
+#### Storing the credential safely
+
+- For `api_key_file`, set permissions yourself: `chmod 0600 <file>` and put it under a `chmod 0700` directory. ccgate reads the file but does not normalise its mode.
+- Do **not** put a literal secret into `api_key_command`. The command string is passed to `/bin/sh -c`, which means it shows up in `ps`, `/proc/<pid>/cmdline`, audit logs, and shell history. Wrap secret material in a file or keychain that the helper reads internally.
+- ccgate's own log file (`$XDG_STATE_HOME/ccgate/<target>/ccgate.log`) is written `0644`. On failure ccgate logs only the helper's exit error and the size of stderr — the stderr body is never written to the log so a `set -x` mishap inside the helper does not leak. If you need to see what the helper printed, re-run it manually with `2>&1` instead of consulting the ccgate log.
 
 Provider-side 401/403 against a helper-derived credential automatically invalidates the cache so the next hook fire re-runs the helper. The same fire still falls through (rather than exiting 1) so the upstream tool's prompt is shown to the user.
 

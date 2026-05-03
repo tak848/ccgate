@@ -63,16 +63,23 @@ func (c Config) Validate() error {
 	return errors.Join(errs...)
 }
 
-// validateAPIKeyFile rejects relative paths. The config loader does
-// not pass the config file's location into ProviderConfig, so a
-// relative path here would have no well-defined base — surface that
-// at validate time instead of guessing later.
+// validateAPIKeyFile rejects relative paths and the bare home
+// directory. The config loader does not pass the config file's
+// location into ProviderConfig, so a relative path here would have
+// no well-defined base — surface that at validate time instead of
+// guessing later. A bare "~" expands to the home directory itself
+// rather than a credential file, which would consistently fail at
+// read time, so reject it up front as the deterministic
+// misconfiguration it is.
 func validateAPIKeyFile(path string) error {
 	v := strings.TrimSpace(path)
 	if v == "" {
 		return nil
 	}
-	if strings.HasPrefix(v, "/") || strings.HasPrefix(v, "~/") || v == "~" {
+	if v == "~" {
+		return fmt.Errorf("provider.api_key_file must point at a file, got bare %q", v)
+	}
+	if strings.HasPrefix(v, "/") || strings.HasPrefix(v, "~/") {
 		return nil
 	}
 	return fmt.Errorf("provider.api_key_file %q must be an absolute path or start with ~/", v)

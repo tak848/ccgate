@@ -212,7 +212,7 @@ Claude Code と同じ環境変数を使います — [provider table](#3-api-キ
 
 - **list**: `allow` / `deny` / `environment` は値を設定した layer が前の layer から引き継いだ list を **置き換える** (`[]` を書けば空 list に置き換え)。`append_*` 系 (`append_allow` / `append_deny` / `append_environment`) は前の layer の累積 list の **末尾に追加** する。
 - **スカラー**: `log_*` / `metrics_*` / `fallthrough_strategy` はその layer がフィールドを設定していれば per-field で上書き、設定していなければ前の値を保持。
-- **`provider` block**: `provider` を書いた layer は block 全体 (`name` + `model` + `base_url` + `timeout_ms`) を **丸ごと置換**。書かなかった layer は前の block をそのまま継承。`name` を切り替えると `model` の名前空間も `base_url` も意味が変わる密結合なので、per-field merge にすると下位 layer の値が残って壊れるため block 単位で扱う。
+- **`provider` block**: `provider` を書いた layer は block 全体 (`name` + `model` + `base_url` + `api_key_command` + `api_key_file` + `api_key_refresh_margin` + `api_key_command_timeout` + `timeout_ms`、つまり全 `provider.*` field) を **丸ごと置換**。書かなかった layer は前の block をそのまま継承。`name` を切り替えると `model` の名前空間も `base_url` も意味が変わる密結合なので、per-field merge にすると下位 layer の値が残って壊れるため block 単位で扱う。注意: project-local 設定で `provider` を再掲する場合、global layer に書いた `api_key_command` / `api_key_file` も忘れずに書き写すこと。書き漏らすと当該プロジェクトでだけ helper 設定が静かに消える。
 
 `~/.<target>/ccgate.jsonnet` で model だけ変えたい場合でも `provider: {name: 'anthropic', model: 'claude-sonnet-4-6'}` のように block 全体を書き直す必要があります (embedded の `allow` / `deny` はそのまま残ります)。`allow: [...]` を書けば embedded の allow を完全に差し替え (これは v0.6 以前のグローバル設定がすでに行っていた挙動なので、そのまま冪等)。プロジェクトローカル設定は典型的に `append_deny: [...]` / `append_environment: [...]` で追加制限を載せます。
 プロジェクトローカル設定は **Git に追跡されていないファイルのみ** 読み込まれます。
@@ -345,6 +345,12 @@ helper は stdout (もしくはファイル) に次のいずれかの形を書�
 ```
 
 解決順序: `api_key_command` > `api_key_file` > `CCGATE_*_API_KEY` > `*_API_KEY`。helper / file が設定済みの状態で失敗したら ccgate は env var に **fallback しない** (silent fallback は helper のバグを隠す)。代わりに `kind=credential_unavailable` で fallthrough し、reason がどの段階で失敗したかを示します (`ccgate <target> metrics` 参照)。
+
+#### credential を安全に持ちまわるコツ
+
+- `api_key_file` の permission は user 側で設定: `chmod 0600 <ファイル>`、親ディレクトリは `chmod 0700`。ccgate は読み取るだけで mode の正規化はしない
+- `api_key_command` に literal secret を直書きしない。command 文字列は `/bin/sh -c` に渡されるので、`ps` / `/proc/<pid>/cmdline` / audit log / shell history に丸見え。secret はファイルや keychain に置き、helper の内部で読む形にすること
+- ccgate のログファイル (`$XDG_STATE_HOME/ccgate/<target>/ccgate.log`) は `0644` で書かれる。helper 失敗時、ccgate は exit error と stderr のバイト数のみログに残し、**stderr 本文は書き出さない** ので helper 内部の `set -x` 事故で token が漏れたりしない。stderr の内容を見たいときは ccgate のログを覗くのではなく、helper を `2>&1` 付きで手動実行すること
 
 helper / file 由来の credential に対して provider 側が 401/403 を返した場合、cache を invalidate して次回 hook fire で fresh helper exec を強制します。同じ fire は (exit 1 ではなく) fallthrough として返るので、upstream tool の prompt がユーザーに表示されます。
 

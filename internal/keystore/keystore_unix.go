@@ -404,13 +404,17 @@ func execHelper(ctx context.Context, opts Options) (helperPayload, Reason, error
 			return helperPayload{}, ReasonTimeout,
 				fmt.Errorf("helper timed out after %s: %w", opts.CommandTimeout, ctxErr)
 		}
-		// Bound the stderr we attach to the warning so a chatty
-		// helper cannot bloat ccgate.log; the body is *not* placed
-		// in metrics by design.
+		// Deliberately do NOT log the stderr body. A misbehaving
+		// helper that prints a token through `set -x` or similar
+		// debug paths would otherwise leak it into ccgate.log,
+		// which is a 0644 file shared across the whole ccgate
+		// session. The size + exit error are enough to triage; the
+		// user can re-run the helper manually with `2>&1` if they
+		// need the actual stderr contents.
 		slog.Warn("keystore: api_key_command exited non-zero",
 			"reason", string(ReasonCommandExit),
 			"source", string(SourceCommand),
-			"stderr", stderr.head(256),
+			"stderr_bytes", stderr.buf.Len(),
 			"error", runErr,
 		)
 		return helperPayload{}, ReasonCommandExit, runErr
@@ -448,13 +452,12 @@ func parseHelperOutput(data []byte) (helperPayload, Reason, error) {
 }
 
 func parseHelperJSON(trimmed string) (helperPayload, Reason, error) {
+	// Permissive decoder: we accept unknown fields because real
+	// brokers attach metadata (`access_token_id`, `account`, ...)
+	// alongside the credential, and we already drop those when we
+	// re-marshal the canonical `{version, key, expires_at}` payload
+	// to the cache file (writeCache).
 	dec := json.NewDecoder(strings.NewReader(trimmed))
-	dec.DisallowUnknownFields()
-	// We don't actually disallow unknown fields at the parse step
-	// because helpers might add metadata (`access_token_id`,
-	// `account`, ...) and we already drop them when we re-marshal
-	// for the cache. Re-enable for now via a permissive decoder.
-	dec = json.NewDecoder(strings.NewReader(trimmed))
 	var payload helperPayload
 	if err := dec.Decode(&payload); err != nil {
 		return helperPayload{}, ReasonJSONParse, fmt.Errorf("decode helper json: %w", err)
@@ -468,6 +471,15 @@ func parseHelperJSON(trimmed string) (helperPayload, Reason, error) {
 	}
 	if strings.TrimSpace(payload.Key) == "" {
 		return helperPayload{}, ReasonJSONParse, errors.New("helper json missing key")
+	}
+	// Reject unknown schema versions explicitly so a future v2
+	// payload format can be introduced without older ccgate
+	// silently treating it as v1. `0` (field omitted) is the
+	// implicit-v1 case and is fine; any other value is "we don't
+	// know how to read this".
+	if payload.Version != 0 && payload.Version != 1 {
+		return helperPayload{}, ReasonJSONParse,
+			fmt.Errorf("unsupported helper json version %d (this ccgate only understands version 1)", payload.Version)
 	}
 	if payload.ExpiresAt != "" {
 		if _, err := time.Parse(time.RFC3339, payload.ExpiresAt); err != nil {
@@ -589,16 +601,6 @@ func (b *limitedBuffer) Write(p []byte) (int, error) {
 }
 
 func (b *limitedBuffer) Bytes() []byte { return b.buf.Bytes() }
-
-// head returns up to n bytes from the start of the buffer, useful
-// for putting bounded stderr previews into log attrs.
-func (b *limitedBuffer) head(n int) string {
-	bs := b.buf.Bytes()
-	if len(bs) <= n {
-		return string(bs)
-	}
-	return string(bs[:n])
-}
 
 // Compile-time guard: limitedBuffer must satisfy io.Writer.
 var _ io.Writer = (*limitedBuffer)(nil)

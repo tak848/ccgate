@@ -91,6 +91,27 @@
       "items": {
         "type": "string"
       }
+    },
+    "append_allow": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Allow guidance rules appended on top of the carried-over list (instead of replacing it). Typically used in project-local configs."
+    },
+    "append_deny": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Deny guidance rules appended on top of the carried-over list."
+    },
+    "append_environment": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Environment context appended on top of the carried-over list."
     }
   }
 }

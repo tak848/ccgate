@@ -73,6 +73,15 @@ func TestResolveCommand(t *testing.T) {
 			body:    `printf '{"key":"sk-extra","expires_at":"` + future + `","refresh_token":"rt"}'`,
 			wantKey: "sk-extra",
 		},
+		"json with explicit version 1": {
+			body:    `printf '{"version":1,"key":"sk-v1","expires_at":"` + future + `"}'`,
+			wantKey: "sk-v1",
+		},
+		"json with unsupported version rejected": {
+			body:       `printf '{"version":2,"key":"sk-v2","expires_at":"` + future + `"}'`,
+			wantReason: ReasonJSONParse,
+			wantErr:    true,
+		},
 		"json with past expiry rejects fresh as expired": {
 			body:       `printf '{"key":"sk-stale","expires_at":"` + past + `"}'`,
 			wantReason: ReasonExpired,

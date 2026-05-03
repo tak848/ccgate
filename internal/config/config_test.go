@@ -118,9 +118,11 @@ func TestValidateAPIKeyFields(t *testing.T) {
 		"command_timeout negative":       {provider: ProviderConfig{APIKeyCommandTimeout: "-1s"}, wantErr: true},
 		"command_timeout garbage":        {provider: ProviderConfig{APIKeyCommandTimeout: "garbage"}, wantErr: true},
 
-		// api_key_file: absolute or ~/ accepted, relative rejected.
+		// api_key_file: absolute or ~/ accepted, relative / bare ~
+		// (== home dir, not a file) rejected.
 		"file abs":      {provider: ProviderConfig{APIKeyFile: "/etc/ccgate/key"}, wantErr: false},
 		"file home":     {provider: ProviderConfig{APIKeyFile: "~/.ccgate/key"}, wantErr: false},
+		"file bare ~":   {provider: ProviderConfig{APIKeyFile: "~"}, wantErr: true},
 		"file relative": {provider: ProviderConfig{APIKeyFile: "./key"}, wantErr: true},
 		"file bare":     {provider: ProviderConfig{APIKeyFile: "key"}, wantErr: true},
 	}

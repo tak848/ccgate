@@ -344,25 +344,26 @@ func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOpti
 	client := newProviderClient(providerName, apiKey, baseURL)
 	res, err := client.Decide(ctx, p)
 	if err != nil {
-		// 401/403 against a key that came from the helper / file
-		// path is the canonical "the credential we just used is
-		// stale or wrong" signal. Invalidate so the next hook fire
-		// re-runs the helper, then fall through instead of exit 1.
-		// 401/403 with an env-var key is a user configuration error
-		// we cannot fix; still fall through (same UX) but skip the
-		// invalidate step since there is no cache to clear.
-		if isProviderAuthError(err) {
+		// 401/403 against a key that came from a helper / file path
+		// is the canonical "the credential we just used is stale or
+		// wrong" signal: invalidate the keystore cache so the next
+		// hook fire re-runs the helper, then fall through (instead
+		// of exiting 1) so the upstream tool's prompt still reaches
+		// the user.
+		//
+		// For env-var keys we deliberately do NOT take that branch.
+		// ccgate cannot rotate env vars, so silently turning a
+		// revoked / wrong env-var key into a fallthrough would mask
+		// a real user-side configuration error. Surface it as a
+		// normal API error and let the existing exit-1 path run.
+		if isProviderAuthError(err) && (cfg.Provider.APIKeyCommand != "" || cfg.Provider.APIKeyFile != "") {
 			invalidateOnAuthFailure(cfg.Provider, ro.cacheTarget, source, providerName, baseURL)
-			authSource := source
-			if authSource == "" {
-				authSource = string(keystore.SourceCommand)
-			}
 			slog.Warn("provider rejected credential, falling through",
 				"reason", string(keystore.ReasonProviderAuth),
-				"source", authSource,
+				"source", source,
 				"error", err,
 			)
-			return llm.Decision{}, false, llm.FallthroughKindCredentialUnavailable, string(keystore.ReasonProviderAuth), authSource, res.Usage, nil
+			return llm.Decision{}, false, llm.FallthroughKindCredentialUnavailable, string(keystore.ReasonProviderAuth), source, res.Usage, nil
 		}
 		return llm.Decision{}, false, "", "", "", res.Usage, err
 	}
