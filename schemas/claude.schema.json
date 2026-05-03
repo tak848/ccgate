@@ -13,6 +13,18 @@
         "base_url": {
           "type": "string"
         },
+        "api_key_command": {
+          "type": "string"
+        },
+        "api_key_file": {
+          "type": "string"
+        },
+        "api_key_refresh_margin": {
+          "type": "string"
+        },
+        "api_key_command_timeout": {
+          "type": "string"
+        },
         "timeout_ms": {
           "type": "integer"
         }

@@ -19,6 +19,23 @@
     // endpoints take the host root and the SDK appends `/v1/messages`.
     // timeout_ms defaults to 20000 (from Go constant DefaultTimeoutMS).
     // Uncomment to override: timeout_ms: 40000,
+    //
+    // Short-lived API keys (Unix only): set api_key_command or
+    // api_key_file to delegate credential resolution to a helper.
+    // The provider block is replaced atomically across config
+    // layers, so when overriding any of these you must restate the
+    // whole block (name, model, ...). Example:
+    //   provider: {
+    //     name: 'anthropic',
+    //     model: 'claude-haiku-4-5',
+    //     api_key_command: '/usr/local/bin/my-key-broker --provider anthropic',
+    //     api_key_refresh_margin: '60s',  // default 30s
+    //     api_key_command_timeout: '5s',  // default 5s
+    //   }
+    // Helper prints `{"key":"sk-...","expires_at":"<RFC3339>"}` to
+    // stdout (cached + early-refreshed) or a plain single-line key
+    // (uncached). See the project README "Short-lived / rotating API
+    // keys" for the full helper contract.
   },
 
   // What to do when the LLM is uncertain (returns "fallthrough"):

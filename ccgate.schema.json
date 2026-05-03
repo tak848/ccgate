@@ -20,6 +20,22 @@
           "type": "string",
           "description": "Override the provider's API base URL. Empty (default) uses the SDK default endpoint. Use this to route through an OpenAI- or Anthropic-compatible proxy (LiteLLM proxy, Azure OpenAI, on-prem gateway, regional endpoint, ...). For OpenAI-compatible endpoints include the `/v1` path; for Anthropic-compatible endpoints stop at the host root (the SDK appends `/v1/messages`)."
         },
+        "api_key_command": {
+          "type": "string",
+          "description": "Unix only. Shell command run via `/bin/sh -c` whose stdout is the API key. JSON `{\"key\":\"...\",\"expires_at\":\"<RFC3339>\"}` is parsed strictly and memoized to a per-target cache file (early-refreshed via `api_key_refresh_margin`). Plain non-JSON stdout is returned uncached and must be a single non-empty line. On failure ccgate falls through with `kind=credential_unavailable` rather than dropping back to env vars. See README \"Short-lived / rotating API keys\"."
+        },
+        "api_key_file": {
+          "type": "string",
+          "description": "Unix only. Absolute path (or `~/`-prefixed) of a file whose contents follow the same shape as `api_key_command` output. Read every hook fire (no caching) so an external rotator can write atomically on its own schedule. Used when `api_key_command` is empty."
+        },
+        "api_key_refresh_margin": {
+          "type": "string",
+          "description": "Duration string (Go time.ParseDuration syntax, e.g. \"30s\", \"1m\"). Cache entries are stale once `now + margin >= expires_at`, forcing a helper refresh. Must be `>= 0`; `0s` disables early refresh. Default: 30s. Must be smaller than the helper's TTL or the cache is permanently stale."
+        },
+        "api_key_command_timeout": {
+          "type": "string",
+          "description": "Duration string (Go time.ParseDuration syntax). Caps the hot-path cost of one `api_key_command` invocation including flock retries. Must be `> 0` (`0s` is rejected to avoid wedging every hook fire). Default: 5s."
+        },
         "timeout_ms": {
           "type": "integer",
           "minimum": 0,
