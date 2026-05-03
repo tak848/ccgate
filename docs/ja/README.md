@@ -226,7 +226,7 @@ Claude Code と同じ環境変数を使います — [provider table](#3-api-キ
 | `provider.model`         | string                            | `"claude-haiku-4-5"`                                                            | モデル名。例: `claude-haiku-4-5` / `claude-sonnet-4-6` (anthropic)、`gpt-5.4-nano-2026-03-17` (openai)、`gemini-3-flash-preview` (gemini)。互換 proxy 経由なら proxy が公開している任意の名前 (例: `anthropic/claude-haiku-4-5`) |
 | `provider.base_url`      | string                            | `""`                                                                            | API base URL の上書き。空文字列 (default) で SDK の既定 endpoint を使用。OpenAI 互換 / Anthropic 互換 proxy (LiteLLM proxy, Azure OpenAI, オンプレ gateway, 地域別 endpoint 等) 経由で叩きたい時に指定 |
 | `provider.api_key_command` | string                          | `""`                                                                            | Unix 限定。stdout に API キーを出すシェルコマンド (`/bin/sh -c`)。JSON `{key, expires_at}` なら disk cache + 早期 refresh、plain stdout は cache なし。[短命 / ローテーションする API キー](#短命--ローテーションする-api-キー) 参照 |
-| `provider.api_key_file`  | string                            | `""`                                                                            | Unix 限定。abs path or `~/...` のファイルを毎 fire 読む。`api_key_command` と同じ shape を期待。`api_key_command` が空のときのみ参照 |
+| `provider.api_key_file`  | string                            | `""`                                                                            | Unix 限定。abs path もしくは `~/...` のファイルを hook 起動ごとに読む。`api_key_command` と同じ shape を期待。`api_key_command` が空のときのみ参照 |
 | `provider.api_key_refresh_margin` | duration                 | `"30s"`                                                                         | cache 有効性判定の早期 refresh 余裕。`now + margin >= expires_at` で stale 扱い。`>= 0` (`0s` で早期 refresh 無効) |
 | `provider.api_key_command_timeout` | duration                | `"5s"`                                                                          | helper 1 回起動の hot-path 上限 (lock retry + exec)。`> 0` (`0s` は reject)                                |
 | `provider.timeout_ms`    | int                               | `20000`                                                                         | API タイムアウト (ms)。`0` = タイムアウトなし                                                              |
@@ -363,7 +363,8 @@ set -eu
 TOKEN=$(gcloud auth print-access-token)
 # refresh_margin (default 30s) に余裕を持たせて 50 分先に設定。
 EXP=$(date -u -v+50M +%FT%TZ 2>/dev/null || date -u -d '+50 minutes' +%FT%TZ)
-printf '{"key":"%s","expires_at":"%s"}\n' "$TOKEN" "$EXP"
+# token に `"` / `\` / 改行が混ざっても壊れないよう jq で組み立てる。
+jq -nc --arg key "$TOKEN" --arg expires_at "$EXP" '{key:$key, expires_at:$expires_at}'
 ```
 
 スクリプトは `chmod 700 ~/bin/ccgate-key-json.sh` で実行可能にし、設定で `api_key_command: '~/bin/ccgate-key-json.sh'` のように指す。先に単独で動作確認 (`~/bin/ccgate-key-json.sh | jq .` で valid な JSON object が返ること) を取ってから ccgate に食わせるのが安全です。
@@ -373,10 +374,11 @@ printf '{"key":"%s","expires_at":"%s"}\n' "$TOKEN" "$EXP"
 ```sh
 #!/bin/sh
 # cron / launchd / systemd-timer から 50 分ごとに実行
+set -eu
 TOKEN=$(my-broker --provider anthropic)
 EXP=$(date -u -v+1H +%FT%TZ 2>/dev/null || date -u -d '+1 hour' +%FT%TZ)
 TMP=$(mktemp ~/.config/my-broker/anthropic.json.XXXXXX)
-printf '{"key":"%s","expires_at":"%s"}\n' "$TOKEN" "$EXP" > "$TMP"
+jq -nc --arg key "$TOKEN" --arg expires_at "$EXP" '{key:$key, expires_at:$expires_at}' > "$TMP"
 chmod 0600 "$TMP"
 mv "$TMP" ~/.config/my-broker/anthropic.json
 ```
@@ -392,7 +394,7 @@ cache key は `(target, provider.name, base_url, api_key_command)` だけから�
 - account を command 文字列に直接埋め込む (`api_key_command: 'aws sts assume-role --profile prod ...'` 等)。command 文字列が違えば hash も別になり、cache が account ごとに分離されます
 - または `api_key_file` を account ごとに分け、各 account の rotator に専用パスを書かせる
 
-user 提供の cache salt (`api_key_cache_key`) — command 文字列で表現しきれないケース向け — は #67 / #61 の follow-up として trackされています。
+user 提供の cache salt (`api_key_cache_key`) — command 文字列で表現しきれないケース向け — は [#61](https://github.com/tak848/ccgate/issues/61) (および関連する観測性の作業 [#67](https://github.com/tak848/ccgate/issues/67)) の follow-up として追跡しています。
 
 #### credential を安全に持ちまわるコツ
 

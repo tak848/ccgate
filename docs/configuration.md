@@ -148,7 +148,7 @@ The `reason` field meaning depends on `ft_kind`:
 | `output_too_large`      | Helper stdout exceeded the 64 KiB limit.                                                               |
 | `lock_timeout`          | flock retry budget exhausted while peers were refreshing.                                              |
 | `lock_error`            | flock syscall returned a non-EWOULDBLOCK error (broken lock subsystem; helper exec is skipped).        |
-| `provider_auth`         | Provider API rejected the credential with 401/403. For helper / file paths the keystore cache is invalidated so the next fire re-resolves; `api_key_file` has no internal cache, so recovery there is the rotator's job.|
+| `provider_auth`         | Provider API rejected the credential with 401/403. For `api_key_command` the keystore cache file is unlinked so the next fire re-runs the helper; for `api_key_file` there is no internal cache, so recovery is the external rotator's job; env-var keys are intentionally **not** routed here at all (ccgate cannot rotate them, swallowing the 401/403 would mask user-side misconfiguration). |
 
 #### Log-only credential warnings (not in metrics)
 

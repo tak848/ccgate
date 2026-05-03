@@ -148,7 +148,7 @@ ccgate codex  metrics --days 7         # codex 側も同 shape
 | `output_too_large`      | helper の stdout が 64 KiB 上限超過                                                                  |
 | `lock_timeout`          | flock retry budget 切れ (peer が refresh 中)                                                         |
 | `lock_error`            | flock syscall が EWOULDBLOCK 以外で失敗 (lock 系が壊れている → helper exec はスキップ)               |
-| `provider_auth`         | provider API が 401/403 で credential を拒否。helper / file 経路では keystore キャッシュを invalidate し、次回呼び出しで再解決させる。`api_key_file` は内部キャッシュを持たないため復旧は rotator 側の責務 |
+| `provider_auth`         | provider API が 401/403 で credential を拒否。`api_key_command` 経路では keystore のキャッシュファイルを unlink して次回呼び出しで helper 再実行、`api_key_file` 経路は内部キャッシュを持たないため復旧は外部 rotator の責務、env var 経路は **意図的にこの経路に乗せない** (ccgate からは rotate できず、401/403 を握り潰すと user 側の設定ミスを隠してしまうため) |
 
 #### log のみで出る credential 警告 (metrics には乗らない)
 

@@ -365,7 +365,9 @@ set -eu
 TOKEN=$(gcloud auth print-access-token)
 # 50 minutes ahead of "now" so refresh_margin (default 30s) has slack.
 EXP=$(date -u -v+50M +%FT%TZ 2>/dev/null || date -u -d '+50 minutes' +%FT%TZ)
-printf '{"key":"%s","expires_at":"%s"}\n' "$TOKEN" "$EXP"
+# Build the JSON via jq so a token containing `"` / `\` / newlines
+# cannot break the payload.
+jq -nc --arg key "$TOKEN" --arg expires_at "$EXP" '{key:$key, expires_at:$expires_at}'
 ```
 
 Make sure the script is executable (`chmod 700 ~/bin/ccgate-key-json.sh`) and points the config at it (`api_key_command: '~/bin/ccgate-key-json.sh'`). Test it standalone first: `~/bin/ccgate-key-json.sh | jq .` should produce a valid object before you ever hand it to ccgate.
@@ -375,10 +377,11 @@ For the `api_key_file` flow, an external rotator writes (and atomically renames)
 ```sh
 #!/bin/sh
 # Run from cron / launchd / systemd-timer every 50 minutes.
+set -eu
 TOKEN=$(my-broker --provider anthropic)
 EXP=$(date -u -v+1H +%FT%TZ 2>/dev/null || date -u -d '+1 hour' +%FT%TZ)
 TMP=$(mktemp ~/.config/my-broker/anthropic.json.XXXXXX)
-printf '{"key":"%s","expires_at":"%s"}\n' "$TOKEN" "$EXP" > "$TMP"
+jq -nc --arg key "$TOKEN" --arg expires_at "$EXP" '{key:$key, expires_at:$expires_at}' > "$TMP"
 chmod 0600 "$TMP"
 mv "$TMP" ~/.config/my-broker/anthropic.json
 ```
@@ -394,7 +397,7 @@ Two ways to avoid that:
 - Bake the account into the command string itself: `api_key_command: 'aws sts assume-role --profile prod ...'`. Different command strings hash to different cache files, so two project-local configs aimed at different accounts stay isolated.
 - Or use `api_key_file` per account, with each account's rotator writing its own path.
 
-A future user-supplied cache salt (`api_key_cache_key`) is tracked under #67 / #61 follow-ups for cases the command-string approach cannot express cleanly.
+A future user-supplied cache salt (`api_key_cache_key`) is tracked under follow-ups to [#61](https://github.com/tak848/ccgate/issues/61) (and the related observability work in [#67](https://github.com/tak848/ccgate/issues/67)) for cases the command-string approach cannot express cleanly.
 
 #### Storing the credential safely
 
