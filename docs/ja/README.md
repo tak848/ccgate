@@ -360,7 +360,7 @@ helper はこれらを満たすこと:
 
 - 非対話 (TTY 入力なし、ブラウザを開かない、stdin は close 状態で起動)
 - daemonize しない (process group を抜ける fork は timeout-kill の対象外になる)
-- stdout には credential **だけ** を書く (debug は stderr へ。ただし stderr に secret は書かない — 失敗時 stderr は先頭 256B だけ log に出る)
+- stdout には credential **だけ** を書く (debug は stderr へ。ただし stderr に secret は書かない — ccgate は stderr をメモリ上限のために内部 capture するが本文は `ccgate.log` には書き出さない、log にはバイト数と exit error だけ残る)
 - 同じ `(api_key_command, provider.name, base_url)` は同じ credential を返す決定論性
 - plain string 形式は trim 後に単一行 + 非空であること。複数行は `invalid_plain_output` で reject
 

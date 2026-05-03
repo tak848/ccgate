@@ -43,9 +43,11 @@ const (
 	// memory and the user would be billed for our hot path.
 	stdoutLimit = 64 * 1024
 	// stderrLimit caps stderr capture so a chatty helper cannot blow
-	// up our log file. Only the head of stderr is attached to the
-	// warning log on failure; the body is discarded by design so
-	// secrets the helper accidentally printed do not get persisted.
+	// up memory while we wait for it to finish. The body is never
+	// written to ccgate.log on failure (only the byte count + exit
+	// error are logged) by design, so a helper that accidentally
+	// echoed a token through `set -x` would not leak it through our
+	// logs.
 	stderrLimit = 8 * 1024
 	// lockBackoff is the polling interval used while waiting for the
 	// flock to become available. The deadline is set by ctx

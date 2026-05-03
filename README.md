@@ -362,7 +362,7 @@ The helper must:
 
 - be non-interactive (no TTY input, no browser open; stdin is closed),
 - not daemonize (forking past the process group escapes our timeout-kill),
-- print only the credential on stdout (debug output goes to stderr, but **never** put secrets in stderr — failure stderr is logged with a 256-byte preview),
+- print only the credential on stdout (debug output goes to stderr, and **never** put secrets in stderr — ccgate captures stderr internally to bound memory but does not write its body to `ccgate.log`; only the byte count plus the exit error are logged),
 - be deterministic for the same `(api_key_command, provider.name, base_url)` combo (two callers with the same config must agree on what the credential is for),
 - be plain-string-as-single-line: multi-line plain output is rejected as `invalid_plain_output`.
 
