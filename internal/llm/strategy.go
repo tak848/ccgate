@@ -32,7 +32,7 @@ const (
 	FallthroughKindDontAsk               = "dontask"
 	FallthroughKindUnknownProvider       = "unknown_provider"
 	FallthroughKindNoAPIKey              = "no_apikey"
-	FallthroughKindCredentialUnavailable = "credential_unavailable"
+	FallthroughKindCredentialUnavailable = "credential_unavailable" //nolint:gosec // metrics classifier value, not a credential
 	FallthroughKindLLM                   = "llm"
 	FallthroughKindAPIUnusable           = "api_unusable"
 )

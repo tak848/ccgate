@@ -109,6 +109,7 @@ ccgate codex  metrics --days 7         # codex 側も同 shape
   "ft_kind": "",
   "forced": false,
   "reason": "Read-only inspection inside repo; matches allow guidance.",
+  "credential_source": "",
   "deny_msg": "",
   "model": "claude-haiku-4-5",
   "in_tok": 4321,
@@ -121,16 +122,52 @@ ccgate codex  metrics --days 7         # codex 側も同 shape
 }
 ```
 
-`ft_kind` は LLM (またはランタイム) が fallthrough を返したときに埋まり、どの fallback path が発火したかを示します (`llm`, `api_unusable`, `no_apikey`, `unknown_provider`, `bypass`, `dontask`, `user_interaction`)。`forced=true` は `fallthrough_strategy` が LLM `fallthrough` を `decision` に promote したことを意味します。
+`ft_kind` は LLM (またはランタイム) が fallthrough を返したときに埋まり、どの fallback path が発火したかを示します (`llm`, `api_unusable`, `no_apikey`, `credential_unavailable`, `unknown_provider`, `bypass`, `dontask`, `user_interaction`)。`forced=true` は `fallthrough_strategy` が LLM `fallthrough` を `decision` に promote したことを意味します。
+
+`credential_source` は `ft_kind=credential_unavailable` のときだけ埋まります。keystore のどの段階で credential 解決が起きた / 失敗したか (`command` / `file` / `cache` / `lock`) を示し、同じ `reason` を発生源別に集計するのに使えます。
+
+`reason` の意味は `ft_kind` で文脈が変わります:
+
+- `ft_kind=llm`: LLM が出した自由記述
+- `ft_kind=credential_unavailable`: 下表の secret-free 分類値
+
+#### `credential_unavailable` の reason 値
+
+| reason                  | 意味                                                                                                |
+|-------------------------|-----------------------------------------------------------------------------------------------------|
+| `command_exit`          | `api_key_command` が非 0 exit                                                                        |
+| `json_parse`            | helper / file の JSON が strict parse 失敗 / `key` 欠落                                              |
+| `invalid_expiration`    | JSON parse は成功したが `expires_at` が RFC3339 として解釈不能                                       |
+| `empty_output`          | plain 出力が trim 後に空                                                                             |
+| `invalid_plain_output`  | plain 出力に内部改行 (複数行は reject)                                                               |
+| `expired`               | 読み取り時点で `expires_at` が過去                                                                   |
+| `file_missing`          | `api_key_file` が存在しない                                                                          |
+| `file_read`             | ファイルはあるが読み取り失敗 (権限・FS エラー等)                                                     |
+| `unsupported_platform`  | 非 Unix ビルド (Windows)。helper / file 経路は stub                                                   |
+| `timeout`               | `api_key_command` が `api_key_command_timeout` を超過                                                |
+| `output_too_large`      | helper の stdout が 64 KiB 上限超過                                                                  |
+| `lock_timeout`          | flock retry budget 切れ (peer が refresh 中)                                                         |
+| `lock_error`            | flock syscall が EWOULDBLOCK 以外で失敗 (lock 系が壊れている → helper exec はスキップ)               |
+| `provider_auth`         | provider API が 401/403 で credential を拒否。次回 fire 用に cache を invalidate                      |
+
+#### log のみで出る credential 警告 (metrics には乗らない)
+
+cache 層の失敗は fallthrough せずに自動回復するので、`slog.Warn` だけ出して metrics には現れません:
+
+- `cache_parse`: cache JSON が壊れていたので unlink、helper を再実行
+- `cache_read`: cache 読み取り失敗で unlink、helper を再実行
+- `cache_write`: cache 書き込み / atomic-rename 失敗。fresh key は cache せずに返す
+- `cache_unavailable`: cache dir 作成 / `chmod` 失敗。helper は走るが cache は使わない
 
 ### ドリルダウン節
 
-`ccgate <target> metrics` はデフォルトで 2 つのセクションを追加します:
+`ccgate <target> metrics` はデフォルトで 3 つのセクションを追加します:
 
 - **Top fallthrough commands**: LLM が判断に迷った頻度上位の操作。プロジェクトローカルで allow / deny ルールを追加すれば LLM 往復を skip できる候補
 - **Top deny commands**: LLM が deny した頻度上位の操作。同じブロックされた操作を自動 job が繰り返してる場合、AI 側のプラン形を変えるべきサインであることが多い
+- **Credential failures**: `ft_kind=credential_unavailable` を `(source, reason)` で集計。tool input は意図的に無視 (credential 障害中は同じ source/reason が全 tool で出るため)。cache 層 warning はここには出ないので `ccgate.log` で確認
 
-`--details 0` で両セクションを非表示、`--details N` で各上位 N 行に制限。
+`--details 0` で fallthrough / deny セクションを非表示、`--details N` で各上位 N 行に制限。
 
 ### 無効化・リダイレクト・ローテート
 

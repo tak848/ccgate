@@ -316,10 +316,12 @@ func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOpti
 	apiKey, kind, reason, source, err := resolveAPIKey(ctx, cfg.Provider, providerName, ro.cacheTarget)
 	if err != nil {
 		// resolveAPIKey already logged the helper / file failure.
-		// Surface as fallthrough so the upstream tool can prompt the
-		// user; never exit 1 on credential resolution errors.
-		_ = err // keep for debug; metrics carry kind+reason+source
-		return llm.Decision{}, false, kind, reason, source, nil, nil
+		// Intentionally fall through (never propagate this error to
+		// run-level exit) so the upstream tool prompts the user
+		// instead of the hook crashing — same UX as the existing
+		// "no API key set" path. The kind/reason/source we captured
+		// already carry the diagnostic into metrics + log.
+		return llm.Decision{}, false, kind, reason, source, nil, nil //nolint:nilerr // intentional: credential failures never exit 1
 	}
 	if apiKey == "" {
 		// No key configured at all (kind already classified).

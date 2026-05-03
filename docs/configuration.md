@@ -109,6 +109,7 @@ ccgate codex  metrics --days 7         # same shape, codex side
   "ft_kind": "",
   "forced": false,
   "reason": "Read-only inspection inside repo; matches allow guidance.",
+  "credential_source": "",
   "deny_msg": "",
   "model": "claude-haiku-4-5",
   "in_tok": 4321,
@@ -121,16 +122,52 @@ ccgate codex  metrics --days 7         # same shape, codex side
 }
 ```
 
-`ft_kind` is filled when the LLM returned (or the runtime forced) a fallthrough; the value tells you which fallback path fired (`llm`, `api_unusable`, `no_apikey`, `unknown_provider`, `bypass`, `dontask`, `user_interaction`). `forced=true` means `fallthrough_strategy` promoted an LLM `fallthrough` into the recorded `decision`.
+`ft_kind` is filled when the LLM returned (or the runtime forced) a fallthrough; the value tells you which fallback path fired (`llm`, `api_unusable`, `no_apikey`, `credential_unavailable`, `unknown_provider`, `bypass`, `dontask`, `user_interaction`). `forced=true` means `fallthrough_strategy` promoted an LLM `fallthrough` into the recorded `decision`.
+
+`credential_source` is set only when `ft_kind=credential_unavailable`. It carries the keystore stage that produced (or failed to produce) the credential — `command` / `file` / `cache` / `lock` — so the same `reason` can be grouped by where it actually broke.
+
+The `reason` field meaning depends on `ft_kind`:
+
+- `ft_kind=llm`: free-form text the LLM emitted to justify its fallthrough.
+- `ft_kind=credential_unavailable`: a secret-free classifier from the table below.
+
+#### Reason values for `credential_unavailable`
+
+| Reason                  | Meaning                                                                                                |
+|-------------------------|--------------------------------------------------------------------------------------------------------|
+| `command_exit`          | `api_key_command` exited non-zero.                                                                     |
+| `json_parse`            | Helper / file produced JSON that failed strict parsing or had no `key`.                                |
+| `invalid_expiration`    | Helper / file JSON parsed but `expires_at` was not RFC3339.                                            |
+| `empty_output`          | Plain-string output was empty after trim.                                                              |
+| `invalid_plain_output`  | Plain-string output had internal newlines (multi-line is rejected).                                    |
+| `expired`               | `expires_at` was already in the past at read time.                                                     |
+| `file_missing`          | `api_key_file` did not exist.                                                                          |
+| `file_read`             | `api_key_file` exists but failed to read (permissions, FS error).                                      |
+| `unsupported_platform`  | Build is non-Unix (Windows). Helper / file paths are stub'd.                                           |
+| `timeout`               | `api_key_command` exceeded `api_key_command_timeout`.                                                  |
+| `output_too_large`      | Helper stdout exceeded the 64 KiB limit.                                                               |
+| `lock_timeout`          | flock retry budget exhausted while peers were refreshing.                                              |
+| `lock_error`            | flock syscall returned a non-EWOULDBLOCK error (broken lock subsystem; helper exec is skipped).        |
+| `provider_auth`         | Provider API rejected the credential with 401/403; cache invalidated for the next fire.                |
+
+#### Log-only credential warnings (not in metrics)
+
+The cache layer recovers from these without falling through, so they are emitted as `slog.Warn` only and never appear in metrics:
+
+- `cache_parse` — corrupt cache JSON; unlinked, helper re-runs.
+- `cache_read` — cache read error; unlinked, helper re-runs.
+- `cache_write` — cache write / atomic-rename failed; fresh key returned uncached.
+- `cache_unavailable` — cache directory cannot be created / `chmod`'d; helper still runs without caching.
 
 ### Drill-down sections
 
-`ccgate <target> metrics` adds two sections by default:
+`ccgate <target> metrics` adds three sections by default:
 
 - **Top fallthrough commands** -- the most frequent operations that the LLM was unsure about. These are good candidates for a project-local allow / deny rule that lets ccgate skip the LLM round-trip entirely.
 - **Top deny commands** -- the most frequent operations the LLM denied. Useful when an automated job keeps trying the same blocked thing -- often a sign that the AI's plan needs a different shape.
+- **Credential failures** -- aggregated from `ft_kind=credential_unavailable` entries, grouped by `(source, reason)`. Tool input is intentionally ignored here (every fire during a credential outage carries the same source/reason regardless of the tool the user invoked). Cache-layer warnings do not appear here; check `ccgate.log` for those.
 
-Pass `--details 0` to suppress both sections, or `--details N` to limit each to the top N rows.
+Pass `--details 0` to suppress the fallthrough / deny sections, or `--details N` to limit each to the top N rows.
 
 ### Disabling, redirecting, rotation
 

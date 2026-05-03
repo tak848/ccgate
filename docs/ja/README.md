@@ -225,6 +225,10 @@ Claude Code と同じ環境変数を使います — [provider table](#3-api-キ
 | `provider.name`          | string                            | `"anthropic"`                                                                   | プロバイダー名。`"anthropic"` / `"openai"` / `"gemini"` のいずれか                                          |
 | `provider.model`         | string                            | `"claude-haiku-4-5"`                                                            | モデル名。例: `claude-haiku-4-5` / `claude-sonnet-4-6` (anthropic)、`gpt-5.4-nano-2026-03-17` (openai)、`gemini-3-flash-preview` (gemini)。互換 proxy 経由なら proxy が公開している任意の名前 (例: `anthropic/claude-haiku-4-5`) |
 | `provider.base_url`      | string                            | `""`                                                                            | API base URL の上書き。空文字列 (default) で SDK の既定 endpoint を使用。OpenAI 互換 / Anthropic 互換 proxy (LiteLLM proxy, Azure OpenAI, オンプレ gateway, 地域別 endpoint 等) 経由で叩きたい時に指定 |
+| `provider.api_key_command` | string                          | `""`                                                                            | Unix 限定。stdout に API キーを出すシェルコマンド (`/bin/sh -c`)。JSON `{key, expires_at}` なら disk cache + 早期 refresh、plain stdout は cache なし。[短命 / ローテーションする API キー](#短命--ローテーションする-api-キー) 参照 |
+| `provider.api_key_file`  | string                            | `""`                                                                            | Unix 限定。abs path or `~/...` のファイルを毎 fire 読む。`api_key_command` と同じ shape を期待。`api_key_command` が空のときのみ参照 |
+| `provider.api_key_refresh_margin` | duration                 | `"30s"`                                                                         | cache 有効性判定の早期 refresh 余裕。`now + margin >= expires_at` で stale 扱い。`>= 0` (`0s` で早期 refresh 無効) |
+| `provider.api_key_command_timeout` | duration                | `"5s"`                                                                          | helper 1 回起動の hot-path 上限 (lock retry + exec)。`> 0` (`0s` は reject)                                |
 | `provider.timeout_ms`    | int                               | `20000`                                                                         | API タイムアウト (ms)。`0` = タイムアウトなし                                                              |
 | `log_path`               | string                            | `$XDG_STATE_HOME/ccgate/<target>/ccgate.log`                                    | ログファイルパス。`~` でホームディレクトリ展開                                                             |
 | `log_disabled`           | bool                              | `false`                                                                         | ログ出力を完全に無効化                                                                                     |
@@ -298,6 +302,77 @@ proxy の API キーを `CCGATE_OPENAI_API_KEY` で export。OpenAI SDK は base
 ```
 
 proxy の API キーを `CCGATE_ANTHROPIC_API_KEY` で export。Anthropic SDK が `/v1/messages` を自分で append するので、base URL は host root で止めます。
+
+### 短命 / ローテーションする API キー
+
+静的 env var では追いつかない credential — AWS STS セッション / Vertex ADC / OpenAI 互換 gateway の virtual key / 社内 key broker など — が相手のときは、ccgate にプロセスかファイルを指してもらいます。
+
+**Unix のみ** (Linux / macOS / *BSD)。Windows では `kind=credential_unavailable` / `reason=unsupported_platform` で fallthrough し、env var 経路はそのまま動き続けます。
+
+#### 出力フォーマット
+
+helper は stdout (もしくはファイル) に次のいずれかの形を書きます:
+
+- JSON: `{"key":"sk-...","expires_at":"2026-05-02T01:23:45Z"}`。strict parse。`expires_at` が未来の場合は `$XDG_CACHE_HOME/ccgate/<target>/api_key.<hash>.json` (mode `0600`) に memoize し、`api_key_refresh_margin` で早めに refresh
+- plain text: 単一行の非空文字列。そのまま渡される (**cache しない**)。低頻度な `gcloud auth print-access-token` 等には十分だが、tool 起動が頻繁な hot path では毎回 helper を exec する hot-path コストになる
+
+`expires_at` は RFC3339。optional な `version` 未指定は `1` 扱い (将来 schema 変更時の互換用予約)。stdout 64KiB 超えは `output_too_large` で reject。
+
+#### 設定
+
+```jsonnet
+{
+  provider: {
+    name: 'anthropic',
+    model: 'claude-haiku-4-5',
+    api_key_command: '/usr/local/bin/my-key-broker --provider anthropic',
+    api_key_refresh_margin: '60s', // optional, default 30s
+    api_key_command_timeout: '5s', // optional, default 5s
+  },
+}
+```
+
+外部 rotator (cron / launchd / systemd timer) がファイル更新する運用ならファイルを指す形でも OK。この場合 ccgate 自身は何も exec しない:
+
+```jsonnet
+{
+  provider: {
+    name: 'anthropic',
+    model: 'claude-haiku-4-5',
+    api_key_file: '~/.config/my-broker/anthropic.json',
+  },
+}
+```
+
+解決順序: `api_key_command` > `api_key_file` > `CCGATE_*_API_KEY` > `*_API_KEY`。helper / file が設定済みの状態で失敗したら ccgate は env var に **fallback しない** (silent fallback は helper のバグを隠す)。代わりに `kind=credential_unavailable` で fallthrough し、reason がどの段階で失敗したかを示します (`ccgate <target> metrics` 参照)。
+
+helper / file 由来の credential に対して provider 側が 401/403 を返した場合、cache を invalidate して次回 hook fire で fresh helper exec を強制します。同じ fire は (exit 1 ではなく) fallthrough として返るので、upstream tool の prompt がユーザーに表示されます。
+
+#### helper の暗黙契約
+
+helper はこれらを満たすこと:
+
+- 非対話 (TTY 入力なし、ブラウザを開かない、stdin は close 状態で起動)
+- daemonize しない (process group を抜ける fork は timeout-kill の対象外になる)
+- stdout には credential **だけ** を書く (debug は stderr へ。ただし stderr に secret は書かない — 失敗時 stderr は先頭 256B だけ log に出る)
+- 同じ `(api_key_command, provider.name, base_url)` は同じ credential を返す決定論性
+- plain string 形式は trim 後に単一行 + 非空であること。複数行は `invalid_plain_output` で reject
+
+ccgate は helper の env に `CCGATE_API_KEY_RESOLUTION=1` を追加します。helper が ccgate を再帰呼び出しする構造で再帰検知に使えます。それ以外の env var (`*_API_KEY` 含む) は継承するので、既存 credential を wrap する helper はそのまま動きます。
+
+#### AWS `credential_process` との差分
+
+API shape は AWS の `credential_process` に意図的に近づけてあるので、既存 helper を 1 行 wrapper で流用しやすいです。ただし AWS CLI が毎回 helper を再 exec するのに対し、**ccgate は disk に memoize** します。hook は 1 セッションで何十回も fire するので hot-path 遅延を優先したトレードオフ。memoize されたくない broker の場合は `expires_at` を含めない JSON (`{"key":"..."}`) を返せば毎回再 exec されます。
+
+#### 障害時の運用復旧 checklist
+
+何かおかしいときは:
+
+1. `ccgate.log` を tail して `kind=credential_unavailable` のエントリを探す。`reason` と `source` (`command` / `file` / `cache` / `lock`) attribute を見る
+2. `ccgate <target> metrics` の **Credential failures** セクションで `(source, reason)` 別の集計を確認
+3. cache 起因が疑わしければ `$XDG_CACHE_HOME/ccgate/<target>/api_key.*.json` を削除して再生成。隣接する `*.lock` は再利用されるので削除しないでよい
+4. `expired` が出続けるなら helper の `expires_at` と `date -u` を比較。helper 内 TTL ロジックや時計ズレが原因
+5. 単独再現は `/bin/sh -c "$your_command"` を実行して helper と同じ stdout が出るか確認
 
 ## デフォルトルール
 

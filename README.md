@@ -227,6 +227,10 @@ Project-local configs are loaded only when **not tracked by Git**.
 | `provider.name`          | string                            | `"anthropic"`                                                                 | Provider name. One of `"anthropic"`, `"openai"`, `"gemini"`.                                            |
 | `provider.model`         | string                            | `"claude-haiku-4-5"`                                                          | Model name. Examples: `claude-haiku-4-5` / `claude-sonnet-4-6` (anthropic), `gpt-5.4-nano-2026-03-17` (openai), `gemini-3-flash-preview` (gemini). When routing through a compatible proxy, use whatever model name the proxy exposes (e.g. `anthropic/claude-haiku-4-5`). |
 | `provider.base_url`      | string                            | `""`                                                                          | Override the provider's API base URL. Empty = use the SDK default. Use this to route through an OpenAI- / Anthropic-compatible proxy (LiteLLM proxy, Azure OpenAI, on-prem gateway, regional endpoint, ...). |
+| `provider.api_key_command` | string                          | `""`                                                                          | Unix only. Shell command (`/bin/sh -c`) whose stdout is the API key. JSON `{key, expires_at}` is cached + refreshed early; plain stdout is uncached. See [Short-lived / rotating API keys](#short-lived--rotating-api-keys). |
+| `provider.api_key_file`  | string                            | `""`                                                                          | Unix only. Absolute or `~/`-prefixed file path read every fire. Same shape as `api_key_command` output. Used when `api_key_command` is empty.                                                              |
+| `provider.api_key_refresh_margin` | duration                 | `"30s"`                                                                       | Cache is stale once `now + margin >= expires_at`. `>= 0` (`0s` disables early refresh).                |
+| `provider.api_key_command_timeout` | duration                | `"5s"`                                                                        | Hot-path upper bound for one helper invocation (lock retries + exec). `> 0` (`0s` rejected).            |
 | `provider.timeout_ms`    | int                               | `20000`                                                                       | API timeout (ms). `0` = no timeout.                                                                    |
 | `log_path`               | string                            | `$XDG_STATE_HOME/ccgate/<target>/ccgate.log`                                  | Log file path. Supports `~` for home directory.                                                        |
 | `log_disabled`           | bool                              | `false`                                                                       | Disable logging entirely                                                                               |
@@ -300,6 +304,77 @@ Export the proxy's API key as `CCGATE_OPENAI_API_KEY`. The trailing `/v1` is req
 ```
 
 Export the proxy's API key as `CCGATE_ANTHROPIC_API_KEY`. The Anthropic SDK appends `/v1/messages` itself, so the base URL stops at the host root.
+
+### Short-lived / rotating API keys
+
+When the credential rotates faster than a static env var can keep up — AWS STS sessions, Vertex ADC, OpenAI-compatible gateways with virtual keys, internal key brokers — point ccgate at a process or a file instead.
+
+**Unix only** (Linux, macOS, *BSD). On Windows, ccgate falls through with `kind=credential_unavailable`/`reason=unsupported_platform` and the env-var path keeps working.
+
+#### Output shape
+
+The helper writes one of two shapes on stdout (or into the file):
+
+- JSON: `{"key":"sk-...","expires_at":"2026-05-02T01:23:45Z"}`. Parsed strictly. With a future `expires_at` the result is memoized to a per-target file under `$XDG_CACHE_HOME/ccgate/<target>/api_key.<hash>.json` (mode `0600`) and refreshed early via `api_key_refresh_margin`.
+- Plain text: a single non-empty line. Returned as-is, **not cached**, so the helper runs on every hook fire — fine for low-frequency setups (`gcloud auth print-access-token`) but a hot-path liability under sustained tool use.
+
+`expires_at` is RFC3339. The optional `version` field defaults to `1` and exists so we can extend the shape without an immediate breaking change. Helper output exceeding 64 KiB on stdout is rejected as `output_too_large`.
+
+#### Config
+
+```jsonnet
+{
+  provider: {
+    name: 'anthropic',
+    model: 'claude-haiku-4-5',
+    api_key_command: '/usr/local/bin/my-key-broker --provider anthropic',
+    api_key_refresh_margin: '60s', // optional; default 30s
+    api_key_command_timeout: '5s', // optional; default 5s
+  },
+}
+```
+
+Or, when an external rotator (cron / launchd / systemd timer) writes the credential to disk on its own schedule, point at the file instead — ccgate never exec's anything in this mode:
+
+```jsonnet
+{
+  provider: {
+    name: 'anthropic',
+    model: 'claude-haiku-4-5',
+    api_key_file: '~/.config/my-broker/anthropic.json',
+  },
+}
+```
+
+Resolution order: `api_key_command` > `api_key_file` > `CCGATE_*_API_KEY` > `*_API_KEY`. When a helper or file is configured ccgate will **not** silently fall back to env vars on failure — that would mask the helper bug. Instead the hook falls through with `kind=credential_unavailable` and a reason that points at exactly which step failed (see `ccgate <target> metrics`).
+
+Provider-side 401/403 against a helper-derived credential automatically invalidates the cache so the next hook fire re-runs the helper. The same fire still falls through (rather than exiting 1) so the upstream tool's prompt is shown to the user.
+
+#### Helper contract
+
+The helper must:
+
+- be non-interactive (no TTY input, no browser open; stdin is closed),
+- not daemonize (forking past the process group escapes our timeout-kill),
+- print only the credential on stdout (debug output goes to stderr, but **never** put secrets in stderr — failure stderr is logged with a 256-byte preview),
+- be deterministic for the same `(api_key_command, provider.name, base_url)` combo (two callers with the same config must agree on what the credential is for),
+- be plain-string-as-single-line: multi-line plain output is rejected as `invalid_plain_output`.
+
+ccgate exports `CCGATE_API_KEY_RESOLUTION=1` into the helper's environment so a helper that wraps ccgate can detect recursive invocation. All other env vars (including `*_API_KEY`) are inherited so wrappers that read existing credentials keep working.
+
+#### Differences from AWS `credential_process`
+
+The shape is intentionally close to AWS's `credential_process` so existing helpers can be adapted with a one-line wrapper, but ccgate **memoizes** the helper output to disk while the AWS CLI re-execs it on every call. That trade favours hot-path latency (hooks fire dozens of times per session) at the cost of one extra "is this credential actually still valid?" answer in your helper. If your broker does not want callers to memoize, return JSON with no `expires_at` (`{"key":"..."}`) and ccgate will re-exec every time.
+
+#### Recovery checklist
+
+When something goes wrong:
+
+1. Tail `ccgate.log` for entries with `kind=credential_unavailable`. Look at the `reason` and `source` (`command` / `file` / `cache` / `lock`) attributes.
+2. Run `ccgate <target> metrics` and inspect the **Credential failures** section — it groups failures by `(source, reason)`.
+3. If it looks cache-related, remove `$XDG_CACHE_HOME/ccgate/<target>/api_key.*.json` to force a refresh. The sibling `*.lock` files can be left alone — they are reused.
+4. If `expired` keeps appearing, compare the helper's `expires_at` with `date -u`; clock skew or a wrong TTL inside the helper is the usual cause.
+5. To reproduce in isolation: `/bin/sh -c "$your_command"` should print exactly the same stdout the helper writes.
 
 ## Default Rules
 
