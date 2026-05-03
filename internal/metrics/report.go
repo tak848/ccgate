@@ -123,6 +123,24 @@ type FullReport struct {
 	Tools          []ToolSummary      `json:"tools"`
 	FallthroughTop []ToolInputSummary `json:"fallthrough_top"`
 	DenyTop        []ToolInputSummary `json:"deny_top"`
+	// CredentialFailures aggregates entries with
+	// FallthroughKind=credential_unavailable by (source, reason)
+	// pairs. We deliberately do NOT mix these into FallthroughTop
+	// because tool_input is irrelevant — every fire that loses its
+	// credential carries the same (source, reason) regardless of
+	// which tool the user happened to invoke. Sorted descending by
+	// Count with deterministic tiebreaks.
+	CredentialFailures []CredentialFailureSummary `json:"credential_failures,omitempty"`
+}
+
+// CredentialFailureSummary is one row of the new "Credential failures"
+// section in the report. Source / Reason use the same vocabulary as
+// the keystore (`command`/`file`/`cache`/`lock` and the secret-free
+// reason classifier defined in internal/keystore.Reason).
+type CredentialFailureSummary struct {
+	Source string `json:"source"`
+	Reason string `json:"reason"`
+	Count  int    `json:"count"`
 }
 
 // PrintReport reads metrics from one or more files and prints a
@@ -222,11 +240,17 @@ type aggKey struct {
 	Input ToolInputFields
 }
 
+type credKey struct {
+	Source string
+	Reason string
+}
+
 func aggregate(entries []Entry, days int, detailsTop int) FullReport {
 	dailyMap := make(map[string]*DailySummary)
 	toolMap := make(map[string]*ToolSummary)
 	fallthroughMap := make(map[aggKey]*ToolInputSummary)
 	denyMap := make(map[aggKey]*ToolInputSummary)
+	credMap := make(map[credKey]int)
 
 	var minTS, maxTS time.Time
 	loc := time.Now().Location()
@@ -319,6 +343,19 @@ func aggregate(entries []Entry, days int, detailsTop int) FullReport {
 		if e.Decision == "deny" && !e.Forced {
 			bumpToolInputSummary(denyMap, e)
 		}
+		// Credential failures: independent of tool_input. The same
+		// (source, reason) appears across every tool the user happens
+		// to invoke during the outage, so aggregating by tool would
+		// drown the signal. We log a stand-in `(unknown)` source for
+		// older entries that pre-date the credential_source field so
+		// historical data isn't silently dropped.
+		if e.FallthroughKind == llm.FallthroughKindCredentialUnavailable {
+			source := e.CredentialSource
+			if source == "" {
+				source = "(unknown)"
+			}
+			credMap[credKey{Source: source, Reason: e.Reason}]++
+		}
 	}
 
 	daily := make([]DailySummary, 0, len(dailyMap))
@@ -346,6 +383,7 @@ func aggregate(entries []Entry, days int, detailsTop int) FullReport {
 
 	fallthroughTop := rankToolInputSummaries(fallthroughMap, detailsTop)
 	denyTop := rankToolInputSummaries(denyMap, detailsTop)
+	credentialFailures := rankCredentialFailures(credMap)
 
 	var overallRate float64
 	if totalAll > 0 {
@@ -360,14 +398,39 @@ func aggregate(entries []Entry, days int, detailsTop int) FullReport {
 	}
 
 	return FullReport{
-		Period:         fmt.Sprintf("last %d days", days),
-		DataRange:      dataRange,
-		AutomationRate: overallRate,
-		Daily:          daily,
-		Tools:          tools,
-		FallthroughTop: fallthroughTop,
-		DenyTop:        denyTop,
+		Period:             fmt.Sprintf("last %d days", days),
+		DataRange:          dataRange,
+		AutomationRate:     overallRate,
+		Daily:              daily,
+		Tools:              tools,
+		FallthroughTop:     fallthroughTop,
+		DenyTop:            denyTop,
+		CredentialFailures: credentialFailures,
 	}
+}
+
+// rankCredentialFailures sorts the (source, reason) pairs descending
+// by Count with deterministic ties so JSON / TTY output is stable
+// across runs and CI. Returns an empty slice when there is nothing
+// to report so callers can branch on len() == 0 cleanly.
+func rankCredentialFailures(m map[credKey]int) []CredentialFailureSummary {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make([]CredentialFailureSummary, 0, len(m))
+	for k, count := range m {
+		out = append(out, CredentialFailureSummary{Source: k.Source, Reason: k.Reason, Count: count})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Count != out[j].Count {
+			return out[i].Count > out[j].Count
+		}
+		if out[i].Source != out[j].Source {
+			return out[i].Source < out[j].Source
+		}
+		return out[i].Reason < out[j].Reason
+	})
+	return out
 }
 
 func bumpToolInputSummary(m map[aggKey]*ToolInputSummary, e Entry) {
@@ -581,6 +644,29 @@ func printTable(w io.Writer, report FullReport, cutoff time.Time) {
 
 	printTopSection(w, "Top fallthrough commands", report.FallthroughTop)
 	printTopSection(w, "Top deny commands", report.DenyTop)
+	printCredentialFailures(w, report.CredentialFailures)
+}
+
+// printCredentialFailures renders the new section. It deliberately
+// mirrors printTopSection's layout (count then label) so users who
+// already learned the report don't need to learn a second one.
+func printCredentialFailures(w io.Writer, summaries []CredentialFailureSummary) {
+	if len(summaries) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "\nCredential failures (%d):\n", len(summaries))
+	srcWidth, reasonWidth, countWidth := len("source"), len("reason"), 0
+	for _, s := range summaries {
+		srcWidth = maxInt(srcWidth, len(s.Source))
+		reasonWidth = maxInt(reasonWidth, len(s.Reason))
+		countWidth = maxInt(countWidth, len(humanInt(int64(s.Count))))
+	}
+	for _, s := range summaries {
+		fmt.Fprintf(w, "  %-*s  %-*s  %*s\n",
+			srcWidth, s.Source,
+			reasonWidth, s.Reason,
+			countWidth, humanInt(int64(s.Count)))
+	}
 }
 
 func printTopSection(w io.Writer, title string, summaries []ToolInputSummary) {

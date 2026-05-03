@@ -75,6 +75,7 @@ func Run(stdin io.Reader, stdout io.Writer) int {
 	}
 	return runner.Run(stdin, stdout, opts,
 		runner.WithTargetName("Claude Code"),
+		runner.WithCacheTarget("claude"),
 		runner.WithPromptSection(claudeTargetSection),
 		runner.WithHasRecentTranscript(true),
 		runner.WithStaticPermissions(staticPermissionsHook),

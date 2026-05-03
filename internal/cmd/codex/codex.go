@@ -64,6 +64,7 @@ func Run(stdin io.Reader, stdout io.Writer) int {
 	}
 	return runner.Run(stdin, stdout, opts,
 		runner.WithTargetName("Codex CLI"),
+		runner.WithCacheTarget("codex"),
 	)
 }
 

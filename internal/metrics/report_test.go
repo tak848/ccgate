@@ -161,6 +161,73 @@ func TestPrintReportTable(t *testing.T) {
 	}
 }
 
+// TestBuildReportCredentialFailures validates the new section
+// introduced for issue #61: credential_unavailable entries roll up
+// by (source, reason) regardless of tool_input, and entries written
+// by an older binary (no credential_source field) don't get dropped
+// — they roll into a stand-in source so the user can still see they
+// happened.
+func TestBuildReportCredentialFailures(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.jsonl")
+	now := time.Now().UTC()
+	writeEntries(t, path, []Entry{
+		{Timestamp: now, ToolName: "Bash", Decision: "fallthrough",
+			FallthroughKind: "credential_unavailable", Reason: "expired",
+			CredentialSource: "command", ElapsedMS: 5},
+		{Timestamp: now, ToolName: "Read", Decision: "fallthrough",
+			FallthroughKind: "credential_unavailable", Reason: "expired",
+			CredentialSource: "command", ElapsedMS: 5},
+		{Timestamp: now, ToolName: "Write", Decision: "fallthrough",
+			FallthroughKind: "credential_unavailable", Reason: "provider_auth",
+			CredentialSource: "command", ElapsedMS: 5},
+		{Timestamp: now, ToolName: "Read", Decision: "fallthrough",
+			FallthroughKind: "credential_unavailable", Reason: "file_missing",
+			CredentialSource: "file", ElapsedMS: 5},
+		// Older binary: no CredentialSource. Should still appear in
+		// the section so the user notices the failure existed.
+		{Timestamp: now, ToolName: "Read", Decision: "fallthrough",
+			FallthroughKind: "credential_unavailable", Reason: "timeout",
+			ElapsedMS: 5},
+	})
+
+	report, _, err := buildReport([]string{path}, ReportOptions{Days: 7})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.CredentialFailures) != 4 {
+		t.Fatalf("got %d credential failures, want 4: %+v", len(report.CredentialFailures), report.CredentialFailures)
+	}
+	// Sorted descending by Count, so the (command, expired) pair
+	// (count=2) must come first.
+	first := report.CredentialFailures[0]
+	if first.Source != "command" || first.Reason != "expired" || first.Count != 2 {
+		t.Fatalf("first row = %+v, want {command, expired, 2}", first)
+	}
+	// Older entry without CredentialSource appears under
+	// "(unknown)" so it doesn't get silently swallowed.
+	var sawUnknown bool
+	for _, s := range report.CredentialFailures {
+		if s.Source == "(unknown)" && s.Reason == "timeout" && s.Count == 1 {
+			sawUnknown = true
+		}
+	}
+	if !sawUnknown {
+		t.Fatalf("expected (unknown,timeout,1) row for legacy entry, got: %+v", report.CredentialFailures)
+	}
+
+	// Table output renders the new section header.
+	var buf bytes.Buffer
+	if err := PrintReport(&buf, []string{path}, ReportOptions{Days: 7, DetailsTop: 10}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "Credential failures") {
+		t.Fatalf("expected 'Credential failures' header in TTY output:\n%s", buf.String())
+	}
+}
+
 func writeEntries(t *testing.T, path string, entries []Entry) {
 	t.Helper()
 	f, err := os.Create(path)

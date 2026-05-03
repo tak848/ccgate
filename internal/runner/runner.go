@@ -16,9 +16,11 @@ package runner
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -27,8 +29,12 @@ import (
 	"syscall"
 	"time"
 
+	anthropicsdk "github.com/anthropics/anthropic-sdk-go"
+	openaisdk "github.com/openai/openai-go"
+
 	"github.com/tak848/ccgate/internal/config"
 	"github.com/tak848/ccgate/internal/gitutil"
+	"github.com/tak848/ccgate/internal/keystore"
 	"github.com/tak848/ccgate/internal/llm"
 	"github.com/tak848/ccgate/internal/llm/anthropic"
 	"github.com/tak848/ccgate/internal/llm/gemini"
@@ -147,6 +153,7 @@ type Option func(*runtimeOptions)
 
 type runtimeOptions struct {
 	targetName            string
+	cacheTarget           string
 	promptSection         string
 	hasRecentTranscript   bool
 	loadStaticPermissions func(cwd string) any
@@ -158,6 +165,17 @@ type runtimeOptions struct {
 // back to a generic phrasing if unset.
 func WithTargetName(name string) Option {
 	return func(o *runtimeOptions) { o.targetName = name }
+}
+
+// WithCacheTarget sets the per-target subdirectory name used for the
+// keystore cache layout ("claude" / "codex" / ...). It must match the
+// subdir cmd/<target>/ already uses for log_path / metrics_path so a
+// user looking at one place sees them all together. Empty string
+// disables credential caching: keystore.Resolve falls back to a
+// generic location that is shared across targets, which is fine for
+// Run callers that never set api_key_command (env-var path only).
+func WithCacheTarget(name string) Option {
+	return func(o *runtimeOptions) { o.cacheTarget = name }
 }
 
 // WithPromptSection injects target-specific guidance about which
@@ -234,11 +252,11 @@ func Run(stdin io.Reader, stdout io.Writer, opts config.LoadOptions, runOpts ...
 	)
 
 	start := time.Now()
-	decision, hasDecision, kind, reason, usage, runErr := decide(ctx, cfg, input, ro)
+	decision, hasDecision, kind, reason, credSource, usage, runErr := decide(ctx, cfg, input, ro)
 	elapsed := time.Since(start)
 
 	if !cfg.IsMetricsDisabled() {
-		entry := buildMetricsEntry(start, elapsed, input, cfg, decision, hasDecision, kind, reason, usage, runErr)
+		entry := buildMetricsEntry(start, elapsed, input, cfg, decision, hasDecision, kind, reason, credSource, usage, runErr)
 		metrics.Record(cfg.ResolveMetricsPath(), cfg.GetMetricsMaxSize(), entry)
 	}
 
@@ -259,12 +277,20 @@ func Run(stdin io.Reader, stdout io.Writer, opts config.LoadOptions, runOpts ...
 	return 0
 }
 
-func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOptions) (llm.Decision, bool, string, string, *llm.Usage, error) {
+// decide returns: the resolved Decision, whether the hook should
+// emit an explicit allow/deny payload (false means "fall through to
+// the upstream prompt"), the fallthrough kind classifier for
+// metrics, the reason string, the credential source label
+// ("command"/"file"/"cache"/"lock") when kind is
+// credential_unavailable, the LLM token usage if any, and the run
+// error (only set for unrecoverable failures that should make the
+// hook exit 1).
+func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOptions) (llm.Decision, bool, string, string, string, *llm.Usage, error) {
 	// Tools that require user interaction must never be auto-decided.
 	switch in.ToolName {
 	case "ExitPlanMode", "AskUserQuestion":
 		slog.Info("user interaction tool: falling through", "tool", in.ToolName)
-		return llm.Decision{}, false, llm.FallthroughKindUserInteraction, "", nil, nil
+		return llm.Decision{}, false, llm.FallthroughKindUserInteraction, "", "", nil, nil
 	}
 
 	// Some permission modes hand the prompt back to the upstream tool
@@ -274,33 +300,35 @@ func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOpti
 		// fall through to LLM
 	case "bypassPermissions":
 		slog.Info("bypass mode: falling through", "tool", in.ToolName)
-		return llm.Decision{}, false, llm.FallthroughKindBypass, "", nil, nil
+		return llm.Decision{}, false, llm.FallthroughKindBypass, "", "", nil, nil
 	case "dontAsk":
 		slog.Info("dontAsk mode: falling through", "tool", in.ToolName)
-		return llm.Decision{}, false, llm.FallthroughKindDontAsk, "", nil, nil
+		return llm.Decision{}, false, llm.FallthroughKindDontAsk, "", "", nil, nil
 	}
 
 	providerName := strings.ToLower(cfg.Provider.Name)
-	apiKey, ok := resolveAPIKey(providerName)
-	if !ok {
-		switch providerName {
-		case "anthropic", "openai", "gemini":
-			slog.Warn("no API key found", "provider", cfg.Provider.Name)
-			return llm.Decision{}, false, llm.FallthroughKindNoAPIKey, "", nil, nil
-		default:
-			slog.Info("unknown provider, falling through", "provider", cfg.Provider.Name)
-			return llm.Decision{}, false, llm.FallthroughKindUnknownProvider, "", nil, nil
-		}
-	}
 	// Trim whitespace so a templating mistake like `base_url: '   '`
 	// is treated as missing rather than passed through to the SDK,
 	// which would surface as a hard config error and exit 1 instead of
 	// quietly using the provider's default endpoint.
 	baseURL := strings.TrimSpace(cfg.Provider.BaseURL)
 
+	apiKey, kind, reason, source, err := resolveAPIKey(ctx, cfg.Provider, providerName, ro.cacheTarget)
+	if err != nil {
+		// resolveAPIKey already logged the helper / file failure.
+		// Surface as fallthrough so the upstream tool can prompt the
+		// user; never exit 1 on credential resolution errors.
+		_ = err // keep for debug; metrics carry kind+reason+source
+		return llm.Decision{}, false, kind, reason, source, nil, nil
+	}
+	if apiKey == "" {
+		// No key configured at all (kind already classified).
+		return llm.Decision{}, false, kind, reason, source, nil, nil
+	}
+
 	p, err := buildPrompt(cfg, in, ro)
 	if err != nil {
-		return llm.Decision{}, false, "", "", nil, fmt.Errorf("build prompt: %w", err)
+		return llm.Decision{}, false, "", "", "", nil, fmt.Errorf("build prompt: %w", err)
 	}
 
 	slog.Info("llm request",
@@ -314,32 +342,107 @@ func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOpti
 	client := newProviderClient(providerName, apiKey, baseURL)
 	res, err := client.Decide(ctx, p)
 	if err != nil {
-		return llm.Decision{}, false, "", "", res.Usage, err
+		// 401/403 against a key that came from the helper / file
+		// path is the canonical "the credential we just used is
+		// stale or wrong" signal. Invalidate so the next hook fire
+		// re-runs the helper, then fall through instead of exit 1.
+		// 401/403 with an env-var key is a user configuration error
+		// we cannot fix; still fall through (same UX) but skip the
+		// invalidate step since there is no cache to clear.
+		if isProviderAuthError(err) {
+			invalidateOnAuthFailure(cfg.Provider, ro.cacheTarget, source, providerName, baseURL)
+			authSource := source
+			if authSource == "" {
+				authSource = string(keystore.SourceCommand)
+			}
+			slog.Warn("provider rejected credential, falling through",
+				"reason", string(keystore.ReasonProviderAuth),
+				"source", authSource,
+				"error", err,
+			)
+			return llm.Decision{}, false, llm.FallthroughKindCredentialUnavailable, string(keystore.ReasonProviderAuth), authSource, res.Usage, nil
+		}
+		return llm.Decision{}, false, "", "", "", res.Usage, err
 	}
 	if res.Unusable {
-		return llm.Decision{}, false, llm.FallthroughKindAPIUnusable, "", res.Usage, nil
+		return llm.Decision{}, false, llm.FallthroughKindAPIUnusable, "", "", res.Usage, nil
 	}
 
 	switch res.Output.Behavior {
 	case llm.BehaviorAllow:
-		return llm.Decision{Behavior: llm.BehaviorAllow}, true, "", res.Output.Reason, res.Usage, nil
+		return llm.Decision{Behavior: llm.BehaviorAllow}, true, "", res.Output.Reason, "", res.Usage, nil
 	case llm.BehaviorDeny:
 		msg := strings.TrimSpace(res.Output.DenyMessage)
 		if msg == "" {
 			msg = llm.DefaultDenyMessage
 		}
-		return llm.Decision{Behavior: llm.BehaviorDeny, Message: msg}, true, "", res.Output.Reason, res.Usage, nil
+		return llm.Decision{Behavior: llm.BehaviorDeny, Message: msg}, true, "", res.Output.Reason, "", res.Usage, nil
 	case llm.BehaviorFallthrough, "":
 		if d, ok := llm.ApplyStrategy(cfg.GetFallthroughStrategy(), res.Output.Reason); ok {
-			return d, true, llm.FallthroughKindLLM, res.Output.Reason, res.Usage, nil
+			return d, true, llm.FallthroughKindLLM, res.Output.Reason, "", res.Usage, nil
 		}
-		return llm.Decision{}, false, llm.FallthroughKindLLM, res.Output.Reason, res.Usage, nil
+		return llm.Decision{}, false, llm.FallthroughKindLLM, res.Output.Reason, "", res.Usage, nil
 	default:
 		slog.Warn("unexpected LLM behavior", "behavior", res.Output.Behavior)
 		if d, ok := llm.ApplyStrategy(cfg.GetFallthroughStrategy(), res.Output.Reason); ok {
-			return d, true, llm.FallthroughKindLLM, res.Output.Reason, res.Usage, nil
+			return d, true, llm.FallthroughKindLLM, res.Output.Reason, "", res.Usage, nil
 		}
-		return llm.Decision{}, false, llm.FallthroughKindLLM, res.Output.Reason, res.Usage, nil
+		return llm.Decision{}, false, llm.FallthroughKindLLM, res.Output.Reason, "", res.Usage, nil
+	}
+}
+
+// isProviderAuthError type-checks the error against the
+// anthropic-sdk-go and openai-go SDK error envelopes (gemini
+// delegates to openai internally) and reports whether it is a
+// credential-rejection response — 401/403, the same statuses every
+// other ccgate caller already treats as "the key the user gave us is
+// not accepted". Other 4xx/5xx responses keep the existing exit-1
+// behaviour because they signal user-recoverable issues we cannot
+// auto-resolve from the keystore.
+func isProviderAuthError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var anth *anthropicsdk.Error
+	if errors.As(err, &anth) {
+		return anth.StatusCode == http.StatusUnauthorized || anth.StatusCode == http.StatusForbidden
+	}
+	var oai *openaisdk.Error
+	if errors.As(err, &oai) {
+		return oai.StatusCode == http.StatusUnauthorized || oai.StatusCode == http.StatusForbidden
+	}
+	return false
+}
+
+// invalidateOnAuthFailure asks keystore to forget the cached
+// credential so the next hook fire forces a fresh helper exec. We
+// only call this when the credential actually came from the
+// helper/file path (env-var keys never produced a cache file). The
+// returned error is best-effort logged; we do not propagate it
+// because the surrounding fallthrough already runs no matter what.
+func invalidateOnAuthFailure(p config.ProviderConfig, target, source, providerName, baseURL string) {
+	if p.APIKeyCommand == "" && p.APIKeyFile == "" {
+		return
+	}
+	if source == string(keystore.SourceFile) {
+		// File-mode resolution does not cache, so there is no
+		// keystore artifact to clear. The rotator that owns the
+		// file is what needs to re-issue.
+		return
+	}
+	opts := keystore.Options{
+		Command:      p.APIKeyCommand,
+		File:         p.APIKeyFile,
+		ProviderName: providerName,
+		BaseURL:      baseURL,
+		TargetName:   target,
+	}
+	if err := keystore.Invalidate(opts); err != nil {
+		slog.Warn("keystore: cache invalidate failed",
+			"reason", "cache_write",
+			"source", string(keystore.SourceCache),
+			"error", err,
+		)
 	}
 }
 
@@ -432,23 +535,73 @@ func redactedUserMessage(user string) string {
 	return string(out)
 }
 
-func resolveAPIKey(providerName string) (string, bool) {
+// resolveAPIKey decides where the provider API key comes from on
+// this hook fire and returns the credential plus the metrics-friendly
+// classifiers we need to log and aggregate failures.
+//
+// The order is fixed:
+//
+//  1. provider.api_key_command / api_key_file via internal/keystore.
+//     Configured-but-failing helpers fall through with
+//     credential_unavailable rather than silently dropping back to
+//     env vars (silent fallback would mask helper bugs).
+//  2. CCGATE_<PROVIDER>_API_KEY then <PROVIDER>_API_KEY for the
+//     known providers; anything else returns unknown_provider.
+//  3. Nothing set: no_apikey for the known providers.
+//
+// Returns (key, fallthroughKind, reason, source, err). On success
+// `key` is non-empty and `fallthroughKind` is empty; on
+// fallthrough-class outcomes `key` is empty and the caller emits
+// the upstream prompt without exiting 1. `err` is only set when
+// keystore.Resolve produced one (used for log enrichment, not for
+// hook exit).
+func resolveAPIKey(ctx context.Context, p config.ProviderConfig, providerName, target string) (string, string, string, string, error) {
+	if p.APIKeyCommand != "" || p.APIKeyFile != "" {
+		opts := keystore.Options{
+			Command:        p.APIKeyCommand,
+			File:           p.APIKeyFile,
+			ProviderName:   providerName,
+			BaseURL:        strings.TrimSpace(p.BaseURL),
+			TargetName:     target,
+			RefreshMargin:  p.GetAPIKeyRefreshMargin(),
+			CommandTimeout: p.GetAPIKeyCommandTimeout(),
+		}
+		res, err := keystore.Resolve(ctx, opts)
+		if err != nil {
+			slog.Warn("keystore: api key resolution failed",
+				"kind", llm.FallthroughKindCredentialUnavailable,
+				"reason", string(res.Reason),
+				"source", string(res.Source),
+				"error", err,
+			)
+			return "", llm.FallthroughKindCredentialUnavailable, string(res.Reason), string(res.Source), err
+		}
+		return res.Key, "", "", string(res.Source), nil
+	}
+
 	var primary, fallback string
 	switch providerName {
-	case "openai":
-		primary, fallback = "CCGATE_OPENAI_API_KEY", "OPENAI_API_KEY"
-	case "gemini":
-		primary, fallback = "CCGATE_GEMINI_API_KEY", "GEMINI_API_KEY"
-	default: // anthropic
-		primary, fallback = "CCGATE_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"
+	case "anthropic", "openai", "gemini":
+		switch providerName {
+		case "openai":
+			primary, fallback = "CCGATE_OPENAI_API_KEY", "OPENAI_API_KEY"
+		case "gemini":
+			primary, fallback = "CCGATE_GEMINI_API_KEY", "GEMINI_API_KEY"
+		default:
+			primary, fallback = "CCGATE_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"
+		}
+	default:
+		slog.Info("unknown provider, falling through", "provider", providerName)
+		return "", llm.FallthroughKindUnknownProvider, "", "", nil
 	}
 	if key := strings.TrimSpace(os.Getenv(primary)); key != "" {
-		return key, true
+		return key, "", "", "", nil
 	}
 	if key := strings.TrimSpace(os.Getenv(fallback)); key != "" {
-		return key, true
+		return key, "", "", "", nil
 	}
-	return "", false
+	slog.Warn("no API key found", "provider", providerName)
+	return "", llm.FallthroughKindNoAPIKey, "", "", nil
 }
 
 func newProviderClient(providerName, apiKey, baseURL string) llm.Provider {
@@ -473,6 +626,7 @@ func buildMetricsEntry(
 	hasDecision bool,
 	kind string,
 	llmReason string,
+	credSource string,
 	usage *llm.Usage,
 	err error,
 ) metrics.Entry {
@@ -503,6 +657,9 @@ func buildMetricsEntry(
 		entry.Decision = "fallthrough"
 		entry.FallthroughKind = kind
 		entry.Reason = truncateStr(llmReason, maxTruncateLen)
+		if kind == llm.FallthroughKindCredentialUnavailable {
+			entry.CredentialSource = credSource
+		}
 	}
 
 	if usage != nil {
