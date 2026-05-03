@@ -313,7 +313,7 @@ proxy の API キーを `CCGATE_ANTHROPIC_API_KEY` で export。Anthropic SDK �
 
 helper は stdout (もしくはファイル) に次のいずれかの形を書きます:
 
-- JSON: `{"key":"sk-...","expires_at":"2026-05-02T01:23:45Z"}`。strict parse。`expires_at` が未来の場合は `$XDG_CACHE_HOME/ccgate/<target>/api_key.<hash>.json` (mode `0600`) に memoize し、`api_key_refresh_margin` で早めに refresh
+- JSON: `{"key":"sk-...","expires_at":"2026-05-02T01:23:45Z"}`。strict (厳密) parse。`expires_at` が未来の場合は `$XDG_CACHE_HOME/ccgate/<target>/api_key.<hash>.json` (mode `0600`) にメモ化 (memoize) し、`api_key_refresh_margin` で早めに refresh
 - plain text: 単一行の非空文字列。そのまま渡される (**cache しない**)。低頻度な `gcloud auth print-access-token` 等には十分だが、tool 起動が頻繁な hot path では毎回 helper を exec する hot-path コストになる
 
 `expires_at` は RFC3339。optional な `version` 未指定は `1` 扱い (将来 schema 変更時の互換用予約)。stdout 64KiB 超えは `output_too_large` で reject。
@@ -332,7 +332,7 @@ helper は stdout (もしくはファイル) に次のいずれかの形を書�
 }
 ```
 
-外部 rotator (cron / launchd / systemd timer) がファイル更新する運用ならファイルを指す形でも OK。この場合 ccgate 自身は何も exec しない:
+外部 rotator (cron / launchd / systemd timer) がファイル更新する運用ならファイルを指す形でも OK。この場合 ccgate 自身は何も exec せず、ccgate 内部のキャッシュも作らない (ローテーションは rotator 側の責務):
 
 ```jsonnet
 {
@@ -344,7 +344,55 @@ helper は stdout (もしくはファイル) に次のいずれかの形を書�
 }
 ```
 
+#### 5 分で動く helper 例
+
+最小の helper は 1 行で API キーを stdout に出すだけです。これは「plain string」形式で、ccgate はキャッシュしないため hook 起動のたびに再実行されます。ローカル試験には十分ですが、tool 起動が頻繁な hot path では毎回コストが乗ります:
+
+```sh
+#!/bin/sh
+# ~/bin/ccgate-key-plain.sh -- ローカル試験用、キャッシュなし
+exec gcloud auth print-access-token
+```
+
+実運用では JSON で `expires_at` を付けて、ccgate にキャッシュ + 期限直前 refresh をさせます:
+
+```sh
+#!/bin/sh
+# ~/bin/ccgate-key-json.sh -- expires_at までキャッシュされる
+set -eu
+TOKEN=$(gcloud auth print-access-token)
+# refresh_margin (default 30s) に余裕を持たせて 50 分先に設定。
+EXP=$(date -u -v+50M +%FT%TZ 2>/dev/null || date -u -d '+50 minutes' +%FT%TZ)
+printf '{"key":"%s","expires_at":"%s"}\n' "$TOKEN" "$EXP"
+```
+
+スクリプトは `chmod 700 ~/bin/ccgate-key-json.sh` で実行可能にし、設定で `api_key_command: '~/bin/ccgate-key-json.sh'` のように指す。先に単独で動作確認 (`~/bin/ccgate-key-json.sh | jq .` で valid な JSON object が返ること) を取ってから ccgate に食わせるのが安全です。
+
+`api_key_file` 形式の場合、外部 rotator が同じ JSON 形を atomic rename でファイルに書き出します:
+
+```sh
+#!/bin/sh
+# cron / launchd / systemd-timer から 50 分ごとに実行
+TOKEN=$(my-broker --provider anthropic)
+EXP=$(date -u -v+1H +%FT%TZ 2>/dev/null || date -u -d '+1 hour' +%FT%TZ)
+TMP=$(mktemp ~/.config/my-broker/anthropic.json.XXXXXX)
+printf '{"key":"%s","expires_at":"%s"}\n' "$TOKEN" "$EXP" > "$TMP"
+chmod 0600 "$TMP"
+mv "$TMP" ~/.config/my-broker/anthropic.json
+```
+
 解決順序: `api_key_command` > `api_key_file` > `CCGATE_*_API_KEY` > `*_API_KEY`。helper / file が設定済みの状態で失敗したら ccgate は env var に **fallback しない** (silent fallback は helper のバグを隠す)。代わりに `kind=credential_unavailable` で fallthrough し、reason がどの段階で失敗したかを示します (`ccgate <target> metrics` 参照)。
+
+#### account 依存 helper の罠
+
+cache key は `(target, provider.name, base_url, api_key_command)` だけから作られ、環境変数は読みません。helper が `AWS_PROFILE` / `GCLOUD_ACCOUNT` / `OP_ACCOUNT` 等に依存する場合、`api_key_command: 'aws sts ...'` のように literal に書いただけだと、すべての account で同じ cache file を共有してしまい、最初に発行された credential が以後どの account の hook 起動 でも返り続けます。
+
+回避策は 2 つ:
+
+- account を command 文字列に直接埋め込む (`api_key_command: 'aws sts assume-role --profile prod ...'` 等)。command 文字列が違えば hash も別になり、cache が account ごとに分離されます
+- または `api_key_file` を account ごとに分け、各 account の rotator に専用パスを書かせる
+
+user 提供の cache salt (`api_key_cache_key`) — command 文字列で表現しきれないケース向け — は #67 / #61 の follow-up として trackされています。
 
 #### credential を安全に持ちまわるコツ
 
@@ -352,7 +400,7 @@ helper は stdout (もしくはファイル) に次のいずれかの形を書�
 - `api_key_command` に literal secret を直書きしない。command 文字列は `/bin/sh -c` に渡されるので、`ps` / `/proc/<pid>/cmdline` / audit log / shell history に丸見え。secret はファイルや keychain に置き、helper の内部で読む形にすること
 - ccgate のログファイル (`$XDG_STATE_HOME/ccgate/<target>/ccgate.log`) は `0644` で書かれる。helper 失敗時、ccgate は exit error と stderr のバイト数のみログに残し、**stderr 本文は書き出さない** ので helper 内部の `set -x` 事故で token が漏れたりしない。stderr の内容を見たいときは ccgate のログを覗くのではなく、helper を `2>&1` 付きで手動実行すること
 
-helper / file 由来の credential に対して provider 側が 401/403 を返した場合、cache を invalidate して次回 hook fire で fresh helper exec を強制します。同じ fire は (exit 1 ではなく) fallthrough として返るので、upstream tool の prompt がユーザーに表示されます。
+helper 由来 credential に対して provider 側が 401/403 を返した場合、ccgate は keystore のキャッシュを invalidate して次回 hook 起動で helper を再実行させます。`api_key_file` には内部キャッシュがないため、同じ 401/403 でも復旧 (新しい credential をファイルに書き直す) は rotator 側の責務です。401/403 を踏んだその fire はどちらの経路でも (exit 1 ではなく) fallthrough として返るので、upstream tool の prompt がユーザーに表示されます。一方、env var 由来の key は **意図的にこの経路に乗せていません**: ccgate からは rotate できず、401/403 を黙って飲むと user 側の設定ミスを隠してしまうためです。
 
 #### helper の暗黙契約
 
@@ -368,7 +416,7 @@ ccgate は helper の env に `CCGATE_API_KEY_RESOLUTION=1` を追加します�
 
 #### AWS `credential_process` との差分
 
-API shape は AWS の `credential_process` に意図的に近づけてあるので、既存 helper を 1 行 wrapper で流用しやすいです。ただし AWS CLI が毎回 helper を再 exec するのに対し、**ccgate は disk に memoize** します。hook は 1 セッションで何十回も fire するので hot-path 遅延を優先したトレードオフ。memoize されたくない broker の場合は `expires_at` を含めない JSON (`{"key":"..."}`) を返せば毎回再 exec されます。
+API shape は AWS の `credential_process` に意図的に近づけてあるので、既存 helper を 1 行 wrapper で流用しやすいです。ただし AWS CLI が毎回 helper を再 exec するのに対し、**ccgate は disk にメモ化 (memoize) する** 設計です。hook は 1 セッションで何十回も呼ばれるため hot-path 遅延を優先したトレードオフ。キャッシュさせたくない broker の場合は `expires_at` を含めない JSON (`{"key":"..."}`) を返せば毎回再 exec されます。
 
 #### 障害時の運用復旧 checklist
 

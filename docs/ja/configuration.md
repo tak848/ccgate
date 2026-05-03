@@ -124,7 +124,7 @@ ccgate codex  metrics --days 7         # codex 側も同 shape
 
 `ft_kind` は LLM (またはランタイム) が fallthrough を返したときに埋まり、どの fallback path が発火したかを示します (`llm`, `api_unusable`, `no_apikey`, `credential_unavailable`, `unknown_provider`, `bypass`, `dontask`, `user_interaction`)。`forced=true` は `fallthrough_strategy` が LLM `fallthrough` を `decision` に promote したことを意味します。
 
-`credential_source` は `ft_kind=credential_unavailable` のときだけ埋まります。keystore のどの段階で credential 解決が起きた / 失敗したか (`command` / `file` / `cache` / `lock`) を示し、同じ `reason` を発生源別に集計するのに使えます。
+`credential_source` は `ft_kind=credential_unavailable` のときだけ埋まります。keystore のどの段階で credential 解決が起きた / 失敗したかを示し (現状は `command` / `file` / `cache` / `lock`)、同じ `reason` を発生源別に集計するのに使えます。値の集合は open: 将来 OAuth refresh 経路や Windows ネイティブ backend が増えると新しい値が増えうるので、この field を parse する側は固定 enum で validation せず、未知の短い文字列を許容してください。
 
 `reason` の意味は `ft_kind` で文脈が変わります:
 
@@ -136,7 +136,7 @@ ccgate codex  metrics --days 7         # codex 側も同 shape
 | reason                  | 意味                                                                                                |
 |-------------------------|-----------------------------------------------------------------------------------------------------|
 | `command_exit`          | `api_key_command` が非 0 exit                                                                        |
-| `json_parse`            | helper / file の JSON が strict parse 失敗 / `key` 欠落                                              |
+| `json_parse`            | helper / file の JSON が厳密 parse に失敗 / `key` 欠落                                                |
 | `invalid_expiration`    | JSON parse は成功したが `expires_at` が RFC3339 として解釈不能                                       |
 | `empty_output`          | plain 出力が trim 後に空                                                                             |
 | `invalid_plain_output`  | plain 出力に内部改行 (複数行は reject)                                                               |
@@ -148,7 +148,7 @@ ccgate codex  metrics --days 7         # codex 側も同 shape
 | `output_too_large`      | helper の stdout が 64 KiB 上限超過                                                                  |
 | `lock_timeout`          | flock retry budget 切れ (peer が refresh 中)                                                         |
 | `lock_error`            | flock syscall が EWOULDBLOCK 以外で失敗 (lock 系が壊れている → helper exec はスキップ)               |
-| `provider_auth`         | provider API が 401/403 で credential を拒否。次回 fire 用に cache を invalidate                      |
+| `provider_auth`         | provider API が 401/403 で credential を拒否。helper / file 経路では keystore キャッシュを invalidate し、次回呼び出しで再解決させる。`api_key_file` は内部キャッシュを持たないため復旧は rotator 側の責務 |
 
 #### log のみで出る credential 警告 (metrics には乗らない)
 

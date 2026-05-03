@@ -124,7 +124,7 @@ ccgate codex  metrics --days 7         # same shape, codex side
 
 `ft_kind` is filled when the LLM returned (or the runtime forced) a fallthrough; the value tells you which fallback path fired (`llm`, `api_unusable`, `no_apikey`, `credential_unavailable`, `unknown_provider`, `bypass`, `dontask`, `user_interaction`). `forced=true` means `fallthrough_strategy` promoted an LLM `fallthrough` into the recorded `decision`.
 
-`credential_source` is set only when `ft_kind=credential_unavailable`. It carries the keystore stage that produced (or failed to produce) the credential — `command` / `file` / `cache` / `lock` — so the same `reason` can be grouped by where it actually broke.
+`credential_source` is set only when `ft_kind=credential_unavailable`. It carries the keystore stage that produced (or failed to produce) the credential — currently `command` / `file` / `cache` / `lock` — so the same `reason` can be grouped by where it actually broke. The set is open: future credential paths (e.g. an `OAuth refresh` stage, a Windows native backend) may add new values, so consumers parsing this field should treat it as a free-form short string and tolerate unknown values rather than enum-validate it.
 
 The `reason` field meaning depends on `ft_kind`:
 
@@ -148,7 +148,7 @@ The `reason` field meaning depends on `ft_kind`:
 | `output_too_large`      | Helper stdout exceeded the 64 KiB limit.                                                               |
 | `lock_timeout`          | flock retry budget exhausted while peers were refreshing.                                              |
 | `lock_error`            | flock syscall returned a non-EWOULDBLOCK error (broken lock subsystem; helper exec is skipped).        |
-| `provider_auth`         | Provider API rejected the credential with 401/403; cache invalidated for the next fire.                |
+| `provider_auth`         | Provider API rejected the credential with 401/403. For helper / file paths the keystore cache is invalidated so the next fire re-resolves; `api_key_file` has no internal cache, so recovery there is the rotator's job.|
 
 #### Log-only credential warnings (not in metrics)
 

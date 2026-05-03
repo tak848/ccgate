@@ -356,12 +356,19 @@ func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOpti
 		// revoked / wrong env-var key into a fallthrough would mask
 		// a real user-side configuration error. Surface it as a
 		// normal API error and let the existing exit-1 path run.
-		if isProviderAuthError(err) && (cfg.Provider.APIKeyCommand != "" || cfg.Provider.APIKeyFile != "") {
+		if status, ok := providerAuthStatus(err); ok && (cfg.Provider.APIKeyCommand != "" || cfg.Provider.APIKeyFile != "") {
 			invalidateOnAuthFailure(cfg.Provider, ro.cacheTarget, source, providerName, baseURL)
+			// Deliberately do NOT log the raw err string. Both
+			// anthropic-sdk-go and openai-go embed the response
+			// body inside Error.Error(), and a custom proxy or
+			// broker might echo a credential / token / request
+			// signature in its 401/403 body — that would leak into
+			// ccgate.log. Log only the secret-free triage fields.
 			slog.Warn("provider rejected credential, falling through",
 				"reason", string(keystore.ReasonProviderAuth),
 				"source", source,
-				"error", err,
+				"status", status,
+				"provider", cfg.Provider.Name,
 			)
 			return llm.Decision{}, false, llm.FallthroughKindCredentialUnavailable, string(keystore.ReasonProviderAuth), source, res.Usage, nil
 		}
@@ -394,7 +401,7 @@ func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOpti
 	}
 }
 
-// isProviderAuthError type-checks the error against the
+// providerAuthStatus type-checks the error against the
 // anthropic-sdk-go and openai-go SDK error envelopes (gemini
 // delegates to openai internally) and reports whether it is a
 // credential-rejection response — 401/403, the same statuses every
@@ -402,19 +409,30 @@ func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOpti
 // not accepted". Other 4xx/5xx responses keep the existing exit-1
 // behaviour because they signal user-recoverable issues we cannot
 // auto-resolve from the keystore.
-func isProviderAuthError(err error) bool {
+//
+// The status code is returned alongside the boolean so callers can
+// log it without dragging the raw error message (which the SDKs
+// build by concatenating the response body — proxies and brokers
+// sometimes echo credentials there) into ccgate.log.
+func providerAuthStatus(err error) (int, bool) {
 	if err == nil {
-		return false
+		return 0, false
 	}
 	var anth *anthropicsdk.Error
 	if errors.As(err, &anth) {
-		return anth.StatusCode == http.StatusUnauthorized || anth.StatusCode == http.StatusForbidden
+		if anth.StatusCode == http.StatusUnauthorized || anth.StatusCode == http.StatusForbidden {
+			return anth.StatusCode, true
+		}
+		return anth.StatusCode, false
 	}
 	var oai *openaisdk.Error
 	if errors.As(err, &oai) {
-		return oai.StatusCode == http.StatusUnauthorized || oai.StatusCode == http.StatusForbidden
+		if oai.StatusCode == http.StatusUnauthorized || oai.StatusCode == http.StatusForbidden {
+			return oai.StatusCode, true
+		}
+		return oai.StatusCode, false
 	}
-	return false
+	return 0, false
 }
 
 // invalidateOnAuthFailure asks keystore to forget the cached
