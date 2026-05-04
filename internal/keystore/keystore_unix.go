@@ -115,11 +115,27 @@ func resolveCommand(ctx context.Context, opts Options) (Result, error) {
 		return Result{Key: key, Source: SourceCache}, nil
 	}
 
-	if err := os.MkdirAll(filepath.Dir(cachePath), 0o700); err != nil {
+	cacheDir := filepath.Dir(cachePath)
+	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
 		slog.Warn("keystore: cache dir mkdir failed, running helper without cache",
 			"reason", string(ReasonCacheUnavailable),
 			"source", string(SourceCache),
-			"path", filepath.Dir(cachePath),
+			"path", cacheDir,
+			"error", err,
+		)
+		return execHelperOnly(ctx, opts)
+	}
+	// MkdirAll does not normalise permissions on existing dirs, so a
+	// pre-existing 0755 cache dir from an older ccgate version (or
+	// from an unrelated tool that happens to share `ccgate/`) would
+	// leak the cache file into world-readable territory. Tighten it
+	// here. Best-effort: chmod failure (e.g. dir owned by another
+	// user) goes through the cacheless degraded path.
+	if err := os.Chmod(cacheDir, 0o700); err != nil {
+		slog.Warn("keystore: cache dir chmod failed, running helper without cache",
+			"reason", string(ReasonCacheUnavailable),
+			"source", string(SourceCache),
+			"path", cacheDir,
 			"error", err,
 		)
 		return execHelperOnly(ctx, opts)
@@ -188,10 +204,15 @@ func resolveFile(opts Options) (Result, error) {
 	if err != nil {
 		return Result{Reason: ReasonFileRead, Source: SourceFile}, err
 	}
-	data, err := os.ReadFile(path)
+	data, err := readBoundedRegularFile(path, stdoutLimit)
 	if err != nil {
-		if os.IsNotExist(err) {
+		switch {
+		case os.IsNotExist(err):
 			return Result{Reason: ReasonFileMissing, Source: SourceFile}, err
+		case errors.Is(err, errOutputTooLarge):
+			return Result{Reason: ReasonOutputTooLarge, Source: SourceFile}, err
+		case errors.Is(err, errNotRegularFile):
+			return Result{Reason: ReasonFileRead, Source: SourceFile}, err
 		}
 		return Result{Reason: ReasonFileRead, Source: SourceFile}, err
 	}
@@ -245,7 +266,7 @@ func execHelperOnly(ctx context.Context, opts Options) (Result, error) {
 // Only a successful read with `now + RefreshMargin < expires_at`
 // returns ok=true.
 func readCacheValid(path string, opts Options) (string, bool) {
-	data, err := os.ReadFile(path)
+	data, err := readBoundedRegularFile(path, stdoutLimit)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", false
@@ -533,6 +554,49 @@ func waitDelayFor(timeout time.Duration) time.Duration {
 		return timeout / 10
 	}
 	return cap
+}
+
+// errOutputTooLarge / errNotRegularFile are sentinel errors used by
+// readBoundedRegularFile so callers can map them to the right
+// keystore Reason without parsing error strings.
+var (
+	errOutputTooLarge = errors.New("keystore: file exceeds size limit")
+	errNotRegularFile = errors.New("keystore: not a regular file")
+)
+
+// readBoundedRegularFile reads up to limit+1 bytes from path,
+// rejecting non-regular files (FIFO / device / socket / symlink to
+// device, ...) and anything larger than limit. We need the cap on
+// both `api_key_file` and the cache file because a misconfigured
+// path like `/dev/zero` or a corrupt cache symlink would otherwise
+// let the hot path read unboundedly and either OOM or hang. The
+// helper-stdout reader has the same cap (stdoutLimit); applying it
+// uniformly across every file/stream credentials enter through
+// keeps the budget honest.
+func readBoundedRegularFile(path string, limit int) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%w: %s", errNotRegularFile, path)
+	}
+	// Read one byte beyond the limit so we can detect "exactly
+	// limit bytes" vs "limit+1 or more bytes" without consuming
+	// arbitrary amounts of memory.
+	data, err := io.ReadAll(io.LimitReader(f, int64(limit)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > limit {
+		return nil, fmt.Errorf("%w: %s (>%d bytes)", errOutputTooLarge, path, limit)
+	}
+	return data, nil
 }
 
 // expandHomePath turns `~` / `~/foo` into the absolute path. The

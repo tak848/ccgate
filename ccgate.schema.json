@@ -57,7 +57,7 @@
     },
     "log_path": {
       "type": "string",
-      "description": "Log file path. Supports ~ for home directory. Default: $XDG_STATE_HOME/ccgate/ccgate.log"
+      "description": "Log file path. Supports ~ for home directory. Default: $XDG_STATE_HOME/ccgate/<target>/ccgate.log (target = claude / codex)."
     },
     "log_disabled": {
       "type": "boolean",
@@ -70,7 +70,7 @@
     },
     "metrics_path": {
       "type": "string",
-      "description": "Metrics JSONL file path. Default: $XDG_STATE_HOME/ccgate/metrics.jsonl"
+      "description": "Metrics JSONL file path. Default: $XDG_STATE_HOME/ccgate/<target>/metrics.jsonl (target = claude / codex)."
     },
     "metrics_disabled": {
       "type": "boolean",

@@ -324,7 +324,10 @@ func StateDir(sub string) string {
 //   - lists `append_allow` / `append_deny` / `append_environment` ADD
 //     onto the carried-over value (can coexist with the replace-mode
 //     field; replace runs first, append stacks),
-//   - scalars (`provider.*` / `log_*` / `metrics_*` /
+//   - the `provider` block is replaced atomically as a unit (see
+//     mergeConfigJSON below) — its sub-fields do NOT merge per
+//     field across layers,
+//   - the remaining scalars (`log_*` / `metrics_*` /
 //     `fallthrough_strategy`) overwrite per-field when set.
 //
 // Layers, applied in order:

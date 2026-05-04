@@ -307,7 +307,7 @@ proxy の API キーを `CCGATE_ANTHROPIC_API_KEY` で export。Anthropic SDK �
 
 静的 env var では追いつかない credential — AWS STS セッション / Vertex ADC / OpenAI 互換 gateway の virtual key / 社内 key broker など — が相手のときは、ccgate にプロセスかファイルを指してもらいます。
 
-**Unix のみ** (Linux / macOS / *BSD)。Windows では `kind=credential_unavailable` / `reason=unsupported_platform` で fallthrough し、env var 経路はそのまま動き続けます。
+**Unix のみ** (Linux / macOS / *BSD)。Windows で `api_key_command` / `api_key_file` を設定した場合は `kind=credential_unavailable` / `reason=unsupported_platform` で fallthrough します (helper / file は stub)。どちらも設定していない Windows ユーザーは従来通り `*_API_KEY` の env var 経路で動きますが、設定済みの helper / file が unsupported だったときに ccgate が **黙って env var に fallback することはない** 点は注意してください。
 
 #### 出力フォーマット
 

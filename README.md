@@ -309,7 +309,7 @@ Export the proxy's API key as `CCGATE_ANTHROPIC_API_KEY`. The Anthropic SDK appe
 
 When the credential rotates faster than a static env var can keep up — AWS STS sessions, Vertex ADC, OpenAI-compatible gateways with virtual keys, internal key brokers — point ccgate at a process or a file instead.
 
-**Unix only** (Linux, macOS, *BSD). On Windows, ccgate falls through with `kind=credential_unavailable`/`reason=unsupported_platform` and the env-var path keeps working.
+**Unix only** (Linux, macOS, *BSD). On Windows, configuring `api_key_command` or `api_key_file` makes ccgate fall through with `kind=credential_unavailable`/`reason=unsupported_platform` (helper / file are stubbed out). Windows users who do not configure either field keep using the regular `*_API_KEY` env-var path unchanged; ccgate does **not** silently fall back from a configured-but-unsupported helper to env vars.
 
 #### Output shape
 

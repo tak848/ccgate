@@ -372,7 +372,13 @@ func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOpti
 			)
 			return llm.Decision{}, false, llm.FallthroughKindCredentialUnavailable, string(keystore.ReasonProviderAuth), source, res.Usage, nil
 		}
-		return llm.Decision{}, false, "", "", "", res.Usage, err
+		// Same body-leak risk applies to non-auth API errors
+		// (429 / 5xx / network) — the SDK Error string still
+		// contains the raw response body. Strip it down to a
+		// short, status-coded summary before letting it bubble
+		// into runErr (which the caller logs and writes to
+		// metrics.Entry.Error).
+		return llm.Decision{}, false, "", "", "", res.Usage, redactProviderError(cfg.Provider.Name, err)
 	}
 	if res.Unusable {
 		return llm.Decision{}, false, llm.FallthroughKindAPIUnusable, "", "", res.Usage, nil
@@ -399,6 +405,34 @@ func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOpti
 		}
 		return llm.Decision{}, false, llm.FallthroughKindLLM, res.Output.Reason, "", res.Usage, nil
 	}
+}
+
+// redactProviderError strips the SDK error of its raw response
+// body before the runner logs it / writes it to metrics. Both
+// anthropic-sdk-go and openai-go build Error.Error() by embedding
+// the entire response body, which a misbehaving proxy / gateway can
+// populate with Authorization headers, request signatures, or echo
+// of the submitted credential. ccgate.log is `0644` and the
+// metrics JSONL is consumed by the user's other tooling, so we
+// can't risk that surface carrying secrets through.
+//
+// Known SDK error types collapse to "<provider> <statusCode>".
+// Anything else (transport / context / parse) keeps its original
+// shape because we built those messages ourselves and they don't
+// echo provider response bodies.
+func redactProviderError(providerName string, err error) error {
+	if err == nil {
+		return nil
+	}
+	var anth *anthropicsdk.Error
+	if errors.As(err, &anth) {
+		return fmt.Errorf("%s API error (status %d)", providerName, anth.StatusCode)
+	}
+	var oai *openaisdk.Error
+	if errors.As(err, &oai) {
+		return fmt.Errorf("%s API error (status %d)", providerName, oai.StatusCode)
+	}
+	return err
 }
 
 // providerAuthStatus type-checks the error against the
@@ -459,8 +493,13 @@ func invalidateOnAuthFailure(p config.ProviderConfig, target, source, providerNa
 		TargetName:   target,
 	}
 	if err := keystore.Invalidate(opts); err != nil {
+		// Use a unique log-only attribute so triage can tell this
+		// apart from "the cache write step on a fresh helper run
+		// failed" (cache_write). The hook still falls through
+		// successfully — the next fire just won't get the benefit
+		// of having the bad credential pre-removed.
 		slog.Warn("keystore: cache invalidate failed",
-			"reason", "cache_write",
+			"event", "cache_invalidate_failed",
 			"source", string(keystore.SourceCache),
 			"error", err,
 		)
@@ -570,6 +609,14 @@ func redactedUserMessage(user string) string {
 //     known providers; anything else returns unknown_provider.
 //  3. Nothing set: no_apikey for the known providers.
 //
+// Unknown providers short-circuit BEFORE the helper / file branch
+// runs. Otherwise a typo like provider.name = "opena1" with an
+// api_key_command that returns an OpenAI-shaped key would still be
+// handed to newProviderClient, which falls back to the Anthropic
+// SDK by default — i.e. ccgate would send the wrong provider's
+// credential to Anthropic. We refuse to resolve anything when the
+// provider name is unrecognised.
+//
 // Returns (key, fallthroughKind, reason, source, err). On success
 // `key` is non-empty and `fallthroughKind` is empty; on
 // fallthrough-class outcomes `key` is empty and the caller emits
@@ -577,6 +624,11 @@ func redactedUserMessage(user string) string {
 // keystore.Resolve produced one (used for log enrichment, not for
 // hook exit).
 func resolveAPIKey(ctx context.Context, p config.ProviderConfig, providerName, target string) (string, string, string, string, error) {
+	if !isKnownProvider(providerName) {
+		slog.Info("unknown provider, falling through", "provider", providerName)
+		return "", llm.FallthroughKindUnknownProvider, "", "", nil
+	}
+
 	if p.APIKeyCommand != "" || p.APIKeyFile != "" {
 		opts := keystore.Options{
 			Command:        p.APIKeyCommand,
@@ -602,18 +654,12 @@ func resolveAPIKey(ctx context.Context, p config.ProviderConfig, providerName, t
 
 	var primary, fallback string
 	switch providerName {
-	case "anthropic", "openai", "gemini":
-		switch providerName {
-		case "openai":
-			primary, fallback = "CCGATE_OPENAI_API_KEY", "OPENAI_API_KEY"
-		case "gemini":
-			primary, fallback = "CCGATE_GEMINI_API_KEY", "GEMINI_API_KEY"
-		default:
-			primary, fallback = "CCGATE_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"
-		}
-	default:
-		slog.Info("unknown provider, falling through", "provider", providerName)
-		return "", llm.FallthroughKindUnknownProvider, "", "", nil
+	case "openai":
+		primary, fallback = "CCGATE_OPENAI_API_KEY", "OPENAI_API_KEY"
+	case "gemini":
+		primary, fallback = "CCGATE_GEMINI_API_KEY", "GEMINI_API_KEY"
+	default: // anthropic
+		primary, fallback = "CCGATE_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"
 	}
 	if key := strings.TrimSpace(os.Getenv(primary)); key != "" {
 		return key, "", "", "", nil
@@ -623,6 +669,18 @@ func resolveAPIKey(ctx context.Context, p config.ProviderConfig, providerName, t
 	}
 	slog.Warn("no API key found", "provider", providerName)
 	return "", llm.FallthroughKindNoAPIKey, "", "", nil
+}
+
+// isKnownProvider gates every other code path on this file. Keep
+// this list in sync with newProviderClient's switch — the two
+// together define the universe of providers ccgate will route a
+// real key to.
+func isKnownProvider(name string) bool {
+	switch name {
+	case "anthropic", "openai", "gemini":
+		return true
+	}
+	return false
 }
 
 func newProviderClient(providerName, apiKey, baseURL string) llm.Provider {

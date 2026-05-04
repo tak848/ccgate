@@ -412,6 +412,94 @@ func TestInvalidateRemovesCache(t *testing.T) {
 	}
 }
 
+// TestResolveFileTooLarge ensures we reject pathologically large
+// `api_key_file` paths (e.g. /dev/zero, runaway log file). Without
+// the bounded reader the hot path would either OOM or hang.
+func TestResolveFileTooLarge(t *testing.T) {
+	withCacheRoot(t)
+
+	path := filepath.Join(t.TempDir(), "huge")
+	body := bytesRepeat('x', stdoutLimit+10)
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Resolve(context.Background(), Options{
+		File:           path,
+		ProviderName:   "test",
+		TargetName:     "claude",
+		RefreshMargin:  30 * time.Second,
+		CommandTimeout: 5 * time.Second,
+	})
+	if err == nil {
+		t.Fatal("expected error for oversized file")
+	}
+	if res.Reason != ReasonOutputTooLarge {
+		t.Fatalf("reason = %q, want %q", res.Reason, ReasonOutputTooLarge)
+	}
+}
+
+// TestResolveFileNonRegularRejected makes sure a `api_key_file`
+// pointed at a directory (or any non-regular file) does not block
+// the hot path with an unbounded read.
+func TestResolveFileNonRegularRejected(t *testing.T) {
+	withCacheRoot(t)
+
+	// A directory is a non-regular file; using one as the file path
+	// is the most portable misconfiguration we can simulate without
+	// platform-specific FIFO/device tricks.
+	dir := t.TempDir()
+	res, err := Resolve(context.Background(), Options{
+		File:           dir,
+		ProviderName:   "test",
+		TargetName:     "claude",
+		RefreshMargin:  30 * time.Second,
+		CommandTimeout: 5 * time.Second,
+	})
+	if err == nil {
+		t.Fatal("expected error for non-regular file (directory)")
+	}
+	if res.Reason != ReasonFileRead {
+		t.Fatalf("reason = %q, want %q", res.Reason, ReasonFileRead)
+	}
+}
+
+// TestResolveCommandTightensExistingCacheDirPerm guards Medium #1
+// from the holistic review: an existing 0755 ccgate cache dir
+// (e.g. left behind by an older release) must be chmod'd back to
+// 0700 before we drop a credential file in there.
+func TestResolveCommandTightensExistingCacheDirPerm(t *testing.T) {
+	root := withCacheRoot(t)
+
+	// Pre-create the per-target cache dir at 0755 so we can verify
+	// Resolve tightens it. Using the runtime path layout here
+	// instead of computing it ourselves so a future move catches us.
+	cacheDir := filepath.Join(root, "ccgate", "claude")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := helperScript(t, `printf '{"key":"sk-tight","expires_at":"`+
+		time.Now().Add(2*time.Hour).UTC().Format(time.RFC3339)+`"}'`)
+
+	if _, err := Resolve(context.Background(), opts(cmd)); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	info, err := os.Stat(cacheDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o700 {
+		t.Fatalf("cache dir perm = %o, want 0700 (resolve must tighten loose existing dirs)", perm)
+	}
+}
+
+func bytesRepeat(b byte, n int) []byte {
+	out := make([]byte, n)
+	for i := range out {
+		out[i] = b
+	}
+	return out
+}
+
 func TestExpandHomePath(t *testing.T) {
 
 	home := t.TempDir()
