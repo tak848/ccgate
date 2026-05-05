@@ -101,8 +101,7 @@ The cache fingerprint is built from `(target, provider.name, base_url, auth.comm
 
 Three ways to isolate accounts:
 
-- **Use `auth.cache_key` with `${VAR}` env expansion** (recommended): `auth: { type: 'exec', command: 'aws sts ...', cache_key: '${AWS_PROFILE}' }`. ccgate expands `${VAR}` / `$VAR` against the live env at hook fire and adds the value to the cache fingerprint. Undefined references (`${AWS_PROFLIE}` typo, env unset) make ccgate fall through with `cache_key_invalid` instead of collapsing to an empty salt — silent collapse would defeat the whole point. Escape literal `$` as `$$`.
-- **Use the jsonnet `std.native('env')` helper**: `auth: { type: 'exec', command: 'aws sts ...', cache_key: std.native('env')('AWS_PROFILE') }`. Same effect at config-load time. ccgate also registers `std.native('must_env')` which raises a jsonnet evaluation error for undefined variables, useful when you want config-load failures rather than runtime fallthroughs.
+- **Use `auth.cache_key` with the jsonnet `std.native('env')` helper**: `auth: { type: 'exec', command: 'aws sts ...', cache_key: std.native('env')('AWS_PROFILE') }`. ccgate registers `std.native('env')` (returns empty for undefined variables) and `std.native('must_env')` (raises a jsonnet evaluation error for undefined variables) so config-load resolves env values at the same time everything else is evaluated. The resolved string lands in the cache fingerprint as-is.
 - **Bake the account into the command string**: `auth.command: 'aws sts assume-role --profile prod ...'`. Different command strings hash to different cache files, so two project-local configs aimed at different accounts stay isolated. Works without any env machinery.
 - **Use `auth.type=file` per account**: each account's rotator writes to its own path; the path itself separates the credentials.
 
@@ -168,13 +167,13 @@ When the same broker command returns a different credential per AWS profile, add
     auth: {
       type: 'exec',
       command: 'aws-sts-broker --provider anthropic',
-      cache_key: '${AWS_PROFILE}',
+      cache_key: std.native('must_env')('AWS_PROFILE'),
     },
   },
 }
 ```
 
-Switching `AWS_PROFILE=prod` and `AWS_PROFILE=dev` between hook fires now produces two separate cache files (`api_key.<hash-prod>.json` and `api_key.<hash-dev>.json`) instead of overwriting one another. If `AWS_PROFILE` is unset / typoed, ccgate falls through with `reason=cache_key_invalid` so you notice the misconfiguration instead of sharing a credential across profiles.
+Switching `AWS_PROFILE=prod` and `AWS_PROFILE=dev` between hook fires now produces two separate cache files (`api_key.<hash-prod>.json` and `api_key.<hash-dev>.json`) instead of overwriting one another. `must_env` raises a jsonnet evaluation error if `AWS_PROFILE` is unset, so a misconfiguration surfaces at config-load time rather than as a silently shared credential.
 
 ### `auth.type=file` rotator: hot-path-free
 
@@ -218,8 +217,7 @@ When something looks wrong:
 1. `tail` `ccgate.log` (`$XDG_STATE_HOME/ccgate/<target>/ccgate.log`) and look for entries with `kind=credential_unavailable`. Read the `reason` and `source` (`exec` / `file` / `cache` / `lock`) attributes — they pinpoint which step failed.
 2. Run `ccgate <target> metrics` and inspect the **Credential failures** section. It groups failures by `(source, reason)`.
 3. If the failure looks cache-related (`cache_parse` / `cache_read` / `cache_write` log warnings), remove `$XDG_CACHE_HOME/ccgate/<target>/api_key.*.json` to force a refresh. The sibling `*.lock` files are reused — leave them alone.
-4. If `cache_key_invalid` keeps firing, check that the env var your `auth.cache_key` references is set in the hook's environment (not just in your shell). Hooks inherit the environment of the upstream tool — Claude Code / Codex CLI — which may not source the same dotfiles.
-5. If `expired` keeps appearing, compare the helper's `expires_at` with `date -u`. Clock skew or a broken TTL inside the helper is the usual cause; a margin smaller than the helper's TTL would also produce this.
-6. If `provider_auth` keeps coming back even with cache invalidation, the helper itself is producing a credential the provider rejects. Re-run `/bin/sh -c "$your_command"` manually and verify the output — the same stdout the helper writes is what reached the SDK.
+4. If `expired` keeps appearing, compare the helper's `expires_at` with `date -u`. Clock skew or a broken TTL inside the helper is the usual cause; a margin smaller than the helper's TTL would also produce this.
+5. If `provider_auth` keeps coming back even with cache invalidation, the helper itself is producing a credential the provider rejects. Re-run `/bin/sh -c "$your_command"` manually and verify the output — the same stdout the helper writes is what reached the SDK.
 
 The full reason taxonomy (with the difference between metrics fallthrough reasons and log-only cache warnings) is in [docs/configuration.md](configuration.md#reason-values-for-credential_unavailable).

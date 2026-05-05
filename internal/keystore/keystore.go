@@ -50,7 +50,7 @@ import (
 //	command_exit, json_parse, invalid_expiration, empty_output,
 //	invalid_plain_output, expired, file_missing, file_read,
 //	unsupported_platform, timeout, output_too_large, lock_timeout,
-//	lock_error, cache_unavailable, cache_key_invalid, provider_auth.
+//	lock_error, cache_unavailable, provider_auth.
 //
 // log-only credential warnings (degraded but successful resolution):
 //
@@ -75,7 +75,6 @@ const (
 	ReasonLockTimeout         Reason = "lock_timeout"
 	ReasonLockError           Reason = "lock_error"
 	ReasonCacheUnavailable    Reason = "cache_unavailable"
-	ReasonCacheKeyInvalid     Reason = "cache_key_invalid"
 	ReasonProviderAuth        Reason = "provider_auth"
 
 	// Log-only (Resolve still succeeds; these never sit in metrics).

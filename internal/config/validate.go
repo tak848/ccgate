@@ -85,10 +85,7 @@ func validateAuthExec(a *AuthConfig) error {
 	if a.TimeoutMS != nil && *a.TimeoutMS <= 0 {
 		errs = append(errs, fmt.Errorf("provider.auth.timeout_ms must be positive, got %d", *a.TimeoutMS))
 	}
-	// cache_key: any string accepted (including ones with `${VAR}`
-	// expansions). Env resolution happens at hot-path time in
-	// AuthConfig.ExpandedCacheKey, not here — Validate stays a pure
-	// error layer with no env / IO side effects.
+	// cache_key: any string accepted; the value is used as-is.
 	return errors.Join(errs...)
 }
 

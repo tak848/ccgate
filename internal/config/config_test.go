@@ -179,53 +179,6 @@ func TestAuthDurationDefaults(t *testing.T) {
 	}
 }
 
-func TestExpandedCacheKey(t *testing.T) {
-	// expandCacheKey takes a lookup func (DI) so the table runs in
-	// parallel without touching the process env. Production
-	// ExpandedCacheKey wires this to os.LookupEnv.
-	t.Parallel()
-
-	cases := map[string]struct {
-		cacheKey string
-		env      map[string]string
-		want     string
-		wantErr  bool
-	}{
-		"empty":              {cacheKey: "", want: ""},
-		"literal":            {cacheKey: "prod", want: "prod"},
-		"brace defined":      {cacheKey: "${PROFILE}", env: map[string]string{"PROFILE": "prod"}, want: "prod"},
-		"bare defined":       {cacheKey: "$PROFILE", env: map[string]string{"PROFILE": "dev"}, want: "dev"},
-		"defined empty":      {cacheKey: "${PROFILE}", env: map[string]string{"PROFILE": ""}, want: ""},
-		"undefined brace":    {cacheKey: "${UNSET}", wantErr: true},
-		"undefined bare":     {cacheKey: "$UNSET", wantErr: true},
-		"escaped dollar":     {cacheKey: "$$literal", want: "$literal"},
-		"compound":           {cacheKey: "${PROFILE}-x", env: map[string]string{"PROFILE": "prod"}, want: "prod-x"},
-		"undefined compound": {cacheKey: "${DEFINED}-${UNSET}", env: map[string]string{"DEFINED": "p"}, wantErr: true},
-	}
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			lookup := func(name string) (string, bool) {
-				v, ok := tc.env[name]
-				return v, ok
-			}
-			got, err := expandCacheKey(tc.cacheKey, lookup)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatalf("expected error for %q, got %q", tc.cacheKey, got)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if got != tc.want {
-				t.Fatalf("expandCacheKey(%q) = %q, want %q", tc.cacheKey, got, tc.want)
-			}
-		})
-	}
-}
-
 // TestRejectUnknownFields makes sure the JSON decoder rejects any
 // field the Config struct does not declare. We exercise both
 // previously-proposed names (the api_key_* set, which were renamed

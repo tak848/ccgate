@@ -204,12 +204,10 @@ type AuthConfig struct {
 	// fingerprint of the on-disk cache file. Use it when a single
 	// `auth.command` string returns different credentials per
 	// $AWS_PROFILE / $GCLOUD_ACCOUNT / etc, so each profile gets its
-	// own cache entry. The value supports `${VAR}` / `$VAR` env
-	// expansion at resolution time (custom mapping: `$$` escapes
-	// `$`, undefined env references make the resolver fall through
-	// with reason=`cache_key_invalid` to prevent typo-induced cache
-	// sharing). Only valid for type=exec; rejected for type=file
-	// (file paths separate themselves naturally).
+	// own cache entry. The value is used as-is; pull env values in
+	// via the jsonnet `std.native('env')` / `std.native('must_env')`
+	// helpers if needed. Only valid for type=exec; rejected for
+	// type=file (file paths separate themselves naturally).
 	CacheKey string `json:"cache_key,omitempty"`
 }
 
@@ -244,56 +242,6 @@ func (a AuthConfig) GetTimeout() time.Duration {
 		ms = *a.TimeoutMS
 	}
 	return time.Duration(ms) * time.Millisecond
-}
-
-// ExpandedCacheKey resolves `auth.cache_key` against the current
-// environment via os.LookupEnv. See expandCacheKey for the expansion
-// rules; this method is the production entry point that the runner
-// calls once per hook fire when assembling keystore.Options.
-//
-// Validate intentionally does NOT call this method (it would tie
-// validation to the runtime environment).
-func (a AuthConfig) ExpandedCacheKey() (string, error) {
-	return expandCacheKey(a.CacheKey, os.LookupEnv)
-}
-
-// expandCacheKey is the testable core of ExpandedCacheKey, with the
-// env lookup injected so tests can run in parallel without touching
-// the process environment (t.Setenv panics under t.Parallel because
-// parallel siblings share os.Environ()).
-//
-// `${VAR}` / `$VAR` references are expanded via os.Expand with a
-// custom mapping:
-//
-//   - `$$` is treated as a literal `$` (the standard os.Getenv
-//     mapper would collapse `$$literal` to `literal`).
-//   - Other names go through `lookup`. A defined variable returns
-//     its value, including the empty string.
-//   - An *undefined* reference returns ("", error). The runner
-//     translates that to a `credential_unavailable`
-//     reason=`cache_key_invalid` fallthrough — silently collapsing
-//     to an empty salt would defeat the purpose of cache_key (which
-//     is to keep `aws sts ... --profile $AWS_PROFILE` from sharing
-//     a cache across profiles when AWS_PROFILE is unset / typoed).
-func expandCacheKey(raw string, lookup func(string) (string, bool)) (string, error) {
-	if raw == "" {
-		return "", nil
-	}
-	var undefinedVar string
-	expanded := os.Expand(raw, func(name string) string {
-		if name == "$" {
-			return "$"
-		}
-		v, ok := lookup(name)
-		if !ok && undefinedVar == "" {
-			undefinedVar = name
-		}
-		return v
-	})
-	if undefinedVar != "" {
-		return "", fmt.Errorf("auth.cache_key references undefined env var: %s", undefinedVar)
-	}
-	return expanded, nil
 }
 
 // JSONSchema implements jsonschema.customSchemaImpl so the generated

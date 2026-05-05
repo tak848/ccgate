@@ -506,20 +506,6 @@ func providerAuthStatus(err error) (int, bool) {
 	return 0, false
 }
 
-// sourceForAuthType maps an AuthConfig.Type discriminator to the
-// keystore Source label used in metrics + logs. Used by callers
-// that classify a failure happening in the runner (before / outside
-// keystore.Resolve) so the source attribute still points at the
-// configured auth path.
-func sourceForAuthType(t string) string {
-	switch t {
-	case config.AuthTypeFile:
-		return string(keystore.SourceFile)
-	default:
-		return string(keystore.SourceExec)
-	}
-}
-
 // invalidateAuthCache asks keystore to forget the cached credential
 // so the next hook fire forces a fresh helper exec. Only callable
 // when auth.type=exec actually produced a cache file; the file
@@ -527,21 +513,16 @@ func sourceForAuthType(t string) string {
 //
 // We rebuild the same Options keystore.Resolve was given on the
 // preceding fire so CacheFingerprint hashes to the same path.
-// CacheKey expansion deliberately uses LookupEnv directly
-// (ignoring expansion errors): if the env disappeared between
-// resolve and invalidate we still want to delete whatever cache
-// file the resolve fingerprint actually wrote.
 func invalidateAuthCache(p config.ProviderConfig, target, providerName, baseURL string) {
 	if p.Auth == nil || p.Auth.Type != config.AuthTypeExec {
 		return
 	}
-	cacheKey, _ := p.Auth.ExpandedCacheKey()
 	opts := keystore.Options{
 		Command:      p.Auth.Command,
 		ProviderName: providerName,
 		BaseURL:      baseURL,
 		TargetName:   target,
-		CacheKey:     cacheKey,
+		CacheKey:     p.Auth.CacheKey,
 	}
 	if err := keystore.Invalidate(opts); err != nil {
 		// Use a unique log-only attribute so triage can tell this
@@ -681,22 +662,6 @@ func resolveAPIKey(ctx context.Context, p config.ProviderConfig, providerName, t
 	}
 
 	if p.Auth != nil {
-		// Expand cache_key against the live env. Undefined references
-		// fall through with cache_key_invalid (rather than collapsing
-		// to an empty salt and silently sharing a cache across
-		// profiles, which would defeat the whole point of cache_key).
-		// Only the exec branch consumes CacheKey; for the file branch
-		// the value is empty by validation and the call is a no-op.
-		cacheKey, err := p.Auth.ExpandedCacheKey()
-		if err != nil {
-			slog.Warn("keystore: auth.cache_key resolution failed, falling through",
-				"kind", llm.FallthroughKindCredentialUnavailable,
-				"reason", string(keystore.ReasonCacheKeyInvalid),
-				"source", sourceForAuthType(p.Auth.Type),
-				"error", err,
-			)
-			return "", llm.FallthroughKindCredentialUnavailable, string(keystore.ReasonCacheKeyInvalid), sourceForAuthType(p.Auth.Type), err
-		}
 		opts := keystore.Options{
 			ProviderName:   providerName,
 			BaseURL:        strings.TrimSpace(p.BaseURL),
@@ -707,7 +672,7 @@ func resolveAPIKey(ctx context.Context, p config.ProviderConfig, providerName, t
 		switch p.Auth.Type {
 		case config.AuthTypeExec:
 			opts.Command = p.Auth.Command
-			opts.CacheKey = cacheKey
+			opts.CacheKey = p.Auth.CacheKey
 		case config.AuthTypeFile:
 			opts.Path = p.Auth.Path
 		}

@@ -101,8 +101,7 @@ cache fingerprint は `(target, provider.name, base_url, auth.command, auth.cach
 
 アカウントごとに分離する 3 つの方法:
 
-- **`auth.cache_key` に `${VAR}` env 展開を使う (推奨)**: `auth: { type: 'exec', command: 'aws sts ...', cache_key: '${AWS_PROFILE}' }`。ccgate は hook 起動時に `${VAR}` / `$VAR` を実行時 env から展開し、その値を cache fingerprint に加えます。未定義 env (`${AWS_PROFLIE}` typo / 未 export) を参照した場合、ccgate は空文字に潰さず `cache_key_invalid` で fallthrough します — 黙って空 salt にすると分離の目的そのものが失われるためです。リテラル `$` は `$$` で escape
-- **jsonnet の `std.native('env')` を使う**: `auth: { type: 'exec', command: 'aws sts ...', cache_key: std.native('env')('AWS_PROFILE') }`。config load 時に同じ効果が得られます。ccgate は `std.native('must_env')` も登録していて、こちらは未定義時に jsonnet 評価エラーになります — runtime fallthrough ではなく config load 時に確実に失敗させたい場合に
+- **`auth.cache_key` に jsonnet の `std.native('env')` を使う**: `auth: { type: 'exec', command: 'aws sts ...', cache_key: std.native('env')('AWS_PROFILE') }`。ccgate は config load 時に `std.native('env')` (未定義は空文字を返す) と `std.native('must_env')` (未定義は jsonnet 評価エラー) を register しているので、env 値の解決は他の jsonnet 評価と同じタイミングで走ります。解決後の文字列がそのまま cache fingerprint に乗ります
 - **アカウントをコマンド文字列に直接埋め込む**: `auth.command: 'aws sts assume-role --profile prod ...'`。コマンド文字列が違えばハッシュも別になり、別プロジェクト・別アカウントは別キャッシュになります。env 機構を使わずに済む単純な方法
 - **`auth.type=file` をアカウントごとに分ける**: 各アカウントの rotator が専用パスに書き込めば、パス自体で credential が分離します
 
@@ -167,13 +166,13 @@ jq -nc --arg key "$TOKEN" --arg expires_at "$EXP" '{key:$key, expires_at:$expire
     auth: {
       type: 'exec',
       command: 'aws-sts-broker --provider anthropic',
-      cache_key: '${AWS_PROFILE}',
+      cache_key: std.native('must_env')('AWS_PROFILE'),
     },
   },
 }
 ```
 
-これで `AWS_PROFILE=prod` と `AWS_PROFILE=dev` を切り替えると、別々のキャッシュファイル (`api_key.<hash-prod>.json` と `api_key.<hash-dev>.json`) になり、上書きが起きません。`AWS_PROFILE` が未設定 / typo していた場合、ccgate は `reason=cache_key_invalid` で fallthrough して設定ミスを気付かせます — 黙って同じキャッシュを共有しません。
+これで `AWS_PROFILE=prod` と `AWS_PROFILE=dev` を切り替えると、別々のキャッシュファイル (`api_key.<hash-prod>.json` と `api_key.<hash-dev>.json`) になり、上書きが起きません。`must_env` は `AWS_PROFILE` が未設定だと jsonnet 評価エラーになるので、設定ミスは config load 時点で表面化します。
 
 ### `auth.type=file` の rotator: hot-path 上で helper を呼ばない
 
@@ -217,8 +216,7 @@ env var 経路で 401 / 403 を exit 1 にする理由は、ccgate 側に env �
 1. `ccgate.log` (`$XDG_STATE_HOME/ccgate/<target>/ccgate.log`) を tail して `kind=credential_unavailable` のエントリを探し、`reason` と `source` (`exec` / `file` / `cache` / `lock`) attribute を確認。どの段階で失敗したかが分かります
 2. `ccgate <target> metrics` を実行し、**Credential failures** セクションで `(source, reason)` 別の集計を確認
 3. キャッシュ起因 (`cache_parse` / `cache_read` / `cache_write` の log warning) が疑わしい場合は `$XDG_CACHE_HOME/ccgate/<target>/api_key.*.json` を削除して再生成させます。隣接する `*.lock` は再利用されるので削除不要です
-4. `cache_key_invalid` が出続ける場合は、`auth.cache_key` で参照している env が hook の実行環境にセットされているか確認してください。hook は upstream tool (Claude Code / Codex CLI) の env を継承するため、shell の dotfiles が source されているとは限りません
-5. `expired` が出続ける場合は helper の `expires_at` と `date -u` を比較してください。helper 内部の TTL ロジックや時計ズレが原因のことが多いです。`refresh_margin_ms` が helper の TTL より大きいときも同じ症状になります
-6. `provider_auth` がキャッシュ削除しても繰り返される場合、helper 自体が provider に拒否される認証情報を生成しています。`/bin/sh -c "$your_command"` を手で実行し、helper が出力する stdout が SDK に渡っているのと同じ内容かを確認してください
+4. `expired` が出続ける場合は helper の `expires_at` と `date -u` を比較してください。helper 内部の TTL ロジックや時計ズレが原因のことが多いです。`refresh_margin_ms` が helper の TTL より大きいときも同じ症状になります
+5. `provider_auth` がキャッシュ削除しても繰り返される場合、helper 自体が provider に拒否される認証情報を生成しています。`/bin/sh -c "$your_command"` を手で実行し、helper が出力する stdout が SDK に渡っているのと同じ内容かを確認してください
 
 reason の完全な分類 (metrics に乗るものと、log のみで出るキャッシュ層 warning の違い) は [docs/ja/configuration.md](configuration.md#credential_unavailable-の-reason-値) を参照してください。

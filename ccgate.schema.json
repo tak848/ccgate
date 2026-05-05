@@ -49,7 +49,7 @@
                 },
                 "cache_key": {
                   "type": "string",
-                  "description": "Secret-free salt added to the cache fingerprint so an env / profile dependent helper (e.g. `aws sts ... --profile $AWS_PROFILE`) gets a separate cache file per profile. Supports `${VAR}` / `$VAR` env expansion at hook-fire time; `$$` escapes a literal `$`. Undefined references make the runner fall through with `cache_key_invalid` instead of collapsing to an empty salt."
+                  "description": "Secret-free salt added to the cache fingerprint so an env / profile dependent helper (e.g. `aws sts ... --profile prod`) gets a separate cache file per profile. The value is used as-is; pull live env values in via the jsonnet `std.native('env')` / `std.native('must_env')` helpers."
                 }
               }
             },

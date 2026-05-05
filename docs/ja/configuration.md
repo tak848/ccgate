@@ -149,7 +149,6 @@ ccgate codex  metrics --days 7         # codex 側も同 shape
 | `lock_timeout`          | flock retry budget 切れ (peer が refresh 中)                                                         |
 | `lock_error`            | flock syscall が EWOULDBLOCK 以外で失敗 (lock 系が壊れている → helper exec はスキップ)               |
 | `cache_unavailable`     | cache dir を作成 / `chmod` できない。隣接 lock file も作れず concurrent helper の race を防げないため fail-fast (helper exec せずに fallthrough) |
-| `cache_key_invalid`     | `auth.cache_key` が未定義 env を参照。空 salt に潰すとプロファイル間で credential が誤共有されてしまうため、fallthrough して user に config 修正を促す |
 | `provider_auth`         | provider が **HTTP 401 または 403** で credential を拒否。`auth.type=exec` は cache を invalidate して次回 fire で helper 再実行、`auth.type=file` は内部 cache がないため fallthrough のみ、env var 経路は **意図的にこの経路に乗せず exit 1** (ccgate からは rotate できず、握り潰すと user 側の設定ミスを隠してしまうため) |
 
 `credential_unavailable` は単に「credential 解決に失敗した」だけでなく、「provider が credential を受け取った上で拒否した」(401 / 403) ケースも含みます。

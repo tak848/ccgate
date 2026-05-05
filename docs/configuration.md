@@ -149,7 +149,6 @@ The `reason` field meaning depends on `ft_kind`:
 | `lock_timeout`          | flock retry budget exhausted while peers were refreshing.                                              |
 | `lock_error`            | flock syscall returned a non-EWOULDBLOCK error (broken lock subsystem; helper exec is skipped).        |
 | `cache_unavailable`     | Cache directory cannot be created / `chmod`'d. Treated as fail-fast (helper exec is skipped) because without the sibling lock file we cannot prevent concurrent helpers from racing the broker. |
-| `cache_key_invalid`     | `auth.cache_key` references an undefined env var. Surfacing as a fallthrough rather than silently using an empty salt prevents typo-induced cache sharing across profiles. |
 | `provider_auth`         | Provider rejected the credential with **HTTP 401 or 403**. `auth.type=exec` invalidates the cache so the next fire re-runs the helper; `auth.type=file` falls through (no cache to clear); env-var keys are **not** routed here because ccgate cannot rotate env vars and swallowing the rejection would hide user-side misconfiguration. |
 
 `credential_unavailable` is therefore wider than just "credential resolution failed": it also covers "provider received and rejected the credential" (401 / 403).
