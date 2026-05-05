@@ -199,16 +199,14 @@ Then `auth: { type: 'file', path: '~/.config/my-broker/anthropic.json' }`. ccgat
 
 When the provider rejects the credential ccgate just used, the response shape determines how ccgate reacts. ccgate extracts a secret-free error code from the SDK's structured fields (OpenAI: `Error.Code` / `Error.Type`; Anthropic: parses `RawJSON()` for `error.type`) and never logs the raw response body.
 
-| Status × code                                                                                  | `auth.type=exec`                          | `auth.type=file`               | env var                       |
-|------------------------------------------------------------------------------------------------|-------------------------------------------|--------------------------------|-------------------------------|
-| 401                                                                                            | `provider_auth`, **invalidate cache + fallthrough** | `provider_auth`, fallthrough only (no cache) | **exit 1**                    |
-| 403 with credential-expired code (AWS `ExpiredToken*`, OAuth `invalid_token`, Anthropic / OpenAI `authentication_error` / `invalid_api_key`) | `provider_auth`, **invalidate cache + fallthrough** | `provider_auth`, fallthrough only | **exit 1**                    |
-| 403 with non-credential code (`permission_error`, `model_not_allowed`, AWS `AccessDenied`, ...) or unknown code | `provider_forbidden`, fallthrough only, **no invalidate** | same                           | `provider_forbidden`, fallthrough only |
-| 5xx / network / 429                                                                            | exit 1 (existing behaviour)               | exit 1                         | exit 1                        |
+| HTTP status         | `auth.type=exec`                          | `auth.type=file`                         | env var      |
+|---------------------|-------------------------------------------|------------------------------------------|--------------|
+| 401 / 403           | `provider_auth`, **invalidate cache + fallthrough** | `provider_auth`, fallthrough only (no cache) | **exit 1**   |
+| 5xx / network / 429 | exit 1 (existing behaviour)               | exit 1                                   | exit 1       |
 
-The env-var path keeps the existing exit-1 behaviour on 401 and 403-credential-expired because ccgate cannot rotate env vars; swallowing those would hide a real user-side configuration error. On 403-non-credential, exiting 1 would leave the user with a permanently broken hook for what is the provider's "no, you can't do that" answer — so we fall through.
+The env-var path keeps the existing exit-1 behaviour on 401/403 because ccgate cannot rotate env vars; swallowing the rejection would hide a real user-side configuration error.
 
-The credential-expired error code list (case-insensitive): `ExpiredToken`, `ExpiredTokenException`, `InvalidClientTokenId`, `UnrecognizedClientException`, `invalid_token`, `expired_token`, `authentication_error`, `invalid_api_key`. New codes can be added in a follow-up issue without changing the schema.
+ccgate does not currently parse the SDK error body to split 403 by error code (e.g. promoting AWS `ExpiredTokenException` to `provider_auth` while keeping `permission_error` on the regular API-error path). The supported provider paths today (anthropic-sdk-go, openai-go, gemini via openai-compat) all surface credential rejection as 401, so a status-only rule covers the common cases. Per-code 403 classification is tracked alongside Bedrock support under [#62](https://github.com/tak848/ccgate/issues/62).
 
 ## Differences from AWS `credential_process`
 
@@ -221,7 +219,7 @@ If your broker does not want callers to memoize, return JSON without `expires_at
 When something looks wrong:
 
 1. `tail` `ccgate.log` (`$XDG_STATE_HOME/ccgate/<target>/ccgate.log`) and look for entries with `kind=credential_unavailable`. Read the `reason`, `source` (`exec` / `file` / `cache` / `lock`), and `provider_error_code` attributes — they pinpoint which step failed.
-2. Run `ccgate <target> metrics` and inspect the **Credential failures** section. It groups failures by `(source, reason)` and tags `provider_forbidden` rows with `*` (those are permission / policy issues, not credential problems).
+2. Run `ccgate <target> metrics` and inspect the **Credential failures** section. It groups failures by `(source, reason)`.
 3. If the failure looks cache-related (`cache_parse` / `cache_read` / `cache_write` log warnings), remove `$XDG_CACHE_HOME/ccgate/<target>/api_key.*.json` to force a refresh. The sibling `*.lock` files are reused — leave them alone.
 4. If `cache_key_invalid` keeps firing, check that the env var your `auth.cache_key` references is set in the hook's environment (not just in your shell). Hooks inherit the environment of the upstream tool — Claude Code / Codex CLI — which may not source the same dotfiles.
 5. If `expired` keeps appearing, compare the helper's `expires_at` with `date -u`. Clock skew or a broken TTL inside the helper is the usual cause; a margin smaller than the helper's TTL would also produce this.

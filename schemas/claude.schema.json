@@ -2,6 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/tak848/ccgate/main/schemas/claude.schema.json",
   "properties": {
+    "$schema": {
+      "type": "string",
+      "format": "uri",
+      "description": "JSON schema reference. Editors use this to enable validation; ccgate ignores it at runtime."
+    },
     "provider": {
       "properties": {
         "name": {
@@ -142,11 +147,6 @@
         "type": "string"
       },
       "type": "array"
-    },
-    "$schema": {
-      "type": "string",
-      "format": "uri",
-      "description": "JSON schema reference. Editors use this to enable validation; ccgate ignores it at runtime."
     }
   },
   "additionalProperties": false,

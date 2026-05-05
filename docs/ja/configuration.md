@@ -150,10 +150,9 @@ ccgate codex  metrics --days 7         # codex 側も同 shape
 | `lock_error`            | flock syscall が EWOULDBLOCK 以外で失敗 (lock 系が壊れている → helper exec はスキップ)               |
 | `cache_unavailable`     | cache dir を作成 / `chmod` できない。隣接 lock file も作れず concurrent helper の race を防げないため fail-fast (helper exec せずに fallthrough) |
 | `cache_key_invalid`     | `auth.cache_key` が未定義 env を参照。空 salt に潰すとプロファイル間で credential が誤共有されてしまうため、fallthrough して user に config 修正を促す |
-| `provider_auth`         | provider が **401**、または **403 + 認証情報期限切れ系 code** (AWS `ExpiredToken*` / OAuth `invalid_token` / Anthropic-OpenAI `authentication_error` / `invalid_api_key` 等) で credential を拒否。`auth.type=exec` は cache を invalidate して次回 fire で helper 再実行、`auth.type=file` は内部 cache がないため fallthrough のみ、env var 経路は 401 / 認証情報期限切れ 403 では **意図的にこの経路に乗せず exit 1** (ccgate からは rotate できず、握り潰すと user 側の設定ミスを隠してしまうため) |
-| `provider_forbidden`    | provider が **403 + 非認証情報系 code** (`permission_error` / `model_not_allowed` / AWS `AccessDenied` 等) もしくは未知 code で拒否。全経路で fallthrough、**cache invalidate しない** (権限・ポリシー・region 制限が原因なので credential rotate しても直らない) |
+| `provider_auth`         | provider が **HTTP 401 または 403** で credential を拒否。`auth.type=exec` は cache を invalidate して次回 fire で helper 再実行、`auth.type=file` は内部 cache がないため fallthrough のみ、env var 経路は **意図的にこの経路に乗せず exit 1** (ccgate からは rotate できず、握り潰すと user 側の設定ミスを隠してしまうため)。SDK error の body を読んで 401 vs 403 を code で分割する処理は本実装には入れていません — どちらも同じ「rotate sooner」経路に倒し、`provider.auth` 導入前のシンプルなルールに揃えています |
 
-`credential_unavailable` は単に「credential 解決に失敗した」だけでなく、「provider が credential を受け取った上で拒否した」(401 / 403) ケースも含みます。`provider_auth` と `provider_forbidden` の分割により、「rotate して再試行すべき」と「設定が credential の権限を超えた要求になっている」をレスポンス本文を読むことなく区別できます。
+`credential_unavailable` は単に「credential 解決に失敗した」だけでなく、「provider が credential を受け取った上で拒否した」(401 / 403) ケースも含みます。403 を error code でさらに分割する (例えば AWS `ExpiredTokenException` を `provider_auth` に promote しつつ `permission_error` は通常の API error 経路に残す) 設計は、Bedrock サポートと合わせて [#62](https://github.com/tak848/ccgate/issues/62) で追跡しています。
 
 #### log のみで出る credential 警告 (metrics には乗らない)
 

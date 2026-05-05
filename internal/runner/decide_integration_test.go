@@ -1,3 +1,11 @@
+//go:build unix
+
+// auth.type=exec / auth.type=file are Unix-only (the keystore stub
+// on non-Unix builds returns unsupported_platform before decide()
+// reaches the fake provider). Limit this end-to-end matrix to the
+// build tag the live keystore implementation uses, otherwise
+// Windows / wasi CI would assert against a code path that doesn't
+// run there.
 package runner
 
 import (
@@ -7,26 +15,16 @@ import (
 	"strings"
 	"testing"
 
-	anthropicsdk "github.com/anthropics/anthropic-sdk-go"
 	openaisdk "github.com/openai/openai-go"
 
 	"github.com/tak848/ccgate/internal/config"
 	"github.com/tak848/ccgate/internal/llm"
 )
 
-// init seeds the env-var key the matrix test relies on once for the
-// whole test binary. We avoid t.Setenv because Go forbids it under
-// t.Parallel (parallel siblings would race the restore), but every
-// test in this file just needs the same constant value, so setting
-// it once at package load is the cheapest approach.
-func init() {
-	_ = os.Setenv("CCGATE_OPENAI_API_KEY", "sk-fake")
-}
-
 // fakeProvider implements llm.Provider with a single canned error
-// (or a successful Output) so decide()'s 401/403 split can be
+// (or a successful Output) so decide()'s 401/403 handling can be
 // exercised without ever touching the network. Tests inject it via
-// WithProviderFactory().
+// runtimeOptions.providerFactory.
 type fakeProvider struct {
 	err error
 	out llm.Output
@@ -39,28 +37,14 @@ func (f *fakeProvider) Decide(_ context.Context, _ llm.Prompt) (llm.Result, erro
 	return llm.Result{Output: f.out}, nil
 }
 
-func anthropicAuthError(t *testing.T, status int, errType string) error {
-	t.Helper()
-	body := `{"type":"error","error":{"type":"` + errType + `","message":"do not log me"}}`
-	var e anthropicsdk.Error
-	if err := e.UnmarshalJSON([]byte(body)); err != nil {
-		t.Fatalf("fixture UnmarshalJSON: %v", err)
-	}
-	e.StatusCode = status
-	return &e
-}
-
-// TestDecideProviderErrorMatrix is the canonical end-to-end matrix
-// the plan demands: for every (auth shape × status × error code)
-// pair that affects the credential flow, decide() must produce the
-// right (kind, reason) and only invalidate the cache where the
-// 401/403 docs say it should.
-//
-// We exercise it through decide() with a fake provider injected via
-// runtimeOptions.providerFactory so no real LLM call is made and
-// the test stays parallel-safe (no package-level globals).
+// TestDecideProviderErrorMatrix exercises decide() across every
+// (auth shape × HTTP status) pair we need to lock in. We do NOT
+// call t.Parallel() on this test (or its subtests): the env-path
+// case requires CCGATE_OPENAI_API_KEY to be present, and Go forbids
+// using t.Setenv from a parallel test (siblings would race the
+// restore). Sequential is fine — the matrix is fast.
 func TestDecideProviderErrorMatrix(t *testing.T) {
-	t.Parallel()
+	t.Setenv("CCGATE_OPENAI_API_KEY", "sk-fake")
 
 	cases := map[string]struct {
 		authType   string // "exec" / "file" / "" (env var)
@@ -71,72 +55,47 @@ func TestDecideProviderErrorMatrix(t *testing.T) {
 	}{
 		"exec 401": {
 			authType:   "exec",
-			err:        &openaisdk.Error{StatusCode: http.StatusUnauthorized, Code: "invalid_api_key"},
+			err:        &openaisdk.Error{StatusCode: http.StatusUnauthorized},
 			wantKind:   llm.FallthroughKindCredentialUnavailable,
 			wantReason: "provider_auth",
 		},
-		"exec 403 expired token (AWS code through openai-compat)": {
+		"exec 403": {
 			authType:   "exec",
-			err:        &openaisdk.Error{StatusCode: http.StatusForbidden, Code: "ExpiredToken"},
+			err:        &openaisdk.Error{StatusCode: http.StatusForbidden},
 			wantKind:   llm.FallthroughKindCredentialUnavailable,
 			wantReason: "provider_auth",
-		},
-		"exec 403 permission_error": {
-			authType:   "exec",
-			err:        &openaisdk.Error{StatusCode: http.StatusForbidden, Code: "permission_error"},
-			wantKind:   llm.FallthroughKindCredentialUnavailable,
-			wantReason: "provider_forbidden",
-		},
-		"exec 403 unknown code": {
-			authType:   "exec",
-			err:        &openaisdk.Error{StatusCode: http.StatusForbidden, Code: "weird_new_code"},
-			wantKind:   llm.FallthroughKindCredentialUnavailable,
-			wantReason: "provider_forbidden",
 		},
 		"file 401": {
 			authType:   "file",
-			err:        anthropicAuthError(t, http.StatusUnauthorized, "authentication_error"),
+			err:        &openaisdk.Error{StatusCode: http.StatusUnauthorized},
 			wantKind:   llm.FallthroughKindCredentialUnavailable,
 			wantReason: "provider_auth",
 		},
-		"file 403 expired token": {
+		"file 403": {
 			authType:   "file",
-			err:        anthropicAuthError(t, http.StatusForbidden, "invalid_token"),
+			err:        &openaisdk.Error{StatusCode: http.StatusForbidden},
 			wantKind:   llm.FallthroughKindCredentialUnavailable,
 			wantReason: "provider_auth",
-		},
-		"file 403 permission_error": {
-			authType:   "file",
-			err:        anthropicAuthError(t, http.StatusForbidden, "permission_error"),
-			wantKind:   llm.FallthroughKindCredentialUnavailable,
-			wantReason: "provider_forbidden",
 		},
 		"env 401 keeps exit 1": {
 			authType:  "",
-			err:       &openaisdk.Error{StatusCode: http.StatusUnauthorized, Code: "invalid_api_key"},
+			err:       &openaisdk.Error{StatusCode: http.StatusUnauthorized},
 			wantExit1: true,
 		},
-		"env 403 expired token keeps exit 1": {
+		"env 403 keeps exit 1": {
 			authType:  "",
-			err:       &openaisdk.Error{StatusCode: http.StatusForbidden, Code: "ExpiredToken"},
+			err:       &openaisdk.Error{StatusCode: http.StatusForbidden},
 			wantExit1: true,
-		},
-		"env 403 permission_error falls through": {
-			authType:   "",
-			err:        &openaisdk.Error{StatusCode: http.StatusForbidden, Code: "permission_error"},
-			wantKind:   llm.FallthroughKindCredentialUnavailable,
-			wantReason: "provider_forbidden",
 		},
 		"5xx keeps exit 1": {
 			authType:  "exec",
-			err:       &openaisdk.Error{StatusCode: http.StatusBadGateway, Code: "upstream_error"},
+			err:       &openaisdk.Error{StatusCode: http.StatusBadGateway},
 			wantExit1: true,
 		},
 	}
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			cfg := buildTestConfig(tc.authType)
 			fake := &fakeProvider{err: tc.err}
 			ro := runtimeOptions{
@@ -146,19 +105,10 @@ func TestDecideProviderErrorMatrix(t *testing.T) {
 					return fake
 				},
 			}
-			// CCGATE_OPENAI_API_KEY is seeded by the package init();
-			// see comment there for why we do not use t.Setenv.
-
-			in := HookInput{
-				ToolName: "Bash",
-				ToolInput: HookToolInput{
-					Command: "echo hi",
-				},
-			}
 			_, _, kind, reason, _, _, runErr := decide(
 				context.Background(),
 				cfg,
-				in,
+				HookInput{ToolName: "Bash", ToolInput: HookToolInput{Command: "echo hi"}},
 				ro,
 			)
 			if tc.wantExit1 {
@@ -182,9 +132,9 @@ func TestDecideProviderErrorMatrix(t *testing.T) {
 
 // buildTestConfig assembles a minimal config.Config that exercises
 // the requested auth shape. For type=exec / type=file the auth
-// fields are populated with absolute paths under t.TempDir() so
-// resolveAPIKey can produce a credential without spinning up a real
-// helper, while the env path leaves Auth nil.
+// fields are populated so resolveAPIKey can produce a credential
+// without spinning up a real helper; the env path leaves Auth nil
+// and relies on the test setting CCGATE_OPENAI_API_KEY itself.
 func buildTestConfig(authType string) config.Config {
 	cfg := config.Default()
 	cfg.Provider.Name = "openai"
@@ -196,10 +146,8 @@ func buildTestConfig(authType string) config.Config {
 			Command: "printf sk-helper",
 		}
 	case "file":
-		// We point at a path that exists for the duration of this
-		// test so resolveAPIKey returns a credential. The body is a
-		// plain string with no expires_at so the file resolver
-		// returns it verbatim.
+		// File body is a plain string with no expires_at so the
+		// file resolver returns it verbatim.
 		f, _ := os.CreateTemp("", "ccgate-fake-key-*")
 		_, _ = f.WriteString("sk-file")
 		_ = f.Close()
@@ -218,13 +166,11 @@ func buildTestConfig(authType string) config.Config {
 // the body in Error.Error(), and a misbehaving proxy could echo a
 // credential there.
 func TestDecideRedactsRawErrorBody(t *testing.T) {
-	t.Parallel()
+	t.Setenv("CCGATE_OPENAI_API_KEY", "sk-fake")
 
-	// CCGATE_OPENAI_API_KEY is seeded by init().
 	cfg := buildTestConfig("exec")
 	fake := &fakeProvider{err: &openaisdk.Error{
 		StatusCode: http.StatusInternalServerError,
-		Code:       "internal_server_error",
 	}}
 	ro := runtimeOptions{
 		targetName:  "claude",

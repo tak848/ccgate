@@ -143,12 +143,6 @@ type CredentialFailureSummary struct {
 	Count  int    `json:"count"`
 }
 
-// provider_forbidden is reported under credential_unavailable but
-// describes a permission / policy / region issue, not a credential
-// rotation problem. We tag those rows in the TTY view so users do
-// not infer "my key is broken, rotate it".
-const reasonProviderForbidden = "provider_forbidden"
-
 // PrintReport reads metrics from one or more files and prints a
 // combined report to w. Each path is read in order; missing files are
 // silently skipped (so callers can pass legacy paths as fallbacks).
@@ -656,40 +650,22 @@ func printTable(w io.Writer, report FullReport, cutoff time.Time) {
 // printCredentialFailures renders the new section. It deliberately
 // mirrors printTopSection's layout (count then label) so users who
 // already learned the report don't need to learn a second one.
-//
-// provider_forbidden rows are tagged with a `*` and a trailing
-// footnote so operators do not mistake them for "my credential is
-// broken, rotate it" — 403 with a non-credential error code is a
-// permission / policy / region issue and rotating credentials does
-// not help. Other reasons render unmarked.
 func printCredentialFailures(w io.Writer, summaries []CredentialFailureSummary) {
 	if len(summaries) == 0 {
 		return
 	}
 	fmt.Fprintf(w, "\nCredential failures (%d):\n", len(summaries))
 	srcWidth, reasonWidth, countWidth := len("source"), len("reason"), 0
-	hasForbidden := false
 	for _, s := range summaries {
 		srcWidth = maxInt(srcWidth, len(s.Source))
 		reasonWidth = maxInt(reasonWidth, len(s.Reason))
 		countWidth = maxInt(countWidth, len(humanInt(int64(s.Count))))
-		if s.Reason == reasonProviderForbidden {
-			hasForbidden = true
-		}
 	}
 	for _, s := range summaries {
-		marker := " "
-		if s.Reason == reasonProviderForbidden {
-			marker = "*"
-		}
-		fmt.Fprintf(w, "  %s %-*s  %-*s  %*s\n",
-			marker,
+		fmt.Fprintf(w, "  %-*s  %-*s  %*s\n",
 			srcWidth, s.Source,
 			reasonWidth, s.Reason,
 			countWidth, humanInt(int64(s.Count)))
-	}
-	if hasForbidden {
-		fmt.Fprintln(w, "  * provider_forbidden = permission/policy denial; rotating credentials does not help")
 	}
 }
 

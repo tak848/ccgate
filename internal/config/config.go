@@ -61,6 +61,12 @@ const (
 )
 
 type Config struct {
+	// Schema is the editor `$schema` pointer the embedded defaults
+	// (and most users) write at the top of their jsonnet so an IDE
+	// can validate the config. ccgate ignores it at runtime; the
+	// field exists only to satisfy DisallowUnknownFields without
+	// special-casing the key name in the merger.
+	Schema              string         `json:"$schema,omitempty"`
 	Provider            ProviderConfig `json:"provider"`
 	LogPath             string         `json:"log_path,omitempty"`
 	LogDisabled         *bool          `json:"log_disabled,omitempty"`

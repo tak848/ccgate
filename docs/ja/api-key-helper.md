@@ -198,16 +198,14 @@ mv "$TMP" ~/.config/my-broker/anthropic.json
 
 ccgate がたった今使った認証情報を provider が拒否した場合、status と secret-free な error code (OpenAI: `Error.Code` / `Error.Type`、Anthropic: `RawJSON()` から `error.type` を抽出) を見て挙動を分けます。レスポンス本文は決して log には書きません。
 
-| status × code                                                                                                                | `auth.type=exec`                              | `auth.type=file`                  | env var                                    |
-|------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------|-----------------------------------|--------------------------------------------|
-| 401                                                                                                                          | `provider_auth`、**キャッシュ削除 + fallthrough** | `provider_auth`、fallthrough のみ | **exit 1**                                 |
-| 403 + 認証情報期限切れ系 code (AWS `ExpiredToken*` / OAuth `invalid_token` / Anthropic-OpenAI `authentication_error` / `invalid_api_key`) | `provider_auth`、**キャッシュ削除 + fallthrough** | `provider_auth`、fallthrough のみ | **exit 1**                                 |
-| 403 + その他 code (`permission_error` / `model_not_allowed` / AWS `AccessDenied` 等) もしくは未知 code                       | `provider_forbidden`、fallthrough のみ、**キャッシュ削除しない** | 同上                              | `provider_forbidden`、fallthrough のみ      |
-| 5xx / network / 429                                                                                                          | exit 1 (従来通り)                              | exit 1                            | exit 1                                     |
+| HTTP status         | `auth.type=exec`                              | `auth.type=file`                          | env var      |
+|---------------------|-----------------------------------------------|-------------------------------------------|--------------|
+| 401 / 403           | `provider_auth`、**キャッシュ削除 + fallthrough** | `provider_auth`、fallthrough のみ (cache 無し) | **exit 1**   |
+| 5xx / network / 429 | exit 1 (従来通り)                              | exit 1                                    | exit 1       |
 
-env var 経路で 401 / 403 認証情報期限切れを exit 1 にする理由は、ccgate 側に env を rotate する手段がなく、黙って飲むと user 側の設定ミスを隠してしまうため。403 + 非認証情報系 code を exit 1 にしないのは、permission 不足や region 制限が原因のケースで exit 1 にすると hook が永続的に壊れた状態になり、provider の「あなたはそれをできません」という回答を hook 障害として扱うのは UX として悪いためです。
+env var 経路で 401 / 403 を exit 1 にする理由は、ccgate 側に env を rotate する手段がなく、黙って飲むと user 側の設定ミスを隠してしまうためです。
 
-認証情報期限切れ code の集合 (大文字小文字無視): `ExpiredToken` / `ExpiredTokenException` / `InvalidClientTokenId` / `UnrecognizedClientException` / `invalid_token` / `expired_token` / `authentication_error` / `invalid_api_key`。新しい code は別 issue で追加可能 (schema を変えずに済む)。
+ccgate は SDK error の body を読んで 403 を error code で更に分割する処理 (例えば AWS `ExpiredTokenException` を `provider_auth` に promote しつつ `permission_error` は通常の API error 経路に残す) は現在持っていません。サポート対象 (anthropic-sdk-go / openai-go / gemini = openai-compat) では credential 拒否は実際には 401 で出るので、status のみのルールで主要ケースは捕捉できます。code 別 403 分類は Bedrock サポートと合わせて [#62](https://github.com/tak848/ccgate/issues/62) で追跡しています。
 
 ## AWS `credential_process` との差分
 
@@ -220,7 +218,7 @@ env var 経路で 401 / 403 認証情報期限切れを exit 1 にする理由�
 何かおかしいときは:
 
 1. `ccgate.log` (`$XDG_STATE_HOME/ccgate/<target>/ccgate.log`) を tail して `kind=credential_unavailable` のエントリを探し、`reason` / `source` (`exec` / `file` / `cache` / `lock`) / `provider_error_code` attribute を確認。どの段階で失敗したかが分かります
-2. `ccgate <target> metrics` を実行し、**Credential failures** セクションで `(source, reason)` 別の集計を確認。`provider_forbidden` 行は `*` マークが付き、これは認証情報の問題ではなく権限・ポリシー問題であることを示します
+2. `ccgate <target> metrics` を実行し、**Credential failures** セクションで `(source, reason)` 別の集計を確認
 3. キャッシュ起因 (`cache_parse` / `cache_read` / `cache_write` の log warning) が疑わしい場合は `$XDG_CACHE_HOME/ccgate/<target>/api_key.*.json` を削除して再生成させます。隣接する `*.lock` は再利用されるので削除不要です
 4. `cache_key_invalid` が出続ける場合は、`auth.cache_key` で参照している env が hook の実行環境にセットされているか確認してください。hook は upstream tool (Claude Code / Codex CLI) の env を継承するため、shell の dotfiles が source されているとは限りません
 5. `expired` が出続ける場合は helper の `expires_at` と `date -u` を比較してください。helper 内部の TTL ロジックや時計ズレが原因のことが多いです。`refresh_margin` が helper の TTL より大きいときも同じ症状になります

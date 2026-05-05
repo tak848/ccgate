@@ -50,8 +50,7 @@ import (
 //	command_exit, json_parse, invalid_expiration, empty_output,
 //	invalid_plain_output, expired, file_missing, file_read,
 //	unsupported_platform, timeout, output_too_large, lock_timeout,
-//	lock_error, cache_unavailable, cache_key_invalid, provider_auth,
-//	provider_forbidden.
+//	lock_error, cache_unavailable, cache_key_invalid, provider_auth.
 //
 // log-only credential warnings (degraded but successful resolution):
 //
@@ -78,7 +77,6 @@ const (
 	ReasonCacheUnavailable    Reason = "cache_unavailable"
 	ReasonCacheKeyInvalid     Reason = "cache_key_invalid"
 	ReasonProviderAuth        Reason = "provider_auth"
-	ReasonProviderForbidden   Reason = "provider_forbidden"
 
 	// Log-only (Resolve still succeeds; these never sit in metrics).
 	ReasonCacheParse Reason = "cache_parse"
@@ -189,7 +187,11 @@ func CacheFingerprint(opts Options) string {
 
 func writeLP(w interface{ Write([]byte) (int, error) }, s string) {
 	var buf [4]byte
-	binary.BigEndian.PutUint32(buf[:], uint32(len(s)))
+	// gosec G115: len(s) cannot overflow uint32 in practice — every
+	// caller writes a config-derived string (target / provider name /
+	// base URL / shell command / cache_key salt) and helper output is
+	// already bounded by stdoutLimit (64 KiB). uint32 holds 4 GiB.
+	binary.BigEndian.PutUint32(buf[:], uint32(len(s))) //nolint:gosec // bounded inputs
 	_, _ = w.Write(buf[:])
 	_, _ = w.Write([]byte(s))
 }
