@@ -149,12 +149,15 @@ func (p ProviderConfig) GetTimeoutMS() int {
 // GetAPIKeyRefreshMargin returns the parsed refresh margin, falling
 // back to DefaultAPIKeyRefreshMargin when unset. Validation guarantees
 // the string parses cleanly with a non-negative duration, so this
-// method never errors at runtime.
+// method never errors at runtime. Trim whitespace before parsing so a
+// padded but otherwise-valid input ("  2m  ") matches what Validate
+// already accepted, instead of silently dropping back to the default.
 func (p ProviderConfig) GetAPIKeyRefreshMargin() time.Duration {
-	if strings.TrimSpace(p.APIKeyRefreshMargin) == "" {
+	v := strings.TrimSpace(p.APIKeyRefreshMargin)
+	if v == "" {
 		return DefaultAPIKeyRefreshMargin
 	}
-	d, err := time.ParseDuration(p.APIKeyRefreshMargin)
+	d, err := time.ParseDuration(v)
 	if err != nil {
 		return DefaultAPIKeyRefreshMargin
 	}
@@ -164,11 +167,13 @@ func (p ProviderConfig) GetAPIKeyRefreshMargin() time.Duration {
 // GetAPIKeyCommandTimeout returns the parsed command timeout, falling
 // back to DefaultAPIKeyCommandTimeout when unset. Validation
 // guarantees a positive duration so this method never returns 0.
+// Same trim contract as GetAPIKeyRefreshMargin.
 func (p ProviderConfig) GetAPIKeyCommandTimeout() time.Duration {
-	if strings.TrimSpace(p.APIKeyCommandTimeout) == "" {
+	v := strings.TrimSpace(p.APIKeyCommandTimeout)
+	if v == "" {
 		return DefaultAPIKeyCommandTimeout
 	}
-	d, err := time.ParseDuration(p.APIKeyCommandTimeout)
+	d, err := time.ParseDuration(v)
 	if err != nil {
 		return DefaultAPIKeyCommandTimeout
 	}

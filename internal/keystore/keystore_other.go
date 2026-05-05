@@ -16,10 +16,18 @@ const Supported = false
 // rather than failing validation, so a Linux/macOS dotfile that
 // configures api_key_command does not break the hook on Windows
 // — env var fallback continues to work.
-func Resolve(_ context.Context, _ Options) (Result, error) {
+//
+// Source is derived from Options so the user sees the correct
+// component in metrics / logs: a Windows user who set api_key_file
+// should not see their failure misclassified as a command failure.
+func Resolve(_ context.Context, opts Options) (Result, error) {
+	source := SourceCommand
+	if opts.Command == "" && opts.File != "" {
+		source = SourceFile
+	}
 	return Result{
 		Reason: ReasonUnsupportedPlatform,
-		Source: SourceCommand,
+		Source: source,
 	}, ErrUnsupported
 }
 

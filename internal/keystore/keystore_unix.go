@@ -200,7 +200,11 @@ func resolveCommand(ctx context.Context, opts Options) (Result, error) {
 }
 
 func resolveFile(opts Options) (Result, error) {
-	path, err := expandHomePath(opts.File)
+	// Validate trims whitespace before checking the path shape, so a
+	// config like `api_key_file: " ~/.ccgate/key "` passes validation.
+	// Trim here too, otherwise the raw value would be sent to
+	// expandHomePath / os.Open and surface as a misleading file_missing.
+	path, err := expandHomePath(strings.TrimSpace(opts.File))
 	if err != nil {
 		return Result{Reason: ReasonFileRead, Source: SourceFile}, err
 	}

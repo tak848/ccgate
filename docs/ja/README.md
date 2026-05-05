@@ -94,13 +94,22 @@ go install github.com/tak848/ccgate@latest
 
 ccgate はデフォルトの安全ルールを内蔵しているため、設定ファイルなしでも動作します。
 
-カスタマイズする場合:
+カスタマイズする場合は `~/.claude/ccgate.jsonnet` を書きます。よくあるのは次の 2 通り、どちらかを選んでください。
 
-```bash
-ccgate claude init > ~/.claude/ccgate.jsonnet
-```
+- **デフォルトに追加する** (`append_*`): 組み込みのベースに乗ったまま、ccgate が今後リリースで品質改善した場合も自動で取り込まれます。
 
-`$schema` フィールドで [`schemas/claude.schema.json`](../../schemas/claude.schema.json) を参照しているため、エディタ補完が効きます。
+  ```jsonnet
+  {
+    ['$schema']: 'https://raw.githubusercontent.com/tak848/ccgate/main/schemas/claude.schema.json',
+    append_deny: [
+      'Production database access: any psql / mysql connection to a *.prod.* host. deny_message: production access is gated behind the runbook.',
+    ],
+  }
+  ```
+
+- **デフォルトを丸ごと置き換える** (`allow:` / `deny:` を直接書く): 細部まで自分で握ります。代わりに、今後 ccgate がデフォルトを更新した時には、自分の `allow` / `deny` を新デフォルトと突き合わせて取り込むかどうか都度判断する必要があります。`ccgate claude init | less` で組み込みデフォルトの中身を確認できます。
+
+`$schema` 行はどちらの形でもエディタ補完を有効にします。
 
 ### 2. Claude Code の hooks に登録
 
@@ -146,9 +155,18 @@ OpenAI 互換 / Anthropic 互換 proxy (LiteLLM proxy, Azure OpenAI, オンプ�
 
 ### 1. 設定ファイルを配置 (オプション)
 
-```bash
-ccgate codex init > ~/.codex/ccgate.jsonnet
+ccgate は Codex 側にもデフォルト設定を内蔵しています。Claude 側と同じく、`~/.codex/ccgate.jsonnet` で `append_*` を使ってデフォルトに追加するか、`allow:` / `deny:` を直接書いて丸ごと置き換えるか、どちらかを選びます。
+
+```jsonnet
+{
+  ['$schema']: 'https://raw.githubusercontent.com/tak848/ccgate/main/schemas/codex.schema.json',
+  append_deny: [
+    'Production database access: any psql / mysql connection to a *.prod.* host. deny_message: production access is gated behind the runbook.',
+  ],
+}
 ```
+
+`ccgate codex init | less` で組み込みデフォルトの中身を確認できます (置き換える前提なら参考にしてください)。
 
 デフォルト設定は Claude Code と同じ方針 (allow + deny + environment) です。Codex hooks は Bash、`apply_patch`、MCP tool 呼び出しなど複数種類の tool で発火し、ccgate のルールはそれらすべてを対象にします。system prompt は LLM に「`tool_name` + `tool_input` の JSON 全体を見て分類せよ」と指示します。
 
@@ -333,7 +351,7 @@ ccgate は target ごとに組み込みのデフォルトルールを持って�
 
 **拒否:** リモートコードのダウンロード実行 (`curl|bash`)、リモートパッケージの直接実行 (`npx` / `pnpx` / `bunx` 等)、git 破壊的操作 (protected branch 含む)、リポジトリ外の削除、特権昇格。
 
-`ccgate claude init` / `ccgate codex init` で組み込みデフォルトの全容を確認できます。`init` の出力は **組み込みデフォルトの内容を確認するためのリファレンス** であり、コピペして使う出発点ではありません。自分の設定は、追加 / 上書きしたい分だけを書く最小限の jsonnet にしてください:
+`ccgate claude init` / `ccgate codex init` で組み込みデフォルトの全容を確認できます。ccgate は品質改善のためにデフォルトを更新することがあり、`append_*` 形式で書いている設定はそのまま新デフォルトを取り込みますが、`allow:` / `deny:` で丸ごと置き換えている場合は、新デフォルトと自分の上書きを突き合わせて反映するかを都度判断する必要があります:
 
 ```bash
 ccgate claude init           | less                   # Claude embedded defaults を確認

@@ -95,18 +95,22 @@ Download a binary from [Releases](https://github.com/tak848/ccgate/releases) and
 
 ccgate ships with sensible default safety rules. Without any config file, it works out of the box.
 
-To customize, write a minimal `~/.claude/ccgate.jsonnet` that only adds or overrides what you need on top of the embedded defaults:
+To customize, write `~/.claude/ccgate.jsonnet`. Two common shapes, pick whichever fits:
 
-```jsonnet
-{
-  ['$schema']: 'https://raw.githubusercontent.com/tak848/ccgate/main/schemas/claude.schema.json',
-  append_deny: [
-    'Production database access: any psql / mysql connection to a *.prod.* host. deny_message: production access is gated behind the runbook.',
-  ],
-}
-```
+- **Add to the defaults** (`append_*`). Keeps you on the embedded baseline; quality improvements ccgate ships in future releases land automatically.
 
-The `$schema` line enables editor autocompletion. To inspect the full embedded defaults for reference, run `ccgate claude init | less`.
+  ```jsonnet
+  {
+    ['$schema']: 'https://raw.githubusercontent.com/tak848/ccgate/main/schemas/claude.schema.json',
+    append_deny: [
+      'Production database access: any psql / mysql connection to a *.prod.* host. deny_message: production access is gated behind the runbook.',
+    ],
+  }
+  ```
+
+- **Replace the defaults wholesale** (`allow:` / `deny:` set the lists, not append). Maximum control; you take ownership of keeping your `allow` / `deny` in line with future ccgate releases. `ccgate claude init | less` prints the embedded defaults you can copy-paste from.
+
+The `$schema` line enables editor autocompletion either way.
 
 ### 2. Register as a Claude Code hook
 
@@ -152,7 +156,7 @@ To route through an OpenAI- or Anthropic-compatible proxy (LiteLLM proxy, Azure 
 
 ### 1. Create a config file (optional)
 
-ccgate ships with sensible defaults for Codex too. To customize, write a minimal `~/.codex/ccgate.jsonnet` that only adds or overrides what you need:
+ccgate ships with sensible defaults for Codex too. The same two shapes as the Claude side apply: `append_*` to layer on top of the embedded defaults (and inherit future quality improvements), or `allow:` / `deny:` to take ownership of the list and replace the defaults wholesale.
 
 ```jsonnet
 {
@@ -163,7 +167,7 @@ ccgate ships with sensible defaults for Codex too. To customize, write a minimal
 }
 ```
 
-To inspect the full embedded defaults, run `ccgate codex init | less`.
+`ccgate codex init | less` prints the embedded defaults if you want to see what you would be replacing.
 
 The defaults follow Claude Code parity (allow + deny + environment guidance). Codex hooks fire for Bash, `apply_patch`, MCP tool calls, and other tool surfaces; the rules cover all of them and the system prompt instructs the LLM to classify by `tool_name` + the full `tool_input` JSON, not just Bash command shape.
 
@@ -349,7 +353,7 @@ ccgate ships built-in default rules per target. They are always applied as the b
 
 **Deny:** Download-and-execute (`curl|bash`), direct one-shot remote package execution (`npx`/`pnpx`/`bunx` etc.), git destructive operations on protected branches, out-of-repo deletion, privilege escalation.
 
-Run `ccgate claude init` / `ccgate codex init` to inspect the full embedded defaults. The output is a **reference**, not a starting template — your own config should be a minimal jsonnet that adds / overrides only what you need:
+Run `ccgate claude init` / `ccgate codex init` to inspect the full embedded defaults. ccgate updates these defaults occasionally for quality reasons; users on the `append_*` style pick those up automatically, while users who replaced the lists wholesale (`allow:` / `deny:`) need to re-check their override against the new defaults:
 
 ```bash
 ccgate claude init           | less                   # Read the embedded Claude defaults.

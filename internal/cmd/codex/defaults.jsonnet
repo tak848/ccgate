@@ -11,6 +11,15 @@
 // written tool-agnostically and reference Bash command shapes only as
 // concrete examples; the LLM should classify by tool_name + tool_input
 // regardless of which surface delivered the request.
+//
+// To customize, write `~/.codex/ccgate.jsonnet`:
+//   - append_allow / append_deny / append_environment to add on top
+//     (your config picks up future ccgate quality improvements
+//     automatically)
+//   - allow / deny / environment to replace the lists wholesale (you
+//     take ownership of reconciling against future ccgate defaults
+//     updates)
+// See the README "Setup -- Codex CLI" for examples.
 
 {
   ['$schema']: 'https://raw.githubusercontent.com/tak848/ccgate/main/schemas/codex.schema.json',
