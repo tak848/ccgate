@@ -3,14 +3,13 @@
 
   // Default safety rules for ccgate.
   // Inspired by Claude Code Auto Mode defaults.
-  // To customize, write `~/.claude/ccgate.jsonnet`:
-  //   - append_allow / append_deny / append_environment to add on top
-  //     (your config picks up future ccgate quality improvements
-  //     automatically)
-  //   - allow / deny / environment to replace the lists wholesale
-  //     (you take ownership of reconciling against future ccgate
-  //     defaults updates)
-  // See the README "Setup — Claude Code" for examples.
+  // To customize, write either:
+  //   - ~/.claude/ccgate.jsonnet (global), or
+  //   - <repo>/.claude/ccgate.local.jsonnet (project-local, untracked-only)
+  // and at either layer use append_* to add on top of what's
+  // inherited (picks up future ccgate quality updates automatically),
+  // or allow / deny / environment to replace the inherited list
+  // wholesale. See the README "Setup -- Claude Code" for examples.
 
   provider: {
     name: 'anthropic',

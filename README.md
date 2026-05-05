@@ -95,9 +95,14 @@ Download a binary from [Releases](https://github.com/tak848/ccgate/releases) and
 
 ccgate ships with sensible default safety rules. Without any config file, it works out of the box.
 
-To customize, write `~/.claude/ccgate.jsonnet`. Two common shapes, pick whichever fits:
+Customize at either layer; both follow the same merge rules:
 
-- **Add to the defaults** (`append_*`). Keeps you on the embedded baseline; quality improvements ccgate ships in future releases land automatically.
+- `~/.claude/ccgate.jsonnet` — your global config across every Claude Code session.
+- `<repo>/.claude/ccgate.local.jsonnet` — project-local override (untracked-only, see [Configuration](docs/configuration.md#where-ccgate-looks-for-config)). Layered on top of the global config.
+
+Either file can use one (or both) of these shapes:
+
+- **Add to the inherited list** (`append_allow` / `append_deny` / `append_environment`). Keeps the embedded baseline + anything earlier layers added; quality improvements ccgate ships in future releases land automatically.
 
   ```jsonnet
   {
@@ -108,7 +113,9 @@ To customize, write `~/.claude/ccgate.jsonnet`. Two common shapes, pick whicheve
   }
   ```
 
-- **Replace the defaults wholesale** (`allow:` / `deny:` set the lists, not append). Maximum control; you take ownership of keeping your `allow` / `deny` in line with future ccgate releases. `ccgate claude init | less` prints the embedded defaults you can copy-paste from.
+- **Replace the inherited list wholesale** (`allow:` / `deny:` set the lists, not append). Maximum control; you take ownership of keeping your `allow` / `deny` in line with future ccgate releases. `ccgate claude init | less` prints the embedded defaults you can copy-paste from.
+
+A common pattern is to keep the global config close to the embedded defaults (just `append_deny` for personal preferences) and put project-specific guardrails in the project-local file. The two layers are independent: a project may `append_*` even if the global file replaces the lists, or vice versa.
 
 The `$schema` line enables editor autocompletion either way.
 
@@ -156,7 +163,7 @@ To route through an OpenAI- or Anthropic-compatible proxy (LiteLLM proxy, Azure 
 
 ### 1. Create a config file (optional)
 
-ccgate ships with sensible defaults for Codex too. The same two shapes as the Claude side apply: `append_*` to layer on top of the embedded defaults (and inherit future quality improvements), or `allow:` / `deny:` to take ownership of the list and replace the defaults wholesale.
+ccgate ships sensible defaults for Codex too. Same merge rules as the Claude side: customize at either `~/.codex/ccgate.jsonnet` (global) or `<repo>/.codex/ccgate.local.jsonnet` (project-local, untracked-only), and at either layer use `append_*` to add on top of what's inherited or `allow:` / `deny:` to replace the list wholesale.
 
 ```jsonnet
 {

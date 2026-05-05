@@ -94,9 +94,14 @@ go install github.com/tak848/ccgate@latest
 
 ccgate はデフォルトの安全ルールを内蔵しているため、設定ファイルなしでも動作します。
 
-カスタマイズする場合は `~/.claude/ccgate.jsonnet` を書きます。よくあるのは次の 2 通り、どちらかを選んでください。
+カスタマイズはどちらのレイヤーでもできます。両方とも同じ merge ルールに従います。
 
-- **デフォルトに追加する** (`append_*`): 組み込みのベースに乗ったまま、ccgate が今後リリースで品質改善した場合も自動で取り込まれます。
+- `~/.claude/ccgate.jsonnet` — Claude Code セッション全体に効くグローバル設定
+- `<repo>/.claude/ccgate.local.jsonnet` — プロジェクトローカル設定 (Git 未追跡のみ、詳細は [docs/ja/configuration.md](docs/ja/configuration.md#ccgate-が-config-を探す場所))。グローバル設定の上にさらに重なります
+
+どちらのファイルでも、次の 2 種類のいずれか (もしくは両方) を書けます。
+
+- **継承した list に追加する** (`append_allow` / `append_deny` / `append_environment`): 組み込みデフォルト + これまでのレイヤーに乗ったまま、ccgate が今後リリースで品質改善したルールも自動で取り込まれます。
 
   ```jsonnet
   {
@@ -107,7 +112,9 @@ ccgate はデフォルトの安全ルールを内蔵しているため、設定�
   }
   ```
 
-- **デフォルトを丸ごと置き換える** (`allow:` / `deny:` を直接書く): 細部まで自分で握ります。代わりに、今後 ccgate がデフォルトを更新した時には、自分の `allow` / `deny` を新デフォルトと突き合わせて取り込むかどうか都度判断する必要があります。`ccgate claude init | less` で組み込みデフォルトの中身を確認できます。
+- **継承した list を丸ごと置き換える** (`allow:` / `deny:` を直接書く): 細部まで自分で握ります。今後 ccgate がデフォルトを更新したときに、自分の `allow` / `deny` を新デフォルトと突き合わせて取り込むかどうかは都度自分で判断する必要があります。`ccgate claude init | less` で組み込みデフォルトの中身を確認できます。
+
+典型的な使い分けは、グローバル設定を組み込みデフォルトに近づけておき (個人的な好みは `append_deny` だけにする等)、プロジェクト固有の制約はプロジェクトローカル側に置く形です。2 つのレイヤーは独立しており、グローバルが list を置き換えていてもプロジェクトローカルで `append_*` を重ねられますし、その逆も可能です。
 
 `$schema` 行はどちらの形でもエディタ補完を有効にします。
 
@@ -155,7 +162,7 @@ OpenAI 互換 / Anthropic 互換 proxy (LiteLLM proxy, Azure OpenAI, オンプ�
 
 ### 1. 設定ファイルを配置 (オプション)
 
-ccgate は Codex 側にもデフォルト設定を内蔵しています。Claude 側と同じく、`~/.codex/ccgate.jsonnet` で `append_*` を使ってデフォルトに追加するか、`allow:` / `deny:` を直接書いて丸ごと置き換えるか、どちらかを選びます。
+ccgate は Codex 側にもデフォルト設定を内蔵しています。Claude 側と同じ merge ルールで、`~/.codex/ccgate.jsonnet` (グローバル) と `<repo>/.codex/ccgate.local.jsonnet` (プロジェクトローカル、Git 未追跡のみ) のどちらでも、`append_*` で継承した list に追加することも、`allow:` / `deny:` で丸ごと置き換えることもできます。
 
 ```jsonnet
 {
