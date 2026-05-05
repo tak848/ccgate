@@ -72,6 +72,72 @@ func TestProviderErrorInfo(t *testing.T) {
 	}
 }
 
+// TestProviderErrorInfoAnthropicRawJSON exercises the RawJSON()
+// extraction path. anthropic-sdk-go v1.37.0 does not expose Type on
+// the public Error struct, so the runner has to parse RawJSON()
+// for `error.type`. We build the *anthropic.Error via the SDK's
+// UnmarshalJSON because JSON.raw is unexported (composite literal
+// would not compile) — the same shape a fake provider would use.
+func TestProviderErrorInfoAnthropicRawJSON(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		body     string
+		status   int
+		wantCode string
+	}{
+		"authentication_error": {
+			body:     `{"type":"error","error":{"type":"authentication_error","message":"sk-secret"}}`,
+			status:   401,
+			wantCode: "authentication_error",
+		},
+		"permission_error": {
+			body:     `{"type":"error","error":{"type":"permission_error","message":"forbidden"}}`,
+			status:   403,
+			wantCode: "permission_error",
+		},
+		"malformed body": {
+			body:     `{not json`,
+			status:   500,
+			wantCode: "",
+		},
+		"missing error.type": {
+			body:     `{"type":"error","error":{"message":"oops"}}`,
+			status:   429,
+			wantCode: "",
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			var e anthropicsdk.Error
+			if tc.body != "" {
+				// Best-effort: malformed JSON returns a SDK error we
+				// ignore; the test only cares about the resulting
+				// (RawJSON, StatusCode) pair feeding providerErrorInfo.
+				_ = e.UnmarshalJSON([]byte(tc.body))
+			}
+			e.StatusCode = tc.status
+			info, ok := providerErrorInfo(&e)
+			if !ok {
+				t.Fatalf("providerErrorInfo returned ok=false for %q", tc.body)
+			}
+			if info.status != tc.status {
+				t.Fatalf("status = %d, want %d", info.status, tc.status)
+			}
+			if info.code != tc.wantCode {
+				t.Fatalf("code = %q, want %q", info.code, tc.wantCode)
+			}
+			// Defence in depth: `message` content must not have
+			// leaked into the secret-free code.
+			if strings.Contains(info.code, "sk-secret") || strings.Contains(info.code, "oops") {
+				t.Fatalf("code %q contains body content; sanitization regressed", info.code)
+			}
+		})
+	}
+}
+
 // TestIsCredentialExpiredCode pins the AWS / OAuth / Anthropic /
 // OpenAI 403 error codes that ccgate promotes to provider_auth (so
 // the cache gets invalidated for auth.type=exec and the next fire

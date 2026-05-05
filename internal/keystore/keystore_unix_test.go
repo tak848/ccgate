@@ -535,6 +535,165 @@ func bytesRepeat(b byte, n int) []byte {
 	return out
 }
 
+// TestCacheFingerprintLengthPrefixCollision pins the length-prefix
+// encoding of CacheFingerprint. The previous implementation
+// concatenated inputs with a NUL separator, which would let
+// (provider="a\0b", command="") and (provider="a", command="b")
+// hash to the same fingerprint and silently share a cache file
+// across two providers. Length-prefixing each field eliminates the
+// boundary ambiguity.
+func TestCacheFingerprintLengthPrefixCollision(t *testing.T) {
+	t.Parallel()
+
+	a := Options{
+		ProviderName: "a\x00b",
+		Command:      "",
+		TargetName:   "claude",
+	}
+	b := Options{
+		ProviderName: "a",
+		Command:      "b",
+		TargetName:   "claude",
+	}
+	if CacheFingerprint(a) == CacheFingerprint(b) {
+		t.Fatalf("length-prefix encoding regressed: %q and %q hash to the same fingerprint",
+			a.ProviderName, b.Command)
+	}
+
+	// Sanity: identical Options agree across calls.
+	first := CacheFingerprint(a)
+	second := CacheFingerprint(a)
+	if first != second {
+		t.Fatalf("CacheFingerprint not deterministic: %q vs %q", first, second)
+	}
+}
+
+// TestCacheFingerprintCacheKeySeparation verifies that two Options
+// differing only in CacheKey produce different fingerprints — the
+// whole point of the auth.cache_key feature is to keep the same
+// command from sharing a cache across env / profile contexts.
+func TestCacheFingerprintCacheKeySeparation(t *testing.T) {
+	t.Parallel()
+
+	base := Options{
+		Command:      "aws sts get-session-token",
+		ProviderName: "anthropic",
+		TargetName:   "claude",
+		BaseURL:      "",
+	}
+	prod := base
+	prod.CacheKey = "prod"
+	dev := base
+	dev.CacheKey = "dev"
+	empty := base
+	empty.CacheKey = ""
+
+	if CacheFingerprint(prod) == CacheFingerprint(dev) {
+		t.Fatalf("CacheKey=%q and %q must hash to different fingerprints", "prod", "dev")
+	}
+	if CacheFingerprint(prod) == CacheFingerprint(empty) {
+		t.Fatalf("CacheKey=%q and %q must hash to different fingerprints", "prod", "")
+	}
+	// "prod" alone must not collide with the empty-CacheKey baseline
+	// even though they share every other input — the salt is the
+	// only thing that should distinguish them.
+	if CacheFingerprint(empty) == CacheFingerprint(dev) {
+		t.Fatalf("CacheKey=%q and %q must hash to different fingerprints", "", "dev")
+	}
+}
+
+// TestResolveCommandFreshKeyInsideRefreshMargin guards the contract
+// that a freshly produced credential whose remaining TTL is inside
+// the refresh_margin window surfaces as `expired` rather than being
+// handed to the SDK to race the API call. Without this guard a
+// helper that mints a 1-second TTL would let provider.timeout_ms
+// (default 20s) race the expiry, producing confused 401s instead of
+// the actionable `expired` reason.
+func TestResolveCommandFreshKeyInsideRefreshMargin(t *testing.T) {
+	withCacheRoot(t)
+
+	// Helper outputs a credential that "expires" 100ms from now —
+	// well inside the test's 30s refresh margin.
+	soon := time.Now().Add(100 * time.Millisecond).UTC().Format(time.RFC3339Nano)
+	o := opts(helperScript(t, `printf '{"key":"sk-soon","expires_at":"`+soon+`"}'`))
+
+	res, err := Resolve(context.Background(), o)
+	if err == nil {
+		t.Fatalf("expected expired error, got key=%q", res.Key)
+	}
+	if res.Reason != ReasonExpired {
+		t.Fatalf("reason = %q, want %q", res.Reason, ReasonExpired)
+	}
+	if res.Source != SourceExec {
+		t.Fatalf("source = %q, want %q", res.Source, SourceExec)
+	}
+}
+
+// TestResolveFileFreshKeyInsideRefreshMargin guards the same fresh
+// minimum-TTL contract on the file path: a rotator that wrote a
+// near-expiry credential into the file must surface as `expired`,
+// same as the exec path.
+func TestResolveFileFreshKeyInsideRefreshMargin(t *testing.T) {
+	withCacheRoot(t)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "key.json")
+	soon := time.Now().Add(100 * time.Millisecond).UTC().Format(time.RFC3339Nano)
+	body := []byte(`{"key":"sk-soon","expires_at":"` + soon + `"}`)
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Resolve(context.Background(), Options{
+		Path:           path,
+		ProviderName:   "test",
+		TargetName:     "claude",
+		RefreshMargin:  30 * time.Second,
+		CommandTimeout: 5 * time.Second,
+	})
+	if err == nil {
+		t.Fatalf("expected expired error, got key=%q", res.Key)
+	}
+	if res.Reason != ReasonExpired {
+		t.Fatalf("reason = %q, want %q", res.Reason, ReasonExpired)
+	}
+}
+
+// TestWarnLoosePermissions exercises the permission-warning helper
+// directly so we can avoid setting up a chown'd file (which would
+// require root or a custom file system). The helper is the
+// contract-bearing function in the keystore_unix.go security flow;
+// covering its per-mode branches here is sufficient for CI.
+func TestWarnLoosePermissions(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "key")
+	if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// We don't assert on the slog output (the helper is best-effort
+	// and slog state in tests is global), but we exercise both
+	// branches to guard against panics. The mode 0o600 path returns
+	// without warning; mode 0o644 produces a warn.
+	warnLoosePermissions(path, info)
+
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	info2, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	warnLoosePermissions(path, info2)
+
+	// nil info must not panic.
+	warnLoosePermissions(path, nil)
+}
+
 func TestExpandHomePath(t *testing.T) {
 
 	home := t.TempDir()
