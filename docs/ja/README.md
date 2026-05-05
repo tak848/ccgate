@@ -97,7 +97,7 @@ ccgate はデフォルトの安全ルールを内蔵しているため、設定�
 カスタマイズはどちらのレイヤーでもできます。両方とも同じ merge ルールに従います。
 
 - `~/.claude/ccgate.jsonnet` — Claude Code セッション全体に効くグローバル設定
-- `<repo>/.claude/ccgate.local.jsonnet` — プロジェクトローカル設定 (Git 未追跡のみ、詳細は [docs/ja/configuration.md](docs/ja/configuration.md#ccgate-が-config-を探す場所))。グローバル設定の上にさらに重なります
+- `<repo>/.claude/ccgate.local.jsonnet` — プロジェクトローカル設定 (Git 未追跡のみ、詳細は [configuration.md](configuration.md#ccgate-が-config-を探す場所))。グローバル設定の上にさらに重なります
 
 どちらのファイルでも、次の 2 種類のいずれか (もしくは両方) を書けます。
 
@@ -250,7 +250,7 @@ Claude Code と同じ環境変数を使います — [provider table](#3-api-キ
 | `provider.name`          | string                            | `"anthropic"`                                                                   | プロバイダー名。`"anthropic"` / `"openai"` / `"gemini"` のいずれか                                          |
 | `provider.model`         | string                            | `"claude-haiku-4-5"`                                                            | モデル名。例: `claude-haiku-4-5` / `claude-sonnet-4-6` (anthropic)、`gpt-5.4-nano-2026-03-17` (openai)、`gemini-3-flash-preview` (gemini)。互換 proxy 経由なら proxy が公開している任意の名前 (例: `anthropic/claude-haiku-4-5`) |
 | `provider.base_url`      | string                            | `""`                                                                            | API base URL の上書き。空文字列 (default) で SDK の既定 endpoint を使用。OpenAI 互換 / Anthropic 互換 proxy (LiteLLM proxy, Azure OpenAI, オンプレ gateway, 地域別 endpoint 等) 経由で叩きたい時に指定 |
-| `provider.auth`          | object (`{type, ...}`)            | (省略時は env var)                                                              | Unix 限定。短命 / ローテーションする認証情報を扱う discriminated union。`type=exec` (helper コマンド) / `type=file` (rotator が更新するファイル)。詳細は [docs/ja/api-key-helper.md](api-key-helper.md) |
+| `provider.auth`          | object (`{type, ...}`)            | (省略時は env var)                                                              | Unix 限定。短命 / ローテーションする認証情報を扱う discriminated union。`type=exec` (helper コマンド) / `type=file` (rotator が更新するファイル)。詳細は [api-key-helper.md](api-key-helper.md) |
 | `provider.timeout_ms`    | int                               | `20000`                                                                         | API タイムアウト (ms)。`0` = タイムアウトなし                                                              |
 | `log_path`               | string                            | `$XDG_STATE_HOME/ccgate/<target>/ccgate.log`                                    | ログファイルパス。`~` でホームディレクトリ展開                                                             |
 | `log_disabled`           | bool                              | `false`                                                                         | ログ出力を完全に無効化                                                                                     |
@@ -360,9 +360,9 @@ helper / file の中身は次のいずれかを書きます。
 
 解決順序: `provider.auth` (設定済み) > `CCGATE_*_API_KEY` > `*_API_KEY`。`auth` を設定済みのときに失敗しても **env var に黙って fallback はしません**。代わりに `kind=credential_unavailable` で fallthrough します。Unix のみ。
 
-ccgate は jsonnet helper として `std.native('env')(name)` (未定義で空文字) と `std.native('must_env')(name)` (未定義で config-load エラー) も登録しているので (ecspresso v2.4+ と同じ pattern)、ccgate 独自の記法を使わずに任意の文字列フィールドから環境変数を読めます。
+ccgate は jsonnet helper として `std.native('env')(name)` (未定義は空文字) と `std.native('must_env')(name)` (未定義は config-load エラー) を register しているので、任意の文字列フィールドから ccgate 独自記法を使わずに env を読めます。
 
-helper の完全な仕様 (動かせる例 / `auth.cache_key` によるアカウント別キャッシュ / セキュリティ上の注意 / 401/403 の挙動マトリクス / 障害復旧チェックリスト) は [docs/ja/api-key-helper.md](api-key-helper.md) を参照してください。
+helper の完全な仕様 (動かせる例 / `auth.cache_key` によるアカウント別キャッシュ / 初回ブラウザ認証 / 401/403 の挙動マトリクス / 障害復旧チェックリスト) は [api-key-helper.md](api-key-helper.md) を参照してください。
 ## デフォルトルール
 
 ccgate は target ごとに組み込みのデフォルトルールを持っています。常にベースとして適用され、その上にグローバル / プロジェクトローカル設定が重なります。
@@ -380,7 +380,7 @@ ccgate claude init -p > .claude/ccgate.local.jsonnet  # プロジェクトロー
 ccgate codex  init -p > .codex/ccgate.local.jsonnet   # Codex も同じ
 ```
 
-embedded のルールを **削除** したい場合は明示的な reset/override 構文が必要ですが、現状そのような仕組みはありません。ルールと動機を Issue に書いてもらえれば検討します。
+embedded のルールを 1 件だけ削除する仕組みはありません。リストを `allow:` / `deny:` で丸ごと差し替えて、削除したいルールだけ自分のコピーから抜いてください。
 
 ## 完全自動運転モード (`fallthrough_strategy`)
 
@@ -435,10 +435,10 @@ ccgate codex  metrics --days 7        # codex 側、同じシェイプ
 
 ## ドキュメント
 
-- [docs/ja/claude.md](claude.md) — Claude Code 固有
-- [docs/ja/codex.md](codex.md) — Codex CLI 固有
-- [docs/ja/configuration.md](configuration.md) — 設定 layering、fallthrough_strategy、metrics、既知の制約
-- [docs/ja/api-key-helper.md](api-key-helper.md) — `provider.auth` リファレンス (helper の契約、キャッシュ、セキュリティ、401/403 挙動、復旧手順)
+- [claude.md](claude.md) — Claude Code 固有
+- [codex.md](codex.md) — Codex CLI 固有
+- [configuration.md](configuration.md) — 設定 layering、fallthrough_strategy、metrics、既知の制約
+- [api-key-helper.md](api-key-helper.md) — `provider.auth` リファレンス (helper の契約、キャッシュ、初回ブラウザ認証、401/403 挙動、復旧手順)
 - [English documentation (docs/)](../claude.md)
 
 ## 開発

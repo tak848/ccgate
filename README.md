@@ -362,9 +362,9 @@ The helper / file content is one of:
 
 Resolution order: `provider.auth` (when configured) > `CCGATE_*_API_KEY` > `*_API_KEY`. When `auth` is configured ccgate **does not silently fall back to env vars on failure** — the hook falls through with `kind=credential_unavailable` instead. Unix only.
 
-ccgate also registers `std.native('env')(name)` (returns empty string for undefined) and `std.native('must_env')(name)` (raises a config-load error) as Jsonnet helpers, following the ecspresso v2.4+ pattern, so any string field can read from the environment without ccgate-specific syntax.
+ccgate also registers `std.native('env')(name)` (returns empty string for undefined) and `std.native('must_env')(name)` (raises a config-load error) as Jsonnet helpers, so any string field can pull values from the environment without ccgate-specific syntax.
 
-See [docs/api-key-helper.md](docs/api-key-helper.md) for the full helper contract, runnable examples, account-aware caching via `auth.cache_key`, security guidance, the 401/403 behaviour matrix, and the operational recovery checklist.
+See [docs/api-key-helper.md](docs/api-key-helper.md) for the full helper contract, runnable examples, account-aware caching via `auth.cache_key`, browser-based first-run auth, the 401/403 behaviour matrix, and the operational recovery checklist.
 ## Default Rules
 
 ccgate ships built-in default rules per target. They are always applied as the base; your global / project-local configs layer on top.
@@ -382,7 +382,7 @@ ccgate claude init -p > .claude/ccgate.local.jsonnet  # Project-local skeleton y
 ccgate codex  init -p > .codex/ccgate.local.jsonnet   # Same for Codex.
 ```
 
-Need to drop one of the embedded default rules? That requires an explicit reset/override syntax which does not exist yet -- open an issue describing the rule and your motivation.
+Removing a single embedded rule while keeping the rest is not supported today; replace the whole list with `allow:` / `deny:` and drop the rule from your copy.
 
 ## Unattended automation (`fallthrough_strategy`)
 

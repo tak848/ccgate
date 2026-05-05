@@ -2,11 +2,11 @@
 
 [English version (docs/configuration.md)](../configuration.md)
 
-target 横断の設定リファレンス。[ルート README (docs/ja/README.md)](README.md) は field 一覧とクイックスタートを扱います。本ページは layering ルール、fallthrough の決定木、メトリクス出力スキーマを掘り下げます。
+本ページは layering ルール、fallthrough の決定木、メトリクス出力スキーマを扱います。field 一覧とクイックスタートは [README](README.md) にあります。
 
 ## ccgate が config を探す場所
 
-ccgate は target ごとに 3 layer を順に評価します。すべての layer は同じ merge セマンティクスで合成されます (後述「layer の合成ルール」参照):
+ccgate は target ごとに 3 つの設定層を順に読み込みます。各層は同じルールで合成されます (詳細は後述の「layer の合成ルール」):
 
 1. **埋込デフォルト**: バイナリに同梱。常にベースとして適用。`ccgate <target> init` で確認可能
 2. **グローバル設定**: 存在すれば埋込デフォルトの上に重ねる:

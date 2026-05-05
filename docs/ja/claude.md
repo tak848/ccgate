@@ -91,7 +91,7 @@ allow guidance は plan mode で write 操作を allow に promote しません�
 | State path                          | `$XDG_STATE_HOME/ccgate/claude/`                   | `$XDG_STATE_HOME/ccgate/codex/`                                                              |
 | Project-local config                | `{repo_root}/.claude/ccgate.local.jsonnet`         | `{repo_root}/.codex/ccgate.local.jsonnet`                                                    |
 
-Codex 側の詳細は [docs/ja/codex.md](codex.md) を参照。
+Codex 側の詳細は [codex.md](codex.md) を参照。
 
 ## 既知の制約
 

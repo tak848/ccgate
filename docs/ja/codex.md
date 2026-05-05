@@ -115,5 +115,5 @@ workspace 内 `apply_patch` は意図的に `allow` に**含めています**: C
 
 ## Claude Code との挙動差分
 
-完全な表は [docs/ja/claude.md](claude.md) を参照。
+完全な表は [claude.md](claude.md) を参照。
 
