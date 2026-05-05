@@ -179,41 +179,36 @@ func TestAuthDurationDefaults(t *testing.T) {
 }
 
 func TestExpandedCacheKey(t *testing.T) {
-	// No t.Parallel(): subtests use t.Setenv to control the env, and
-	// Go forbids that in any test (parent or subtest) that called
-	// t.Parallel().
+	// expandCacheKey takes a lookup func (DI) so the table runs in
+	// parallel without touching the process env. Production
+	// ExpandedCacheKey wires this to os.LookupEnv.
+	t.Parallel()
 
 	cases := map[string]struct {
 		cacheKey string
-		envName  string
-		envValue string
-		envSet   bool
+		env      map[string]string
 		want     string
 		wantErr  bool
 	}{
 		"empty":              {cacheKey: "", want: ""},
 		"literal":            {cacheKey: "prod", want: "prod"},
-		"brace defined":      {cacheKey: "${TEST_PROFILE}", envName: "TEST_PROFILE", envValue: "prod", envSet: true, want: "prod"},
-		"bare defined":       {cacheKey: "$TEST_PROFILE", envName: "TEST_PROFILE", envValue: "dev", envSet: true, want: "dev"},
-		"defined empty":      {cacheKey: "${TEST_PROFILE}", envName: "TEST_PROFILE", envValue: "", envSet: true, want: ""},
-		"undefined brace":    {cacheKey: "${TEST_UNSET}", wantErr: true},
-		"undefined bare":     {cacheKey: "$TEST_UNSET", wantErr: true},
+		"brace defined":      {cacheKey: "${PROFILE}", env: map[string]string{"PROFILE": "prod"}, want: "prod"},
+		"bare defined":       {cacheKey: "$PROFILE", env: map[string]string{"PROFILE": "dev"}, want: "dev"},
+		"defined empty":      {cacheKey: "${PROFILE}", env: map[string]string{"PROFILE": ""}, want: ""},
+		"undefined brace":    {cacheKey: "${UNSET}", wantErr: true},
+		"undefined bare":     {cacheKey: "$UNSET", wantErr: true},
 		"escaped dollar":     {cacheKey: "$$literal", want: "$literal"},
-		"compound":           {cacheKey: "${TEST_PROFILE}-x", envName: "TEST_PROFILE", envValue: "prod", envSet: true, want: "prod-x"},
-		"undefined compound": {cacheKey: "${TEST_DEFINED}-${TEST_UNSET}", envName: "TEST_DEFINED", envValue: "p", envSet: true, wantErr: true},
+		"compound":           {cacheKey: "${PROFILE}-x", env: map[string]string{"PROFILE": "prod"}, want: "prod-x"},
+		"undefined compound": {cacheKey: "${DEFINED}-${UNSET}", env: map[string]string{"DEFINED": "p"}, wantErr: true},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			// Cannot run in parallel: t.Setenv mutates process env.
-			if tc.envName != "" {
-				if tc.envSet {
-					t.Setenv(tc.envName, tc.envValue)
-				} else {
-					_ = os.Unsetenv(tc.envName)
-				}
+			t.Parallel()
+			lookup := func(name string) (string, bool) {
+				v, ok := tc.env[name]
+				return v, ok
 			}
-			a := AuthConfig{CacheKey: tc.cacheKey}
-			got, err := a.ExpandedCacheKey()
+			got, err := expandCacheKey(tc.cacheKey, lookup)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("expected error for %q, got %q", tc.cacheKey, got)
@@ -224,7 +219,7 @@ func TestExpandedCacheKey(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			if got != tc.want {
-				t.Fatalf("ExpandedCacheKey(%q) = %q, want %q", tc.cacheKey, got, tc.want)
+				t.Fatalf("expandCacheKey(%q) = %q, want %q", tc.cacheKey, got, tc.want)
 			}
 		})
 	}

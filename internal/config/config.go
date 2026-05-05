@@ -245,35 +245,44 @@ func (a AuthConfig) GetCommandTimeout() time.Duration {
 }
 
 // ExpandedCacheKey resolves `auth.cache_key` against the current
-// environment. Empty CacheKey returns ("", nil).
+// environment via os.LookupEnv. See expandCacheKey for the expansion
+// rules; this method is the production entry point that the runner
+// calls once per hook fire when assembling keystore.Options.
+//
+// Validate intentionally does NOT call this method (it would tie
+// validation to the runtime environment).
+func (a AuthConfig) ExpandedCacheKey() (string, error) {
+	return expandCacheKey(a.CacheKey, os.LookupEnv)
+}
+
+// expandCacheKey is the testable core of ExpandedCacheKey, with the
+// env lookup injected so tests can run in parallel without touching
+// the process environment (t.Setenv panics under t.Parallel because
+// parallel siblings share os.Environ()).
 //
 // `${VAR}` / `$VAR` references are expanded via os.Expand with a
 // custom mapping:
 //
 //   - `$$` is treated as a literal `$` (the standard os.Getenv
 //     mapper would collapse `$$literal` to `literal`).
-//   - Other names are looked up via os.LookupEnv. A defined env
-//     variable returns its value (including the empty string).
-//   - An *undefined* env reference returns ("", error). The runner
+//   - Other names go through `lookup`. A defined variable returns
+//     its value, including the empty string.
+//   - An *undefined* reference returns ("", error). The runner
 //     translates that to a `credential_unavailable`
 //     reason=`cache_key_invalid` fallthrough — silently collapsing
 //     to an empty salt would defeat the purpose of cache_key (which
-//     is to keep `aws sts ... --profile $AWS_PROFILE` from sharing a
-//     cache across profiles when AWS_PROFILE is unset / typoed).
-//
-// Validate intentionally does NOT call this method (it would tie
-// validation to the runtime environment); the runner calls it once
-// per hook fire when assembling keystore.Options.
-func (a AuthConfig) ExpandedCacheKey() (string, error) {
-	if a.CacheKey == "" {
+//     is to keep `aws sts ... --profile $AWS_PROFILE` from sharing
+//     a cache across profiles when AWS_PROFILE is unset / typoed).
+func expandCacheKey(raw string, lookup func(string) (string, bool)) (string, error) {
+	if raw == "" {
 		return "", nil
 	}
 	var undefinedVar string
-	expanded := os.Expand(a.CacheKey, func(name string) string {
+	expanded := os.Expand(raw, func(name string) string {
 		if name == "$" {
 			return "$"
 		}
-		v, ok := os.LookupEnv(name)
+		v, ok := lookup(name)
 		if !ok && undefinedVar == "" {
 			undefinedVar = name
 		}
