@@ -225,7 +225,7 @@ Claude Code と同じ環境変数を使います — [provider table](#3-api-キ
 | `provider.name`          | string                            | `"anthropic"`                                                                   | プロバイダー名。`"anthropic"` / `"openai"` / `"gemini"` のいずれか                                          |
 | `provider.model`         | string                            | `"claude-haiku-4-5"`                                                            | モデル名。例: `claude-haiku-4-5` / `claude-sonnet-4-6` (anthropic)、`gpt-5.4-nano-2026-03-17` (openai)、`gemini-3-flash-preview` (gemini)。互換 proxy 経由なら proxy が公開している任意の名前 (例: `anthropic/claude-haiku-4-5`) |
 | `provider.base_url`      | string                            | `""`                                                                            | API base URL の上書き。空文字列 (default) で SDK の既定 endpoint を使用。OpenAI 互換 / Anthropic 互換 proxy (LiteLLM proxy, Azure OpenAI, オンプレ gateway, 地域別 endpoint 等) 経由で叩きたい時に指定 |
-| `provider.api_key_command` | string                          | `""`                                                                            | Unix 限定。stdout に API キーを出すシェルコマンド (`/bin/sh -c`)。JSON `{key, expires_at}` なら disk cache + 早期 refresh、plain stdout は cache なし。[短命 / ローテーションする API キー](#短命--ローテーションする-api-キー) 参照 |
+| `provider.api_key_command` | string                          | `""`                                                                            | Unix 限定。stdout に API キーを出すシェルコマンド (`/bin/sh -c`)。JSON `{key, expires_at}` ならキャッシュ + 期限前更新、plain stdout はキャッシュなし。詳細は [docs/ja/api-key-helper.md](api-key-helper.md) |
 | `provider.api_key_file`  | string                            | `""`                                                                            | Unix 限定。abs path もしくは `~/...` のファイルを hook 起動ごとに読む。`api_key_command` と同じ shape を期待。`api_key_command` が空のときのみ参照 |
 | `provider.api_key_refresh_margin` | duration                 | `"30s"`                                                                         | cache 有効性判定の早期 refresh 余裕。`now + margin >= expires_at` で stale 扱い。`>= 0` (`0s` で早期 refresh 無効) |
 | `provider.api_key_command_timeout` | duration                | `"5s"`                                                                          | helper 1 回起動の hot-path 上限 (lock retry + exec)。`> 0` (`0s` は reject)                                |
@@ -305,20 +305,7 @@ proxy の API キーを `CCGATE_ANTHROPIC_API_KEY` で export。Anthropic SDK �
 
 ### 短命 / ローテーションする API キー
 
-静的 env var では追いつかない credential — AWS STS セッション / Vertex ADC / OpenAI 互換 gateway の virtual key / 社内 key broker など — が相手のときは、ccgate にプロセスかファイルを指してもらいます。
-
-**Unix のみ** (Linux / macOS / *BSD)。Windows で `api_key_command` / `api_key_file` を設定した場合は `kind=credential_unavailable` / `reason=unsupported_platform` で fallthrough します (helper / file は stub)。どちらも設定していない Windows ユーザーは従来通り `*_API_KEY` の env var 経路で動きますが、設定済みの helper / file が unsupported だったときに ccgate が **黙って env var に fallback することはない** 点は注意してください。
-
-#### 出力フォーマット
-
-helper は stdout (もしくはファイル) に次のいずれかの形を書きます:
-
-- JSON: `{"key":"sk-...","expires_at":"2026-05-02T01:23:45Z"}`。strict (厳密) parse。`expires_at` が未来の場合は `$XDG_CACHE_HOME/ccgate/<target>/api_key.<hash>.json` (mode `0600`) にメモ化 (memoize) し、`api_key_refresh_margin` で早めに refresh
-- plain text: 単一行の非空文字列。そのまま渡される (**cache しない**)。低頻度な `gcloud auth print-access-token` 等には十分だが、tool 起動が頻繁な hot path では毎回 helper を exec する hot-path コストになる
-
-`expires_at` は RFC3339。optional な `version` 未指定は `1` 扱い (将来 schema 変更時の互換用予約)。stdout 64KiB 超えは `output_too_large` で reject。
-
-#### 設定
+認証情報が静的な環境変数では追従できない頻度で更新される (AWS STS / Vertex ADC / OpenAI 互換 gateway の virtual key / 社内 key broker など) 場合、`provider.api_key_command` に helper スクリプトを、もしくは `provider.api_key_file` に rotator が更新するパスを指定します。
 
 ```jsonnet
 {
@@ -326,110 +313,18 @@ helper は stdout (もしくはファイル) に次のいずれかの形を書�
     name: 'anthropic',
     model: 'claude-haiku-4-5',
     api_key_command: '/usr/local/bin/my-key-broker --provider anthropic',
-    api_key_refresh_margin: '60s', // optional, default 30s
-    api_key_command_timeout: '5s', // optional, default 5s
   },
 }
 ```
 
-外部 rotator (cron / launchd / systemd timer) がファイル更新する運用ならファイルを指す形でも OK。この場合 ccgate 自身は何も exec せず、ccgate 内部のキャッシュも作らない (ローテーションは rotator 側の責務):
+helper は次のいずれかを書きます。
 
-```jsonnet
-{
-  provider: {
-    name: 'anthropic',
-    model: 'claude-haiku-4-5',
-    api_key_file: '~/.config/my-broker/anthropic.json',
-  },
-}
-```
+- **JSON** `{"key":"sk-...","expires_at":"<RFC3339>"}` — `$XDG_CACHE_HOME/ccgate/<target>/` にキャッシュされ、期限前に更新されます
+- **plain string** — 単一行の非空文字列。キャッシュなし
 
-#### 5 分で動く helper 例
+解決順序: `api_key_command` > `api_key_file` > `CCGATE_*_API_KEY` > `*_API_KEY`。helper を設定済みのときに失敗しても **env var に黙って fallback はしません**。代わりに `kind=credential_unavailable` で fallthrough します。Unix のみ。
 
-最小の helper は 1 行で API キーを stdout に出すだけです。これは「plain string」形式で、ccgate はキャッシュしないため hook 起動のたびに再実行されます。ローカル試験には十分ですが、tool 起動が頻繁な hot path では毎回コストが乗ります:
-
-```sh
-#!/bin/sh
-# ~/bin/ccgate-key-plain.sh -- ローカル試験用、キャッシュなし
-exec gcloud auth print-access-token
-```
-
-実運用では JSON で `expires_at` を付けて、ccgate にキャッシュ + 期限直前 refresh をさせます:
-
-```sh
-#!/bin/sh
-# ~/bin/ccgate-key-json.sh -- expires_at までキャッシュされる
-set -eu
-TOKEN=$(gcloud auth print-access-token)
-# refresh_margin (default 30s) に余裕を持たせて 50 分先に設定。
-EXP=$(date -u -v+50M +%FT%TZ 2>/dev/null || date -u -d '+50 minutes' +%FT%TZ)
-# token に `"` / `\` / 改行が混ざっても壊れないよう jq で組み立てる。
-jq -nc --arg key "$TOKEN" --arg expires_at "$EXP" '{key:$key, expires_at:$expires_at}'
-```
-
-スクリプトは `chmod 700 ~/bin/ccgate-key-json.sh` で実行可能にし、設定で `api_key_command: '~/bin/ccgate-key-json.sh'` のように指す。先に単独で動作確認 (`~/bin/ccgate-key-json.sh | jq .` で valid な JSON object が返ること) を取ってから ccgate に食わせるのが安全です。
-
-`api_key_file` 形式の場合、外部 rotator が同じ JSON 形を atomic rename でファイルに書き出します:
-
-```sh
-#!/bin/sh
-# cron / launchd / systemd-timer から 50 分ごとに実行
-set -eu
-TOKEN=$(my-broker --provider anthropic)
-EXP=$(date -u -v+1H +%FT%TZ 2>/dev/null || date -u -d '+1 hour' +%FT%TZ)
-TMP=$(mktemp ~/.config/my-broker/anthropic.json.XXXXXX)
-jq -nc --arg key "$TOKEN" --arg expires_at "$EXP" '{key:$key, expires_at:$expires_at}' > "$TMP"
-chmod 0600 "$TMP"
-mv "$TMP" ~/.config/my-broker/anthropic.json
-```
-
-解決順序: `api_key_command` > `api_key_file` > `CCGATE_*_API_KEY` > `*_API_KEY`。helper / file が設定済みの状態で失敗したら ccgate は env var に **fallback しない** (silent fallback は helper のバグを隠す)。代わりに `kind=credential_unavailable` で fallthrough し、reason がどの段階で失敗したかを示します (`ccgate <target> metrics` 参照)。
-
-#### account 依存 helper の罠
-
-cache key は `(target, provider.name, base_url, api_key_command)` だけから作られ、環境変数は読みません。helper が `AWS_PROFILE` / `GCLOUD_ACCOUNT` / `OP_ACCOUNT` 等に依存する場合、`api_key_command: 'aws sts ...'` のように literal に書いただけだと、すべての account で同じ cache file を共有してしまい、最初に発行された credential が以後どの account の hook 起動 でも返り続けます。
-
-回避策は 2 つ:
-
-- account を command 文字列に直接埋め込む (`api_key_command: 'aws sts assume-role --profile prod ...'` 等)。command 文字列が違えば hash も別になり、cache が account ごとに分離されます
-- または `api_key_file` を account ごとに分け、各 account の rotator に専用パスを書かせる
-
-user 提供の cache salt (`api_key_cache_key`) — command 文字列で表現しきれないケース向け — は [#61](https://github.com/tak848/ccgate/issues/61) (および関連する観測性の作業 [#67](https://github.com/tak848/ccgate/issues/67)) の follow-up として追跡しています。
-
-#### credential を安全に持ちまわるコツ
-
-- `api_key_file` の permission は user 側で設定: `chmod 0600 <ファイル>`、親ディレクトリは `chmod 0700`。ccgate は読み取るだけで mode の正規化はしない
-- `api_key_command` に literal secret を直書きしない。command 文字列は `/bin/sh -c` に渡されるので、`ps` / `/proc/<pid>/cmdline` / audit log / shell history に丸見え。secret はファイルや keychain に置き、helper の内部で読む形にすること
-- ccgate のログファイル (`$XDG_STATE_HOME/ccgate/<target>/ccgate.log`) は `0644` で書かれる。helper 失敗時、ccgate は exit error と stderr のバイト数のみログに残し、**stderr 本文は書き出さない** ので helper 内部の `set -x` 事故で token が漏れたりしない。stderr の内容を見たいときは ccgate のログを覗くのではなく、helper を `2>&1` 付きで手動実行すること
-
-helper 由来 credential に対して provider 側が 401/403 を返した場合、ccgate は keystore のキャッシュを invalidate して次回 hook 起動で helper を再実行させます。`api_key_file` には内部キャッシュがないため、同じ 401/403 でも復旧 (新しい credential をファイルに書き直す) は rotator 側の責務です。401/403 を踏んだその fire はどちらの経路でも (exit 1 ではなく) fallthrough として返るので、upstream tool の prompt がユーザーに表示されます。一方、env var 由来の key は **意図的にこの経路に乗せていません**: ccgate からは rotate できず、401/403 を黙って飲むと user 側の設定ミスを隠してしまうためです。
-
-#### helper の暗黙契約
-
-helper はこれらを満たすこと:
-
-- 非対話 (TTY 入力なし、ブラウザを開かない、stdin は close 状態で起動)
-- daemonize しない (process group を抜ける fork は timeout-kill の対象外になる)
-- stdout には credential **だけ** を書く (debug は stderr へ。ただし stderr に secret は書かない — ccgate は stderr をメモリ上限のために内部 capture するが本文は `ccgate.log` には書き出さない、log にはバイト数と exit error だけ残る)
-- 同じ `(api_key_command, provider.name, base_url)` は同じ credential を返す決定論性
-- plain string 形式は trim 後に単一行 + 非空であること。複数行は `invalid_plain_output` で reject
-
-ccgate は helper の env に `CCGATE_API_KEY_RESOLUTION=1` を追加します。helper が ccgate を再帰呼び出しする構造で再帰検知に使えます。それ以外の env var (`*_API_KEY` 含む) は継承するので、既存 credential を wrap する helper はそのまま動きます。
-
-#### AWS `credential_process` との差分
-
-API shape は AWS の `credential_process` に意図的に近づけてあるので、既存 helper を 1 行 wrapper で流用しやすいです。ただし AWS CLI が毎回 helper を再 exec するのに対し、**ccgate は disk にメモ化 (memoize) する** 設計です。hook は 1 セッションで何十回も呼ばれるため hot-path 遅延を優先したトレードオフ。キャッシュさせたくない broker の場合は `expires_at` を含めない JSON (`{"key":"..."}`) を返せば毎回再 exec されます。
-
-#### 障害時の運用復旧 checklist
-
-何かおかしいときは:
-
-1. `ccgate.log` を tail して `kind=credential_unavailable` のエントリを探す。`reason` と `source` (`command` / `file` / `cache` / `lock`) attribute を見る
-2. `ccgate <target> metrics` の **Credential failures** セクションで `(source, reason)` 別の集計を確認
-3. cache 起因が疑わしければ `$XDG_CACHE_HOME/ccgate/<target>/api_key.*.json` を削除して再生成。隣接する `*.lock` は再利用されるので削除しないでよい
-4. `expired` が出続けるなら helper の `expires_at` と `date -u` を比較。helper 内 TTL ロジックや時計ズレが原因
-5. 単独再現は `/bin/sh -c "$your_command"` を実行して helper と同じ stdout が出るか確認
-
+helper の完全な仕様 (動かせる例 / アカウント別キャッシュ / セキュリティ上の注意 / 障害復旧チェックリスト) は [docs/ja/api-key-helper.md](api-key-helper.md) を参照してください。
 ## デフォルトルール
 
 ccgate は target ごとに組み込みのデフォルトルールを持っています。常にベースとして適用され、その上にグローバル / プロジェクトローカル設定が重なります。
@@ -505,6 +400,7 @@ ccgate codex  metrics --days 7        # codex 側、同じシェイプ
 - [docs/ja/claude.md](claude.md) — Claude Code 固有
 - [docs/ja/codex.md](codex.md) — Codex CLI 固有
 - [docs/ja/configuration.md](configuration.md) — 設定 layering、fallthrough_strategy、metrics、既知の制約
+- [docs/ja/api-key-helper.md](api-key-helper.md) — `api_key_command` / `api_key_file` リファレンス (helper の契約、キャッシュ、セキュリティ、復旧手順)
 - [English documentation (docs/)](../claude.md)
 
 ## 開発

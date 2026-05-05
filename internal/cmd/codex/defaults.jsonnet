@@ -21,29 +21,12 @@
     // Alternatives:
     //   name: 'openai',  model: 'gpt-4o-mini',        (env: OPENAI_API_KEY)
     //   name: 'gemini',  model: 'gemini-2.0-flash',    (env: GEMINI_API_KEY)
-    // base_url: '...' overrides the provider's API endpoint. Point it
-    // at an OpenAI-/Anthropic-compatible proxy (LiteLLM proxy, Azure
-    // OpenAI, on-prem gateway, regional endpoint, ...) when you don't
-    // want ccgate to hit the vendor directly. Required path for
-    // OpenAI-compatible endpoints is `.../v1`; Anthropic-compatible
-    // endpoints take the host root and the SDK appends `/v1/messages`.
-    //
-    // Short-lived API keys (Unix only): set api_key_command or
-    // api_key_file to delegate credential resolution to a helper.
-    // The provider block is replaced atomically across config
-    // layers, so when overriding any of these you must restate the
-    // whole block (name, model, ...). Example:
-    //   provider: {
-    //     name: 'anthropic',
-    //     model: 'claude-haiku-4-5',
-    //     api_key_command: '/usr/local/bin/my-key-broker --provider anthropic',
-    //     api_key_refresh_margin: '60s',  // default 30s
-    //     api_key_command_timeout: '5s',  // default 5s
-    //   }
-    // Helper prints `{"key":"sk-...","expires_at":"<RFC3339>"}` to
-    // stdout (cached + early-refreshed) or a plain single-line key
-    // (uncached). See the project README "Short-lived / rotating API
-    // keys" for the full helper contract.
+    // base_url:  route through an OpenAI-/Anthropic-compatible proxy.
+    //            See README "Routing through a compatible proxy".
+    // timeout_ms: API timeout in ms, default 20000.
+    // api_key_command / api_key_file: short-lived / rotating credentials.
+    //            Unix only. See docs/api-key-helper.md for the full helper
+    //            contract, examples, and recovery checklist.
   },
 
   // What to do when the LLM is uncertain (returns "fallthrough"):
