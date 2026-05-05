@@ -6,7 +6,7 @@ Codex-CLI-specific notes for the `ccgate codex` hook.
 
 ## Status
 
-- **Experimental.** Codex hooks are upstream-experimental. Schema and behavior may change without notice; treat the OpenAI [Codex hooks docs](https://developers.openai.com/codex/hooks) as the source of truth and re-check before relying on a specific field.
+- **Hook schema may change.** Codex hooks themselves are still evolving upstream and live behind the `features.codex_hooks = true` flag. Treat the OpenAI [Codex hooks docs](https://developers.openai.com/codex/hooks) as the source of truth and re-check before relying on a specific field.
 - **Tool-agnostic.** Codex hooks fire for Bash, `apply_patch`, MCP tool calls, and other surfaces. ccgate classifies by `tool_name` + the full `tool_input` JSON, not by tool kind alone.
 
 ## Hook registration
@@ -49,7 +49,7 @@ If you want to keep hooks alongside the rest of your Codex config:
 
 ```toml
 [features]
-codex_hooks = true   # required: Codex hooks are still experimental and gated behind this feature flag
+codex_hooks = true   # required: Codex hooks live behind this feature flag
 
 [[hooks.PermissionRequest]]
 matcher = ""

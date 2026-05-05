@@ -10,10 +10,15 @@ This document is the full reference. The README has the minimum config snippet a
 
 The helper writes one of two shapes on stdout (or, for `api_key_file`, into the file):
 
-- **JSON**: `{"key":"sk-...","expires_at":"2026-05-04T01:23:45Z"}`. Parsed strictly. With a future `expires_at` the result is memoized to a per-target cache file (see [Caching](#caching)) and refreshed early via `api_key_refresh_margin`. The optional `version` field defaults to `1` and exists so the shape can be extended without an immediate breaking change; only `1` (or omitted) is currently accepted.
-- **Plain string**: a single non-empty line. Returned verbatim, **not cached**, so the helper runs on every hook fire. Fine for low-frequency or experimental setups; not recommended for sustained tool use.
+- **JSON**: `{"key":"sk-...","expires_at":"2026-05-04T01:23:45Z"}`. Parsed strictly. `key` is required; `expires_at` and `version` are optional. The optional `version` field defaults to `1` and exists so the shape can be extended later without an immediate breaking change; only `1` (or omitted) is currently accepted.
+- **Plain string**: a single non-empty line. Returned verbatim.
 
 `expires_at` is RFC3339. Helper output exceeding 64 KiB is rejected as `output_too_large`. The same 64 KiB cap applies to `api_key_file` content.
+
+How caching applies depends on the source:
+
+- For `api_key_command`: JSON with a future `expires_at` is memoized to a per-target cache file (see [Caching](#caching)) and refreshed early via `api_key_refresh_margin`. JSON without `expires_at` and plain string output are accepted but **not cached** — the helper re-runs on every hook invocation.
+- For `api_key_file`: ccgate reads the file on every hook invocation and does not maintain an internal cache. The external rotator owns when the credential is refreshed.
 
 ## Config
 
@@ -32,7 +37,7 @@ The helper writes one of two shapes on stdout (or, for `api_key_file`, into the 
 | Field | Type | Default | What it does |
 |---|---|---|---|
 | `provider.api_key_command` | string | `""` | Shell command run via `/bin/sh -c` whose stdout is the credential. |
-| `provider.api_key_file` | string (abs or `~/`) | `""` | File whose contents are the credential. Read every fire, no caching. |
+| `provider.api_key_file` | string (abs or `~/`) | `""` | File whose contents are the credential. Read on every hook invocation; no internal caching. |
 | `provider.api_key_refresh_margin` | duration | `"30s"` | Cache is stale once `now + margin >= expires_at`. `>= 0` (`0s` disables early refresh). |
 | `provider.api_key_command_timeout` | duration | `"5s"` | Hot-path upper bound for one helper invocation. `> 0`. |
 
@@ -97,7 +102,7 @@ set -eu
 printf '%s' "${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is not set}"
 ```
 
-Then `chmod 700 ~/bin/ccgate-key-passthrough.sh` and `api_key_command: '~/bin/ccgate-key-passthrough.sh'`. ccgate runs this on every fire (no caching) and forwards the env value to the SDK.
+Then `chmod 700 ~/bin/ccgate-key-passthrough.sh` and `api_key_command: '~/bin/ccgate-key-passthrough.sh'`. ccgate runs this on every hook invocation (no caching) and forwards the env value to the SDK.
 
 ### JSON with expiry: cache through a broker
 
@@ -132,13 +137,13 @@ chmod 0600 "$TMP"
 mv "$TMP" ~/.config/my-broker/anthropic.json
 ```
 
-Then `api_key_file: '~/.config/my-broker/anthropic.json'`. ccgate just reads the file every fire — there is no internal cache to refresh, the rotator owns rotation.
+Then `api_key_file: '~/.config/my-broker/anthropic.json'`. ccgate just reads the file on every hook invocation — there is no internal cache to refresh, the rotator owns rotation.
 
 ## Provider 401/403 behaviour
 
 When the provider rejects the credential ccgate just used:
 
-- `api_key_command` path: the keystore cache file is unlinked, the hook still falls through this fire (no exit 1), and the next fire re-runs the helper with a fresh credential.
+- `api_key_command` path: the keystore cache file is unlinked, the hook still falls through on this invocation (no exit 1), and the next invocation re-runs the helper with a fresh credential.
 - `api_key_file` path: there is no internal cache to invalidate. The fire falls through, but recovery (writing a fresh credential to the file) is the rotator's job.
 - Env-var keys are intentionally **not** routed through this branch. ccgate cannot rotate env vars, so silently swallowing 401/403 would mask user-side configuration errors — they keep going through the regular API-error exit path.
 

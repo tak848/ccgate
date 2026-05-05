@@ -6,7 +6,7 @@
 
 ## ステータス
 
-- **Experimental**: Codex hooks は upstream で experimental 扱い。スキーマや挙動が予告なく変更される可能性あり。OpenAI の [Codex hooks docs](https://developers.openai.com/codex/hooks) を一次情報として参照し、特定 field に依存する前に再確認してください
+- **hook schema は変わる可能性あり**: Codex hooks 自体が upstream で進化中で、`features.codex_hooks = true` flag 配下にあります。OpenAI の [Codex hooks docs](https://developers.openai.com/codex/hooks) を一次情報として参照し、特定 field に依存する前に再確認してください
 - **Tool-agnostic**: Codex hooks は Bash、`apply_patch`、MCP tool 呼び出しなど複数の surface で発火します。ccgate は `tool_name` + `tool_input` JSON 全体で分類
 
 ## hook 登録
@@ -49,7 +49,7 @@ Codex 設定全体を 1 ファイルにまとめたい場合:
 
 ```toml
 [features]
-codex_hooks = true   # 必須: Codex hooks は experimental で、この feature flag で gate されている
+codex_hooks = true   # 必須: Codex hooks はこの feature flag 配下に置かれている
 
 [[hooks.PermissionRequest]]
 matcher = ""

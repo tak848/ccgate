@@ -9,8 +9,8 @@ AI コーディングツール向けの **PermissionRequest** フックです。
 
 対応ターゲット:
 
-- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — 安定
-- **[OpenAI Codex CLI](https://developers.openai.com/codex/hooks)** — experimental
+- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)**
+- **[OpenAI Codex CLI](https://developers.openai.com/codex/hooks)**
 
 [English README](../../README.md)
 
@@ -42,7 +42,7 @@ ccgate claude                  bare ccgate と完全等価 (新規ユーザー�
 ccgate claude init [-p|-o|-f]  Claude Code 用の埋込デフォルトを出力
 ccgate claude metrics [...]    Claude Code のメトリクス集計
 
-ccgate codex                   stdin から HookInput JSON を読み込む (Codex CLI hook、experimental)
+ccgate codex                   stdin から HookInput JSON を読み込む (Codex CLI hook)
 ccgate codex init [-o|-f]      Codex CLI 用の埋込デフォルトを出力
 ccgate codex metrics [...]     Codex CLI のメトリクス集計
 ```
@@ -140,9 +140,9 @@ ccgate claude init > ~/.claude/ccgate.jsonnet
 
 OpenAI 互換 / Anthropic 互換 proxy (LiteLLM proxy, Azure OpenAI, オンプレ gateway 等) を経由したい場合は、`provider.base_url` を設定して対応する native provider を使います — 詳細は [互換 proxy 経由で叩く](#互換-proxy-経由で叩く) を参照。
 
-## セットアップ — Codex CLI (experimental)
+## セットアップ — Codex CLI
 
-> Codex hooks は upstream で experimental 扱いです。スキーマや挙動が今後変わる可能性があります。
+> Codex hooks 自体が upstream で experimental 扱いで、`features.codex_hooks = true` flag 配下にあり、schema が今後変わる可能性があります。特定 field に依存する前に [Codex hooks docs](https://developers.openai.com/codex/hooks) を一次情報として確認してください。
 
 ### 1. 設定ファイルを配置 (オプション)
 
@@ -181,7 +181,7 @@ Codex は `~/.codex/hooks.json` と `~/.codex/config.toml` から hook を読み
 
 ```toml
 [features]
-codex_hooks = true   # 必須: Codex hooks は experimental で、この feature flag で gate されている
+codex_hooks = true   # 必須: Codex hooks はこの feature flag 配下に置かれている
 
 [[hooks.PermissionRequest]]
 matcher = ""
@@ -393,7 +393,7 @@ ccgate codex  metrics --days 7        # codex 側、同じシェイプ
 
 - **Plan mode の正しさはプロンプトのみに依存 (Claude のみ)。** `permission_mode == "plan"` では、(a) 実装系 write を拒絶する判定と (b) allow guidance に載っていない read-only クエリを許可する判定の両方を、LLM とシステムプロンプトの指示文に委ねています。プロンプトで記述する以上、どちらの方向にも誤判定の余地があります。[#37](https://github.com/tak848/ccgate/issues/37) で追跡しています。
 - **embedded default の特定ルールだけを部分削除する手段なし。** layer は list を **完全置換** (`allow: [...]`) するか **末尾追加** (`append_allow: [...]`) するかのどちらかです。embedded の中の 1 ルールだけ消したい場合は、その 1 件を除いた残り全部を `allow:` / `deny:` に書き直すしかありません。
-- **Codex hook は upstream で experimental。** スキーマや挙動が変わる可能性があります。ccgate は現在 Codex 側の `permission_mode` を expose せず、transcript JSONL を parse せず、`~/.codex/config.toml` も取り込まず、MCP server 単位の trust hint も適用しません。判定は `tool_name` + `tool_input` + `cwd` のみで行います。
+- **Codex hook の schema は変わる可能性があります。** Codex hooks 自体が upstream の `features.codex_hooks = true` flag 配下にあり、まだ進化中です。ccgate は現在 Codex 側の `permission_mode` を expose せず、transcript JSONL を parse せず、`~/.codex/config.toml` も取り込まず、MCP server 単位の trust hint も適用しません。判定は `tool_name` + `tool_input` + `cwd` のみで行います。
 
 ## ドキュメント
 

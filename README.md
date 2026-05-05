@@ -9,8 +9,8 @@ A **PermissionRequest** hook for AI coding tools that delegates tool-execution p
 
 Supported targets:
 
-- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — stable
-- **[OpenAI Codex CLI](https://developers.openai.com/codex/hooks)** — experimental
+- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)**
+- **[OpenAI Codex CLI](https://developers.openai.com/codex/hooks)**
 
 [日本語ドキュメント](docs/ja/README.md)
 
@@ -43,7 +43,7 @@ ccgate claude                  Same as bare ccgate, explicit form (recommended f
 ccgate claude init [-p|-o|-f]  Output the embedded Claude Code defaults.
 ccgate claude metrics [...]    Show Claude Code usage metrics.
 
-ccgate codex                   Read HookInput JSON from stdin (Codex CLI hook, experimental).
+ccgate codex                   Read HookInput JSON from stdin (Codex CLI hook).
 ccgate codex init [-o|-f]      Output the embedded Codex CLI defaults.
 ccgate codex metrics [...]     Show Codex CLI usage metrics.
 ```
@@ -95,13 +95,18 @@ Download a binary from [Releases](https://github.com/tak848/ccgate/releases) and
 
 ccgate ships with sensible default safety rules. Without any config file, it works out of the box.
 
-To customize:
+To customize, write a minimal `~/.claude/ccgate.jsonnet` that only adds or overrides what you need on top of the embedded defaults:
 
-```bash
-ccgate claude init > ~/.claude/ccgate.jsonnet
+```jsonnet
+{
+  ['$schema']: 'https://raw.githubusercontent.com/tak848/ccgate/main/schemas/claude.schema.json',
+  append_deny: [
+    'Production database access: any psql / mysql connection to a *.prod.* host. deny_message: production access is gated behind the runbook.',
+  ],
+}
 ```
 
-The `$schema` field points to [`schemas/claude.schema.json`](schemas/claude.schema.json) for editor autocompletion.
+The `$schema` line enables editor autocompletion. To inspect the full embedded defaults for reference, run `ccgate claude init | less`.
 
 ### 2. Register as a Claude Code hook
 
@@ -141,15 +146,24 @@ Set the API key for your chosen provider. `CCGATE_*_API_KEY` is preferred and ov
 
 To route through an OpenAI- or Anthropic-compatible proxy (LiteLLM proxy, Azure OpenAI, on-prem gateway, ...), set `provider.base_url` and use the matching native provider — see [Routing through a compatible proxy](#routing-through-a-compatible-proxy).
 
-## Setup — Codex CLI (experimental)
+## Setup — Codex CLI
 
-> Codex hooks are upstream-experimental. Schema and behavior may change.
+> Codex hooks themselves are still experimental upstream and live behind `features.codex_hooks = true`; their schema may change. Treat the [Codex hooks docs](https://developers.openai.com/codex/hooks) as the source of truth before relying on a specific field.
 
 ### 1. Create a config file (optional)
 
-```bash
-ccgate codex init > ~/.codex/ccgate.jsonnet
+ccgate ships with sensible defaults for Codex too. To customize, write a minimal `~/.codex/ccgate.jsonnet` that only adds or overrides what you need:
+
+```jsonnet
+{
+  ['$schema']: 'https://raw.githubusercontent.com/tak848/ccgate/main/schemas/codex.schema.json',
+  append_deny: [
+    'Production database access: any psql / mysql connection to a *.prod.* host. deny_message: production access is gated behind the runbook.',
+  ],
+}
 ```
+
+To inspect the full embedded defaults, run `ccgate codex init | less`.
 
 The defaults follow Claude Code parity (allow + deny + environment guidance). Codex hooks fire for Bash, `apply_patch`, MCP tool calls, and other tool surfaces; the rules cover all of them and the system prompt instructs the LLM to classify by `tool_name` + the full `tool_input` JSON, not just Bash command shape.
 
@@ -182,7 +196,7 @@ Codex reads hooks from `~/.codex/hooks.json` and `~/.codex/config.toml` (with `<
 
 ```toml
 [features]
-codex_hooks = true   # required: Codex hooks are still experimental and gated behind this feature flag
+codex_hooks = true   # required: Codex hooks live behind this feature flag
 
 [[hooks.PermissionRequest]]
 matcher = ""
@@ -267,7 +281,7 @@ Then export the matching API key (`CCGATE_OPENAI_API_KEY` / `CCGATE_GEMINI_API_K
 
 ### Routing through a compatible proxy
 
-ccgate calls the same chat-completions API every Anthropic / OpenAI client uses, so it works against any **OpenAI- or Anthropic-compatible** endpoint — including [LiteLLM proxy](https://docs.litellm.ai/docs/proxy/quick_start), Azure OpenAI, on-prem gateways, and regional endpoints. Pick the protocol the proxy speaks and set `provider.base_url`.
+ccgate uses each provider SDK's standard chat / messages endpoint, so it works against any **OpenAI- or Anthropic-compatible** endpoint — including [LiteLLM proxy](https://docs.litellm.ai/docs/proxy/quick_start), Azure OpenAI, on-prem gateways, and regional endpoints. Pick the protocol the proxy speaks and set `provider.base_url`.
 
 `provider.base_url` is passed verbatim to the underlying SDK's `WithBaseURL`, so the path you write follows that SDK's convention — **not** something ccgate normalizes:
 
@@ -335,7 +349,7 @@ ccgate ships built-in default rules per target. They are always applied as the b
 
 **Deny:** Download-and-execute (`curl|bash`), direct one-shot remote package execution (`npx`/`pnpx`/`bunx` etc.), git destructive operations on protected branches, out-of-repo deletion, privilege escalation.
 
-Run `ccgate claude init` / `ccgate codex init` to inspect the full default configuration. The `init` output is the **embedded defaults** -- a reference document, not the starting template. For your own overrides, write a minimal jsonnet that adds / overrides only what you need:
+Run `ccgate claude init` / `ccgate codex init` to inspect the full embedded defaults. The output is a **reference**, not a starting template — your own config should be a minimal jsonnet that adds / overrides only what you need:
 
 ```bash
 ccgate claude init           | less                   # Read the embedded Claude defaults.
@@ -395,7 +409,7 @@ The daily table shows per-day counts (Allow, Deny, Fall, F.Allow, F.Deny, Err), 
 
 - **Plan mode correctness is prompt-only (Claude only).** Under `permission_mode == "plan"`, ccgate relies on the LLM plus prose in the system prompt to (a) reject implementation-side writes and (b) allow read-only queries without requiring an allow-guidance match. Either side can misfire. Tracked in [#37](https://github.com/tak848/ccgate/issues/37).
 - **No surgical reset for a single embedded default rule.** A layer can either **replace** a list wholesale (`allow: [...]`) or **append** to it (`append_allow: [...]`). Removing one specific embedded `allow` / `deny` rule while keeping the rest of the embedded list requires re-stating the whole list under `allow:` / `deny:` minus that one entry.
-- **Codex hook is upstream-experimental.** Schema and behavior may change. ccgate does not currently expose `permission_mode` from Codex, parse the Codex transcript JSONL, ingest `~/.codex/config.toml`, or apply MCP-server-specific trust hints; classification runs from `tool_name` + `tool_input` + `cwd` only.
+- **Codex hook schema may change.** Codex hooks live behind upstream's `features.codex_hooks = true` flag and are still evolving. ccgate does not currently expose `permission_mode` from Codex, parse the Codex transcript JSONL, ingest `~/.codex/config.toml`, or apply MCP-server-specific trust hints; classification runs from `tool_name` + `tool_input` + `cwd` only.
 
 ## Documentation
 

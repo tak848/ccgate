@@ -188,5 +188,5 @@ cache 層の失敗は fallthrough せずに自動回復するので、`slog.Warn
 
 - **Plan mode (Claude のみ) はプロンプト依存**: `permission_mode == "plan"` では (a) 実装系 write を拒絶する判定と (b) 明示的な allow guidance なしの read-only クエリ許可 を、LLM とシステムプロンプトの指示文に委ねています。どちらの方向にも誤判定の余地あり。[#37](https://github.com/tak848/ccgate/issues/37) で追跡
 - **embedded default の特定ルールだけを部分削除する手段なし**: layer は list を **完全置換** (`allow: [...]`) するか **末尾追加** (`append_allow: [...]`) するかのどちらかで、embedded の中の 1 ルールだけ消したい場合は残り全部を `allow:` / `deny:` に書き直すしかない
-- **Codex hook は upstream で experimental**: hook schema が予告なく変更される可能性あり
+- **Codex hook の schema は変わる可能性あり**: Codex hooks 自体が upstream の `features.codex_hooks = true` flag 配下にあり、まだ進化中です
 - **Codex `~/.codex/config.toml` 取り込み未実装** (`approval_policy`, `sandbox_mode`, `prefix_rules`): ccgate は hook payload + ccgate config だけで判定するため、Codex 自身の設定が拒絶するはずだった操作のシグナルは LLM に届かない (現状)
