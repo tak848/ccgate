@@ -143,6 +143,10 @@ func buildTestConfig(t *testing.T, authType string) config.Config {
 	cfg.Provider.Model = "gpt-test"
 	switch authType {
 	case "exec":
+		// Point the keystore cache at a tempdir so the test does not
+		// touch the developer's real $HOME/.cache. t.Setenv requires
+		// the test to be non-parallel, which the matrix already is.
+		t.Setenv("XDG_CACHE_HOME", t.TempDir())
 		cfg.Provider.Auth = &config.AuthConfig{
 			Type:    config.AuthTypeExec,
 			Command: "printf sk-helper",

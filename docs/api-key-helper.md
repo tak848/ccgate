@@ -11,7 +11,7 @@ This document is the full reference. The README has the minimum config snippet a
 The helper writes one of two shapes on stdout (or, for `auth.type=file`, into the file):
 
 - **JSON**: `{"key":"sk-...","expires_at":"2026-05-04T01:23:45Z"}`. Parsed strictly. `key` is required; `expires_at` is optional. Unknown top-level fields (e.g. broker metadata) are accepted but dropped — only the canonical `{key, expires_at}` reaches the cache or the SDK.
-- **Plain string**: a single non-empty line. Returned verbatim.
+- **Plain string**: a single non-empty line. Surrounding whitespace is trimmed; the trimmed value is forwarded to the SDK.
 
 `expires_at` is RFC3339. Helper output exceeding 64 KiB is rejected as `output_too_large`. The same 64 KiB cap applies to file content.
 

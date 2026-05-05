@@ -11,7 +11,7 @@ provider が必要とする認証情報が静的な環境変数では追従で�
 helper は次のいずれかの形を stdout (もしくは `auth.type=file` のファイル中身として) に書きます。
 
 - **JSON**: `{"key":"sk-...","expires_at":"2026-05-04T01:23:45Z"}`。厳密に解析されます。`key` は必須、`expires_at` は任意。未知のトップレベルフィールド (broker のメタデータ等) は受け入れますが捨てます — キャッシュにも SDK にも `{key, expires_at}` だけが渡ります
-- **plain string**: 改行を含まない単一の非空文字列。そのまま渡されます
+- **plain string**: 改行を含まない単一の非空文字列。前後の空白を trim した値が SDK に渡されます
 
 `expires_at` は RFC3339。helper の stdout が 64 KiB を超えると `output_too_large` で拒否します。ファイル経路の中身にも同じ 64 KiB 上限が適用されます。
 

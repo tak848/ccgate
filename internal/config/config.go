@@ -141,15 +141,15 @@ type ProviderConfig struct {
 //	auth: {
 //	  type: 'exec',
 //	  command: '/usr/local/bin/my-broker --provider anthropic',
-//	  refresh_margin: '60s',  // optional
-//	  timeout: '5s',          // optional
+//	  refresh_margin_ms: 60000,  // optional
+//	  timeout_ms: 5000,          // optional
 //	  cache_key: '${AWS_PROFILE}',  // optional
 //	}
 //
 //	auth: {
 //	  type: 'file',
 //	  path: '~/.config/my-broker/anthropic.json',
-//	  refresh_margin: '60s',  // optional
+//	  refresh_margin_ms: 60000,  // optional
 //	}
 //
 // Helper output is the same shape on both branches:

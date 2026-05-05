@@ -297,7 +297,7 @@ func Run(stdin io.Reader, stdout io.Writer, opts config.LoadOptions, runOpts ...
 // emit an explicit allow/deny payload (false means "fall through to
 // the upstream prompt"), the fallthrough kind classifier for
 // metrics, the reason string, the credential source label
-// ("command"/"file"/"cache"/"lock") when kind is
+// ("exec"/"file"/"cache"/"lock") when kind is
 // credential_unavailable, the LLM token usage if any, and the run
 // error (only set for unrecoverable failures that should make the
 // hook exit 1).

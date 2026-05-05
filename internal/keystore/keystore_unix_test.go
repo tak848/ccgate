@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -719,6 +720,69 @@ func TestExpandHomePath(t *testing.T) {
 				t.Fatalf("expand %q = %q, want %q", tc.in, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestResolveCommandConcurrentFireSerializes pins that flock plus the
+// post-lock cache double-check collapses N concurrent fires into a
+// single helper exec. The point of the lock is precisely this — single
+// valid-key brokers respond to two callers with two minted credentials
+// by revoking the older one, so a regression where the lock or the
+// double-check is dropped would silently turn ccgate into a credential
+// thrasher under load.
+func TestResolveCommandConcurrentFireSerializes(t *testing.T) {
+	withCacheRoot(t)
+
+	dir := t.TempDir()
+	counter := filepath.Join(dir, "count")
+	future := time.Now().Add(1 * time.Hour).UTC().Format(time.RFC3339)
+	// Sleep widens the race window so a missing lock would let other
+	// goroutines launch their own helper before the first writes the
+	// cache. 50ms is long enough to be reliable on slow CI runners
+	// and short enough to keep the test under a second.
+	body := `echo x >> "` + counter + `"
+sleep 0.05
+printf '{"key":"sk-serial","expires_at":"` + future + `"}'`
+	cmd := helperScript(t, body)
+
+	const concurrency = 8
+	results := make(chan Result, concurrency)
+	errs := make(chan error, concurrency)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for range concurrency {
+		wg.Go(func() {
+			<-start
+			res, err := Resolve(context.Background(), opts(cmd))
+			results <- res
+			errs <- err
+		})
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	close(errs)
+
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent resolve: %v", err)
+		}
+	}
+	for res := range results {
+		if res.Key != "sk-serial" {
+			t.Fatalf("key = %q, want sk-serial", res.Key)
+		}
+		if res.Source != SourceExec && res.Source != SourceCache {
+			t.Fatalf("source = %q, want exec or cache", res.Source)
+		}
+	}
+
+	bytes, err := os.ReadFile(counter)
+	if err != nil {
+		t.Fatalf("read counter: %v", err)
+	}
+	if got := strings.Count(string(bytes), "x\n"); got != 1 {
+		t.Fatalf("helper executed %d times across %d concurrent fires, want 1 (flock + double-check broken?)", got, concurrency)
 	}
 }
 
