@@ -32,9 +32,14 @@
     // base_url:  route through an OpenAI-/Anthropic-compatible proxy.
     //            See README "Routing through a compatible proxy".
     // timeout_ms: API timeout in ms, default 20000.
-    // api_key_command / api_key_file: short-lived / rotating credentials.
-    //            Unix only. See docs/api-key-helper.md for the full helper
-    //            contract, examples, and recovery checklist.
+    // auth: short-lived / rotating credentials. Unix only. Discriminated
+    //   by auth.type:
+    //     auth: { type: 'exec', command: '/usr/local/bin/my-broker --provider anthropic' }
+    //     auth: { type: 'file', path: '~/.config/my-broker/anthropic.json' }
+    //   The provider block is replaced atomically across config layers,
+    //   so a project-local config that restates `provider` must repeat
+    //   the auth block. See docs/api-key-helper.md for the full helper
+    //   contract, examples, and recovery checklist.
   },
 
   // What to do when the LLM is uncertain (returns "fallthrough"):
