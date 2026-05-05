@@ -566,8 +566,16 @@ var (
 // helper-stdout reader has the same cap (stdoutLimit); applying it
 // uniformly across every file/stream credentials enter through
 // keeps the budget honest.
+//
+// We pass O_NONBLOCK so opening a FIFO (or a symlink that resolves
+// to one) returns immediately instead of waiting for a writer —
+// otherwise a misconfigured api_key_file pointed at a named pipe
+// would wedge every hook invocation, since file-mode resolution
+// has no command-timeout wrapper. O_NONBLOCK is a no-op for regular
+// files on POSIX, so the read path stays unchanged for the happy
+// case.
 func readBoundedRegularFile(path string, limit int) ([]byte, error) {
-	f, err := os.Open(path)
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, err
 	}

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -450,6 +451,50 @@ func TestResolveFileNonRegularRejected(t *testing.T) {
 	}
 	if res.Reason != ReasonFileRead {
 		t.Fatalf("reason = %q, want %q", res.Reason, ReasonFileRead)
+	}
+}
+
+// TestResolveFileFifoDoesNotBlock guards the bug where a path
+// pointing at a FIFO would block at os.Open until a writer
+// connected, wedging every hook fire. With O_NONBLOCK on the open
+// the FIFO opens immediately, then the regular-file check rejects
+// it as non-regular. We give the test its own short deadline so a
+// regression that re-introduces the block actually fails the test
+// suite instead of hanging it.
+func TestResolveFileFifoDoesNotBlock(t *testing.T) {
+	withCacheRoot(t)
+
+	path := filepath.Join(t.TempDir(), "fifo")
+	if err := syscall.Mkfifo(path, 0o600); err != nil {
+		t.Fatalf("mkfifo: %v", err)
+	}
+
+	type result struct {
+		res Result
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		res, err := Resolve(context.Background(), Options{
+			File:           path,
+			ProviderName:   "test",
+			TargetName:     "claude",
+			RefreshMargin:  30 * time.Second,
+			CommandTimeout: 5 * time.Second,
+		})
+		done <- result{res, err}
+	}()
+
+	select {
+	case r := <-done:
+		if r.err == nil {
+			t.Fatal("expected error for FIFO file")
+		}
+		if r.res.Reason != ReasonFileRead {
+			t.Fatalf("reason = %q, want %q", r.res.Reason, ReasonFileRead)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Resolve blocked on FIFO open (regression)")
 	}
 }
 
