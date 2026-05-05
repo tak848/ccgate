@@ -20,7 +20,7 @@
 //     wins), and only then exec's the helper. The flock prevents
 //     concurrent helpers from racing the same broker — important for
 //     "only one valid key per user" issuers.
-//   - Helper output is JSON-strict (`{version, key, expires_at}` —
+//   - Helper output is JSON-strict (`{key, expires_at}` —
 //     unknown fields are dropped) when the trimmed stdout starts with
 //     `{`, otherwise plain string. Plain strings are not cached and
 //     must be a single non-empty line.

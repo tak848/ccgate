@@ -10,7 +10,7 @@ This document is the full reference. The README has the minimum config snippet a
 
 The helper writes one of two shapes on stdout (or, for `api_key_file`, into the file):
 
-- **JSON**: `{"key":"sk-...","expires_at":"2026-05-04T01:23:45Z"}`. Parsed strictly. `key` is required; `expires_at` and `version` are optional. The optional `version` field defaults to `1` and exists so the shape can be extended later without an immediate breaking change; only `1` (or omitted) is currently accepted.
+- **JSON**: `{"key":"sk-...","expires_at":"2026-05-04T01:23:45Z"}`. Parsed strictly. `key` is required; `expires_at` is optional. Unknown top-level fields (e.g. broker metadata) are accepted but dropped — only the canonical `{key, expires_at}` reaches the cache or the SDK.
 - **Plain string**: a single non-empty line. Returned verbatim.
 
 `expires_at` is RFC3339. Helper output exceeding 64 KiB is rejected as `output_too_large`. The same 64 KiB cap applies to `api_key_file` content.
@@ -55,7 +55,7 @@ When a helper or file is configured ccgate will **not** silently fall back to en
 
 - Path: `$XDG_CACHE_HOME/ccgate/<target>/api_key.<sha256[:16]>.json` (target = `claude` / `codex`). Falls back to `~/.cache/ccgate/<target>/...` when `XDG_CACHE_HOME` is unset.
 - Permissions: directory `0700`, file `0600`. ccgate `chmod`s the directory back to `0700` even if it pre-existed at a looser mode.
-- Cache content is the canonical `{version, key, expires_at}` only — extra fields the helper printed (refresh tokens, broker session IDs) are dropped on write so they do not get persisted to disk.
+- Cache content is the canonical `{key, expires_at}` only — extra fields the helper printed (refresh tokens, broker session IDs) are dropped on write so they do not get persisted to disk.
 - Atomic rename: temp file is created in the same directory and renamed into place. Cross-filesystem rename pitfalls do not apply.
 - Concurrent fires are serialised by `flock` on a sibling lock file (`*.lock`). The lock file is never deleted; its presence is normal.
 

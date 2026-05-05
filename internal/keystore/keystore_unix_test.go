@@ -73,15 +73,6 @@ func TestResolveCommand(t *testing.T) {
 			body:    `printf '{"key":"sk-extra","expires_at":"` + future + `","refresh_token":"rt"}'`,
 			wantKey: "sk-extra",
 		},
-		"json with explicit version 1": {
-			body:    `printf '{"version":1,"key":"sk-v1","expires_at":"` + future + `"}'`,
-			wantKey: "sk-v1",
-		},
-		"json with unsupported version rejected": {
-			body:       `printf '{"version":2,"key":"sk-v2","expires_at":"` + future + `"}'`,
-			wantReason: ReasonJSONParse,
-			wantErr:    true,
-		},
 		"json with past expiry rejects fresh as expired": {
 			body:       `printf '{"key":"sk-stale","expires_at":"` + past + `"}'`,
 			wantReason: ReasonExpired,
@@ -204,9 +195,9 @@ printf '{"key":"sk-cache","expires_at":"` + future + `"}'`
 		if err := json.Unmarshal(raw, &got); err != nil {
 			t.Fatalf("cache file not valid json: %v", err)
 		}
-		// Canonicalisation: only {version, key, expires_at} remain.
-		if got.Key != "sk-cache" || got.ExpiresAt != future || got.Version != 1 {
-			t.Fatalf("cache payload = %+v, want canonical {version:1, key:sk-cache, expires_at:%s}", got, future)
+		// Canonicalisation: only {key, expires_at} remain.
+		if got.Key != "sk-cache" || got.ExpiresAt != future {
+			t.Fatalf("cache payload = %+v, want canonical {key:sk-cache, expires_at:%s}", got, future)
 		}
 		// Make sure no extra top-level fields slipped in (e.g.
 		// refresh_token from a real broker).
@@ -216,7 +207,7 @@ printf '{"key":"sk-cache","expires_at":"` + future + `"}'`
 		}
 		for k := range keys {
 			switch k {
-			case "version", "key", "expires_at":
+			case "key", "expires_at":
 			default:
 				t.Fatalf("unexpected cache field %q", k)
 			}
@@ -339,7 +330,6 @@ func TestResolveCommandStaleCacheRefreshes(t *testing.T) {
 		t.Fatal(err)
 	}
 	stale := helperPayload{
-		Version:   1,
 		Key:       "sk-stale",
 		ExpiresAt: time.Now().Add(-1 * time.Hour).UTC().Format(time.RFC3339),
 	}

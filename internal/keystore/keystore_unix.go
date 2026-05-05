@@ -22,11 +22,10 @@ import (
 
 // helperPayload is the canonical shape Resolve parses helper / file
 // JSON output into. Unknown fields are dropped on read so the cache
-// file we re-marshal carries only `{version, key, expires_at}` and
-// never echoes incidental secrets the helper happened to print
-// (refresh tokens, broker session IDs, etc.).
+// file we re-marshal carries only `{key, expires_at}` and never
+// echoes incidental secrets the helper happened to print (refresh
+// tokens, broker session IDs, etc.).
 type helperPayload struct {
-	Version   int    `json:"version,omitempty"`
 	Key       string `json:"key"`
 	ExpiresAt string `json:"expires_at,omitempty"`
 }
@@ -311,15 +310,14 @@ func readCacheValid(path string, opts Options) (string, bool) {
 	return payload.Key, true
 }
 
-// writeCache writes the canonical `{version, key, expires_at}`
-// payload (no extra fields the helper happened to print) to the
-// cache file using a tempfile + atomic rename in the same
-// directory. We deliberately discard everything except the canonical
-// fields so a long-lived `refresh_token` never makes it onto disk
-// even if the helper hands it back.
+// writeCache writes the canonical `{key, expires_at}` payload (no
+// extra fields the helper happened to print) to the cache file using
+// a tempfile + atomic rename in the same directory. We deliberately
+// discard everything except the canonical fields so a long-lived
+// `refresh_token` never makes it onto disk even if the helper hands
+// it back.
 func writeCache(path string, payload helperPayload) error {
 	canonical := helperPayload{
-		Version:   1,
 		Key:       payload.Key,
 		ExpiresAt: payload.ExpiresAt,
 	}
@@ -482,8 +480,8 @@ func parseHelperJSON(trimmed string) (helperPayload, Reason, error) {
 	// Permissive decoder: we accept unknown fields because real
 	// brokers attach metadata (`access_token_id`, `account`, ...)
 	// alongside the credential, and we already drop those when we
-	// re-marshal the canonical `{version, key, expires_at}` payload
-	// to the cache file (writeCache).
+	// re-marshal the canonical `{key, expires_at}` payload to the
+	// cache file (writeCache).
 	dec := json.NewDecoder(strings.NewReader(trimmed))
 	var payload helperPayload
 	if err := dec.Decode(&payload); err != nil {
@@ -498,15 +496,6 @@ func parseHelperJSON(trimmed string) (helperPayload, Reason, error) {
 	}
 	if strings.TrimSpace(payload.Key) == "" {
 		return helperPayload{}, ReasonJSONParse, errors.New("helper json missing key")
-	}
-	// Reject unknown schema versions explicitly so a future v2
-	// payload format can be introduced without older ccgate
-	// silently treating it as v1. `0` (field omitted) is the
-	// implicit-v1 case and is fine; any other value is "we don't
-	// know how to read this".
-	if payload.Version != 0 && payload.Version != 1 {
-		return helperPayload{}, ReasonJSONParse,
-			fmt.Errorf("unsupported helper json version %d (this ccgate only understands version 1)", payload.Version)
 	}
 	if payload.ExpiresAt != "" {
 		if _, err := time.Parse(time.RFC3339, payload.ExpiresAt); err != nil {

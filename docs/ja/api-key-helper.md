@@ -10,7 +10,7 @@ provider が必要とする認証情報が静的な環境変数では追従で�
 
 helper は次のいずれかの形を stdout (もしくは `api_key_file` の中身として) に書きます。
 
-- **JSON**: `{"key":"sk-...","expires_at":"2026-05-04T01:23:45Z"}`。厳密に解析されます。`key` は必須、`expires_at` と `version` は任意。`version` は未指定だと `1` 扱いで、将来 schema を拡張する余地として予約しています (現状受け付けるのは `1` または未指定のみ)。
+- **JSON**: `{"key":"sk-...","expires_at":"2026-05-04T01:23:45Z"}`。厳密に解析されます。`key` は必須、`expires_at` は任意。未知のトップレベルフィールド (broker のメタデータ等) は受け入れますが捨てます — キャッシュにも SDK にも `{key, expires_at}` だけが渡ります。
 - **plain string**: 改行を含まない単一の非空文字列。そのまま渡されます。
 
 `expires_at` は RFC3339。helper の stdout が 64 KiB を超えると `output_too_large` で拒否します。`api_key_file` の内容にも同じ 64 KiB 上限が適用されます。
@@ -55,7 +55,7 @@ helper は次のいずれかの形を stdout (もしくは `api_key_file` の中
 
 - パス: `$XDG_CACHE_HOME/ccgate/<target>/api_key.<sha256[:16]>.json` (target は `claude` / `codex`)。`XDG_CACHE_HOME` 未設定時は `~/.cache/ccgate/<target>/...` にフォールバック
 - パーミッション: ディレクトリ `0700`、ファイル `0600`。既存ディレクトリが緩いモードで作られていた場合も `0700` に締め直します
-- キャッシュの中身は正規化した `{version, key, expires_at}` のみ。helper が出力した余分なフィールド (refresh token / broker session ID など) はディスクには残しません
+- キャッシュの中身は正規化した `{key, expires_at}` のみ。helper が出力した余分なフィールド (refresh token / broker session ID など) はディスクには残しません
 - atomic rename: 一時ファイルを同じディレクトリ内に作って rename で差し替えるので、ファイルシステム跨ぎの問題はありません
 - 同時呼び出しは隣接する lock ファイル (`*.lock`) の `flock` で直列化されます。lock ファイルは消されないので、残っていても異常ではありません
 
