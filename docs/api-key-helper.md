@@ -196,7 +196,7 @@ Then `auth: { type: 'file', path: '~/.config/my-broker/anthropic.json' }`. ccgat
 
 ## Provider 401/403 behaviour
 
-When the provider rejects the credential ccgate just used, the HTTP status alone determines the reaction — ccgate does not parse the response body, so credentials echoed in error messages by a misbehaving proxy never reach the log.
+When the provider rejects the credential ccgate just used, the HTTP status alone determines the reaction.
 
 | HTTP status         | `auth.type=exec`                          | `auth.type=file`                         | env var      |
 |---------------------|-------------------------------------------|------------------------------------------|--------------|
@@ -204,8 +204,6 @@ When the provider rejects the credential ccgate just used, the HTTP status alone
 | 5xx / network / 429 | exit 1 (existing behaviour)               | exit 1                                   | exit 1       |
 
 The env-var path keeps the existing exit-1 behaviour on 401/403 because ccgate cannot rotate env vars; swallowing the rejection would hide a real user-side configuration error.
-
-Splitting 403 by error code (e.g. promoting AWS `ExpiredTokenException` to `provider_auth` while keeping `permission_error` on the regular API-error path) is intentionally out of scope here: the supported provider paths today (anthropic-sdk-go, openai-go, gemini via openai-compat) all surface credential rejection as 401, so a status-only rule covers the common cases. Per-code 403 classification is tracked alongside Bedrock support under [#62](https://github.com/tak848/ccgate/issues/62).
 
 ## Differences from AWS `credential_process`
 

@@ -150,9 +150,9 @@ The `reason` field meaning depends on `ft_kind`:
 | `lock_error`            | flock syscall returned a non-EWOULDBLOCK error (broken lock subsystem; helper exec is skipped).        |
 | `cache_unavailable`     | Cache directory cannot be created / `chmod`'d. Treated as fail-fast (helper exec is skipped) because without the sibling lock file we cannot prevent concurrent helpers from racing the broker. |
 | `cache_key_invalid`     | `auth.cache_key` references an undefined env var. Surfacing as a fallthrough rather than silently using an empty salt prevents typo-induced cache sharing across profiles. |
-| `provider_auth`         | Provider rejected the credential with **HTTP 401 or 403**. `auth.type=exec` invalidates the cache so the next fire re-runs the helper; `auth.type=file` falls through (no cache to clear); env-var keys are **not** routed here because ccgate cannot rotate env vars and swallowing the rejection would hide user-side misconfiguration. ccgate does not currently parse the SDK error body to split 401 vs 403 by code — both go to the same "rotate sooner" code path, matching the simpler pre-`provider.auth` behaviour. |
+| `provider_auth`         | Provider rejected the credential with **HTTP 401 or 403**. `auth.type=exec` invalidates the cache so the next fire re-runs the helper; `auth.type=file` falls through (no cache to clear); env-var keys are **not** routed here because ccgate cannot rotate env vars and swallowing the rejection would hide user-side misconfiguration. |
 
-`credential_unavailable` is therefore wider than just "credential resolution failed": it also covers "provider received and rejected the credential" (401 / 403). Per-code 403 classification (e.g. promoting AWS `ExpiredTokenException` to `provider_auth` while keeping `permission_error` on the regular API-error path) is tracked under [#62](https://github.com/tak848/ccgate/issues/62) alongside Bedrock support.
+`credential_unavailable` is therefore wider than just "credential resolution failed": it also covers "provider received and rejected the credential" (401 / 403).
 
 #### Log-only credential warnings (not in metrics)
 

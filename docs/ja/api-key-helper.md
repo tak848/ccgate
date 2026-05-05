@@ -195,7 +195,7 @@ mv "$TMP" ~/.config/my-broker/anthropic.json
 
 ## provider が 401/403 を返したときの挙動
 
-ccgate がたった今使った認証情報を provider が拒否した場合、HTTP status のみで挙動を決めます。レスポンス本文は parse しないので、proxy が誤って認証情報を error message に echo してきても log には残りません。
+ccgate がたった今使った認証情報を provider が拒否した場合、HTTP status のみで挙動を決めます。
 
 | HTTP status         | `auth.type=exec`                              | `auth.type=file`                          | env var      |
 |---------------------|-----------------------------------------------|-------------------------------------------|--------------|
@@ -203,8 +203,6 @@ ccgate がたった今使った認証情報を provider が拒否した場合、
 | 5xx / network / 429 | exit 1 (従来通り)                              | exit 1                                    | exit 1       |
 
 env var 経路で 401 / 403 を exit 1 にする理由は、ccgate 側に env を rotate する手段がなく、黙って飲むと user 側の設定ミスを隠してしまうためです。
-
-403 を error code でさらに分割する処理 (例えば AWS `ExpiredTokenException` を `provider_auth` に promote しつつ `permission_error` は通常の API error 経路に残す) は意図的にスコープ外です。サポート対象 (anthropic-sdk-go / openai-go / gemini = openai-compat) では credential 拒否は実際には 401 で出るので、status のみのルールで主要ケースは捕捉できます。code 別 403 分類は Bedrock サポートと合わせて [#62](https://github.com/tak848/ccgate/issues/62) で追跡しています。
 
 ## AWS `credential_process` との差分
 
