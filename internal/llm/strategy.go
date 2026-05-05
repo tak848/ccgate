@@ -12,13 +12,13 @@
 // would silently weaken security.
 //
 // FallthroughKindCredentialUnavailable covers credential-resolution
-// failure on the helper / file path (api_key_command, api_key_file,
-// the cache layer behind them, and provider 401/403 responses that
-// suggest a stale or invalid key). It is distinct from
-// FallthroughKindNoAPIKey, which is reserved for "the user never set
-// any key at all". Like the other runtime-mode kinds, it is not
-// affected by fallthrough_strategy: helper failure is not LLM
-// uncertainty.
+// failure on the auth.type=exec / auth.type=file path (the helper /
+// file itself, the cache layer behind them, and provider 401/403
+// responses that suggest a stale or invalid key). It is distinct
+// from FallthroughKindNoAPIKey, which is reserved for "the user
+// never set any key at all". Like the other runtime-mode kinds, it
+// is not affected by fallthrough_strategy: helper failure is not
+// LLM uncertainty.
 package llm
 
 import (

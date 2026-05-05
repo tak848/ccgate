@@ -442,7 +442,7 @@ func execHelper(ctx context.Context, opts Options) (helperPayload, Reason, error
 		// session. The size + exit error are enough to triage; the
 		// user can re-run the helper manually with `2>&1` if they
 		// need the actual stderr contents.
-		slog.Warn("keystore: api_key_command exited non-zero",
+		slog.Warn("keystore: auth.command exited non-zero",
 			"reason", string(ReasonCommandExit),
 			"source", string(SourceExec),
 			"stderr_bytes", stderr.buf.Len(),

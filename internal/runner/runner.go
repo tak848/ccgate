@@ -179,7 +179,7 @@ func WithTargetName(name string) Option {
 // user looking at one place sees them all together. Empty string
 // disables credential caching: keystore.Resolve falls back to a
 // generic location that is shared across targets, which is fine for
-// Run callers that never set api_key_command (env-var path only).
+// Run callers that never configure provider.auth (env-var path only).
 func WithCacheTarget(name string) Option {
 	return func(o *runtimeOptions) { o.cacheTarget = name }
 }
@@ -812,17 +812,17 @@ func redactedUserMessage(user string) string {
 //
 // The order is fixed:
 //
-//  1. provider.api_key_command / api_key_file via internal/keystore.
-//     Configured-but-failing helpers fall through with
-//     credential_unavailable rather than silently dropping back to
-//     env vars (silent fallback would mask helper bugs).
+//  1. provider.auth (auth.type=exec / auth.type=file) via
+//     internal/keystore. Configured-but-failing helpers fall through
+//     with credential_unavailable rather than silently dropping back
+//     to env vars (silent fallback would mask helper bugs).
 //  2. CCGATE_<PROVIDER>_API_KEY then <PROVIDER>_API_KEY for the
 //     known providers; anything else returns unknown_provider.
 //  3. Nothing set: no_apikey for the known providers.
 //
-// Unknown providers short-circuit BEFORE the helper / file branch
-// runs. Otherwise a typo like provider.name = "opena1" with an
-// api_key_command that returns an OpenAI-shaped key would still be
+// Unknown providers short-circuit BEFORE the auth branch runs.
+// Otherwise a typo like provider.name = "opena1" with an
+// auth.command that returns an OpenAI-shaped key would still be
 // handed to newProviderClient, which falls back to the Anthropic
 // SDK by default — i.e. ccgate would send the wrong provider's
 // credential to Anthropic. We refuse to resolve anything when the

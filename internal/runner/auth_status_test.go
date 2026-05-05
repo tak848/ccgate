@@ -230,7 +230,7 @@ func TestRedactProviderError(t *testing.T) {
 
 // TestResolveAPIKeyUnknownProviderShortCircuit guards the Blocker
 // from the holistic review: a typo'd provider.name plus a configured
-// api_key_command must NOT run the helper, because newProviderClient
+// auth.command must NOT run the helper, because newProviderClient
 // would otherwise default to the Anthropic SDK and credentials minted
 // for a different provider would be sent to the wrong API.
 func TestResolveAPIKeyUnknownProviderShortCircuit(t *testing.T) {

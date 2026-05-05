@@ -225,25 +225,43 @@ func TestExpandedCacheKey(t *testing.T) {
 	}
 }
 
-func TestRejectLegacyAPIKeyFields(t *testing.T) {
+// TestRejectUnknownFields makes sure the JSON decoder rejects any
+// field the Config struct does not declare. We exercise both
+// previously-proposed names (the api_key_* set, which were renamed
+// to provider.auth before any release shipped them) and a generic
+// typo (`base_url_typo`) to keep the contract uniform: there is no
+// special-cased "migrate from X" path for any specific field, the
+// rejection is the same shape regardless of which key was wrong.
+// Catches typos in any layer of the config — provider, top-level,
+// or otherwise — without us having to anticipate which fields users
+// might mistype.
+func TestRejectUnknownFields(t *testing.T) {
 	t.Parallel()
 
-	cases := map[string]string{
-		"api_key_command":         `{"provider": {"name": "anthropic", "api_key_command": "echo"}}`,
-		"api_key_file":            `{"provider": {"name": "anthropic", "api_key_file": "/x"}}`,
-		"api_key_refresh_margin":  `{"provider": {"name": "anthropic", "api_key_refresh_margin": "30s"}}`,
-		"api_key_command_timeout": `{"provider": {"name": "anthropic", "api_key_command_timeout": "5s"}}`,
+	cases := map[string]struct {
+		snippet string
+		wantKey string
+	}{
+		"api_key_command":         {`{"provider": {"name": "anthropic", "api_key_command": "echo"}}`, "api_key_command"},
+		"api_key_file":            {`{"provider": {"name": "anthropic", "api_key_file": "/x"}}`, "api_key_file"},
+		"api_key_refresh_margin":  {`{"provider": {"name": "anthropic", "api_key_refresh_margin": "30s"}}`, "api_key_refresh_margin"},
+		"api_key_command_timeout": {`{"provider": {"name": "anthropic", "api_key_command_timeout": "5s"}}`, "api_key_command_timeout"},
+		"provider typo":           {`{"provider": {"name": "anthropic", "base_url_typo": "x"}}`, "base_url_typo"},
+		"top-level typo":          {`{"alllow": ["x"]}`, "alllow"},
+		"auth typo":               {`{"provider": {"name": "anthropic", "auth": {"type": "exec", "command": "echo", "cmd": "x"}}}`, "cmd"},
 	}
-	for name, snippet := range cases {
+	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			cfg := Default()
-			err := mergeConfigJSON(snippet, &cfg)
+			err := mergeConfigJSON(tc.snippet, &cfg)
 			if err == nil {
-				t.Fatalf("expected migration error for %q", name)
+				t.Fatalf("expected unknown-field error for %q", name)
 			}
-			if !strings.Contains(err.Error(), "provider.auth") {
-				t.Fatalf("error %q must mention provider.auth migration", err.Error())
+			// The Go decoder produces `unknown field "X"` — assert on
+			// the field name only, no special-cased migration phrasing.
+			if !strings.Contains(err.Error(), tc.wantKey) {
+				t.Fatalf("error %q must mention the offending key %q", err.Error(), tc.wantKey)
 			}
 		})
 	}

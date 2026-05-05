@@ -404,8 +404,8 @@ func TestInvalidateRemovesCache(t *testing.T) {
 }
 
 // TestResolveFileTooLarge ensures we reject pathologically large
-// `api_key_file` paths (e.g. /dev/zero, runaway log file). Without
-// the bounded reader the hot path would either OOM or hang.
+// `auth.path` files (e.g. /dev/zero, runaway log file). Without the
+// bounded reader the hot path would either OOM or hang.
 func TestResolveFileTooLarge(t *testing.T) {
 	withCacheRoot(t)
 
@@ -429,7 +429,7 @@ func TestResolveFileTooLarge(t *testing.T) {
 	}
 }
 
-// TestResolveFileNonRegularRejected makes sure a `api_key_file`
+// TestResolveFileNonRegularRejected makes sure an `auth.path`
 // pointed at a directory (or any non-regular file) does not block
 // the hot path with an unbounded read.
 func TestResolveFileNonRegularRejected(t *testing.T) {

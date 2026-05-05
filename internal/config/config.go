@@ -673,60 +673,18 @@ func mergeConfigString(snippet string, cfg *Config) error {
 	return mergeConfigJSON(data, cfg)
 }
 
-// legacyAPIKeyFields lists the previously-proposed `provider.api_key_*`
-// keys that have been replaced by the `provider.auth` discriminated
-// union. We reject them at merge time with a migration message
-// instead of letting `json.Unmarshal` silently drop them, which
-// would leave a user wondering why their helper config is being
-// ignored. The rename happens before any release ships
-// `provider.api_key_*`, so no compat shim is needed.
-var legacyAPIKeyFields = []string{
-	"api_key_command",
-	"api_key_file",
-	"api_key_refresh_margin",
-	"api_key_command_timeout",
-}
-
-// rejectLegacyProviderKeys scans the raw merge JSON for old
-// pre-`provider.auth` field names and returns a migration error if
-// any are present. We do this BEFORE json.Unmarshal because
-// encoding/json drops unknown struct fields silently — without this
-// guard a stale dotfile would lose its helper config and fall back
-// to env vars without the user noticing.
-func rejectLegacyProviderKeys(data []byte) error {
-	var top struct {
-		Provider json.RawMessage `json:"provider"`
-	}
-	if err := json.Unmarshal(data, &top); err != nil {
-		// Don't double-report: the upstream Unmarshal will surface a
-		// proper error message for malformed input. Fall through.
-		return nil //nolint:nilerr
-	}
-	if len(top.Provider) == 0 {
-		return nil
-	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(top.Provider, &fields); err != nil {
-		return nil //nolint:nilerr
-	}
-	for _, k := range legacyAPIKeyFields {
-		if _, ok := fields[k]; ok {
-			return fmt.Errorf(
-				"provider.%s is no longer supported; migrate to provider.auth (see docs/api-key-helper.md, ccgate#61)",
-				k,
-			)
-		}
-	}
-	return nil
-}
-
 func mergeConfigJSON(data string, cfg *Config) error {
-	if err := rejectLegacyProviderKeys([]byte(data)); err != nil {
-		return err
-	}
-
+	// Reject any field the Config struct does not declare. encoding/json
+	// would otherwise drop unknown keys silently, so a typo like
+	// `mdoel:` or `api_key_commnd:` would leave the user wondering
+	// why their value is being ignored. DisallowUnknownFields is a
+	// uniform check — no special-casing per field, no fictional
+	// "migrate from X" messages — so the report is the same shape
+	// regardless of which key was wrong.
+	dec := json.NewDecoder(strings.NewReader(data))
+	dec.DisallowUnknownFields()
 	var override Config
-	if err := json.Unmarshal([]byte(data), &override); err != nil {
+	if err := dec.Decode(&override); err != nil {
 		return fmt.Errorf("unmarshal config: %w", err)
 	}
 
