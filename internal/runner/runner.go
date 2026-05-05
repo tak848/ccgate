@@ -158,6 +158,12 @@ type runtimeOptions struct {
 	hasRecentTranscript   bool
 	loadStaticPermissions func(cwd string) any
 	loadRecentTranscript  func(transcriptPath string) any
+	// providerFactory is a test-only injection point for swapping
+	// the live LLM client. Production code leaves it nil and falls
+	// back to newProviderClient. Wired through runtimeOptions
+	// instead of a package-level var so parallel tests can each pass
+	// their own fake without racing.
+	providerFactory func(providerName, apiKey, baseURL string) llm.Provider
 }
 
 // WithTargetName labels the host tool in the system prompt header
@@ -213,6 +219,15 @@ func WithRecentTranscript(fn func(transcriptPath string) any) Option {
 	return func(o *runtimeOptions) { o.loadRecentTranscript = fn }
 }
 
+// WithProviderFactory replaces the LLM-client constructor used by
+// decide(). Test-only: production callers leave it unset and the
+// runner uses newProviderClient. The signature mirrors
+// newProviderClient so a fake can implement llm.Provider with no
+// awareness of the underlying SDK shape.
+func WithProviderFactory(fn func(providerName, apiKey, baseURL string) llm.Provider) Option {
+	return func(o *runtimeOptions) { o.providerFactory = fn }
+}
+
 // Run is the entry point. cmd/<target>/ packages call it with a
 // per-target config.LoadOptions plus any target-specific Options
 // (settings reader, transcript reader, ...). The rest of the flow
@@ -242,6 +257,8 @@ func Run(stdin io.Reader, stdout io.Writer, opts config.LoadOptions, runOpts ...
 	logger, cleanup := initLogger(cfg.ResolveLogPath(), cfg.IsLogDisabled(), cfg.GetLogMaxSize())
 	defer cleanup()
 	slog.SetDefault(logger)
+
+	warnConfigGuidance(cfg)
 
 	slog.Info("hook invoked",
 		"tool", input.ToolName,
@@ -341,43 +358,77 @@ func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOpti
 		"user_message", redactedUserMessage(p.User),
 	)
 
-	client := newProviderClient(providerName, apiKey, baseURL)
+	clientFactory := ro.providerFactory
+	if clientFactory == nil {
+		clientFactory = newProviderClient
+	}
+	client := clientFactory(providerName, apiKey, baseURL)
 	res, err := client.Decide(ctx, p)
 	if err != nil {
-		// 401/403 against a key that came from a helper / file path
-		// is the canonical "the credential we just used is stale or
-		// wrong" signal: invalidate the keystore cache so the next
-		// hook fire re-runs the helper, then fall through (instead
-		// of exiting 1) so the upstream tool's prompt still reaches
-		// the user.
-		//
-		// For env-var keys we deliberately do NOT take that branch.
-		// ccgate cannot rotate env vars, so silently turning a
-		// revoked / wrong env-var key into a fallthrough would mask
-		// a real user-side configuration error. Surface it as a
-		// normal API error and let the existing exit-1 path run.
-		if status, ok := providerAuthStatus(err); ok && (cfg.Provider.APIKeyCommand != "" || cfg.Provider.APIKeyFile != "") {
-			invalidateOnAuthFailure(cfg.Provider, ro.cacheTarget, source, providerName, baseURL)
-			// Deliberately do NOT log the raw err string. Both
-			// anthropic-sdk-go and openai-go embed the response
-			// body inside Error.Error(), and a custom proxy or
-			// broker might echo a credential / token / request
-			// signature in its 401/403 body — that would leak into
-			// ccgate.log. Log only the secret-free triage fields.
-			slog.Warn("provider rejected credential, falling through",
-				"reason", string(keystore.ReasonProviderAuth),
-				"source", source,
-				"status", status,
-				"provider", cfg.Provider.Name,
-			)
-			return llm.Decision{}, false, llm.FallthroughKindCredentialUnavailable, string(keystore.ReasonProviderAuth), source, res.Usage, nil
+		// Decode the provider error into status + secret-free
+		// short-identifier code. The Error.Error() string of both
+		// anthropic-sdk-go and openai-go embeds the raw response
+		// body, and a custom proxy / broker might echo a token or
+		// request signature inside a 401/403 body — none of that
+		// goes into ccgate.log. Log only the structured fields.
+		info, ok := providerErrorInfo(err)
+		if ok {
+			authConfigured := cfg.Provider.Auth != nil
+			authPath := authConfigured && cfg.Provider.Auth.Type == config.AuthTypeExec
+			authFile := authConfigured && cfg.Provider.Auth.Type == config.AuthTypeFile
+
+			// 401, or 403 with a credential-expired error code, is the
+			// canonical "the credential we just used is stale / wrong"
+			// signal. Treat them identically:
+			//   - auth.type=exec: invalidate the cache so the next hook
+			//     fire re-runs the helper, then fall through (no exit 1
+			//     so the upstream tool prompts the user).
+			//   - auth.type=file: fall through only — the rotator owns
+			//     the file so there is no ccgate-side cache to clear.
+			//   - env path: exit 1. ccgate cannot rotate env vars, so
+			//     swallowing this would mask a real user-side
+			//     configuration error.
+			if info.status == http.StatusUnauthorized ||
+				(info.status == http.StatusForbidden && isCredentialExpiredCode(info.code)) {
+				if authPath {
+					invalidateAuthCache(cfg.Provider, ro.cacheTarget, providerName, baseURL)
+				}
+				if authConfigured {
+					slog.Warn("provider rejected credential, falling through",
+						"kind", llm.FallthroughKindCredentialUnavailable,
+						"reason", string(keystore.ReasonProviderAuth),
+						"source", source,
+						"status", info.status,
+						"provider_error_code", info.code,
+						"provider", cfg.Provider.Name,
+					)
+					return llm.Decision{}, false, llm.FallthroughKindCredentialUnavailable, string(keystore.ReasonProviderAuth), source, res.Usage, nil
+				}
+				// env path: fall through to redactProviderError so
+				// the existing exit-1 path runs.
+			} else if info.status == http.StatusForbidden {
+				// 403 + non-credential / unknown code is a
+				// permission / policy / region issue. Rotating
+				// credentials would not help, so we never
+				// invalidate. We also fall through on the env
+				// path: exit 1 there would leave the user with a
+				// permanently broken hook for what is essentially
+				// the provider's "no, you can't do that" answer.
+				slog.Warn("provider denied request (non-credential), falling through",
+					"kind", llm.FallthroughKindCredentialUnavailable,
+					"reason", string(keystore.ReasonProviderForbidden),
+					"source", source,
+					"status", info.status,
+					"provider_error_code", info.code,
+					"provider", cfg.Provider.Name,
+				)
+				_ = authFile // documented in the matrix above; same fallthrough
+				return llm.Decision{}, false, llm.FallthroughKindCredentialUnavailable, string(keystore.ReasonProviderForbidden), source, res.Usage, nil
+			}
 		}
-		// Same body-leak risk applies to non-auth API errors
-		// (429 / 5xx / network) — the SDK Error string still
-		// contains the raw response body. Strip it down to a
-		// short, status-coded summary before letting it bubble
-		// into runErr (which the caller logs and writes to
-		// metrics.Entry.Error).
+		// Non-auth API errors (rate limit / 5xx / network) keep the
+		// existing exit-1 path. Strip the raw response body so a
+		// chatty proxy cannot leak credentials into ccgate.log.
 		return llm.Decision{}, false, "", "", "", res.Usage, redactProviderError(cfg.Provider.Name, err)
 	}
 	if res.Unusable {
@@ -435,62 +486,222 @@ func redactProviderError(providerName string, err error) error {
 	return err
 }
 
-// providerAuthStatus type-checks the error against the
-// anthropic-sdk-go and openai-go SDK error envelopes (gemini
-// delegates to openai internally) and reports whether it is a
-// credential-rejection response — 401/403, the same statuses every
-// other ccgate caller already treats as "the key the user gave us is
-// not accepted". Other 4xx/5xx responses keep the existing exit-1
-// behaviour because they signal user-recoverable issues we cannot
-// auto-resolve from the keystore.
+// providerErrorMeta carries the secret-free fields a provider error
+// contributes to the credential / forbidden classifier. Lifecycle:
+// every value is logged with kind=credential_unavailable, so each
+// field must be a fixed-vocabulary identifier — never raw response
+// body text.
+type providerErrorMeta struct {
+	status int
+	// code is the structured "what kind of error" identifier from
+	// the provider. OpenAI exposes it as Error.Code (with
+	// Error.Type as a fallback); Anthropic does not expose Type on
+	// the public Error struct (SDK v1.37.0), so we parse RawJSON()
+	// for `error.type`. Empty means "code could not be extracted"
+	// — callers fall back to status-only classification (treat
+	// 403 as provider_forbidden).
+	code string
+}
+
+// providerErrorInfo decodes a provider SDK error into status + code.
+// Returns ok=false for non-API errors (network / context cancel /
+// internal) so callers route them through the regular exit-1 path.
 //
-// The status code is returned alongside the boolean so callers can
-// log it without dragging the raw error message (which the SDKs
-// build by concatenating the response body — proxies and brokers
-// sometimes echo credentials there) into ccgate.log.
-func providerAuthStatus(err error) (int, bool) {
+// The raw response body is NEVER returned. Both anthropic-sdk-go and
+// openai-go embed it inside Error.Error(); a custom proxy might echo
+// a token or signature there. We only touch structured short-id
+// fields.
+func providerErrorInfo(err error) (providerErrorMeta, bool) {
 	if err == nil {
-		return 0, false
-	}
-	var anth *anthropicsdk.Error
-	if errors.As(err, &anth) {
-		if anth.StatusCode == http.StatusUnauthorized || anth.StatusCode == http.StatusForbidden {
-			return anth.StatusCode, true
-		}
-		return anth.StatusCode, false
+		return providerErrorMeta{}, false
 	}
 	var oai *openaisdk.Error
 	if errors.As(err, &oai) {
-		if oai.StatusCode == http.StatusUnauthorized || oai.StatusCode == http.StatusForbidden {
-			return oai.StatusCode, true
+		code := sanitizeErrorCode(oai.Code)
+		if code == "" {
+			code = sanitizeErrorCode(oai.Type)
 		}
-		return oai.StatusCode, false
+		return providerErrorMeta{status: oai.StatusCode, code: code}, true
 	}
-	return 0, false
+	var anth *anthropicsdk.Error
+	if errors.As(err, &anth) {
+		return providerErrorMeta{
+			status: anth.StatusCode,
+			code:   sanitizeErrorCode(extractAnthropicErrorType(anth.RawJSON())),
+		}, true
+	}
+	return providerErrorMeta{}, false
 }
 
-// invalidateOnAuthFailure asks keystore to forget the cached
-// credential so the next hook fire forces a fresh helper exec. We
-// only call this when the credential actually came from the
-// helper/file path (env-var keys never produced a cache file). The
-// returned error is best-effort logged; we do not propagate it
-// because the surrounding fallthrough already runs no matter what.
-func invalidateOnAuthFailure(p config.ProviderConfig, target, source, providerName, baseURL string) {
-	if p.APIKeyCommand == "" && p.APIKeyFile == "" {
+// extractAnthropicErrorType pulls the `error.type` field out of
+// Anthropic's API error JSON. The SDK's apierror.Error keeps the raw
+// body but does not expose the type as a struct field on v1.37.0, so
+// we unmarshal a minimal shape — only the type field, dropping
+// `message` (which can contain echoed user input) and any other
+// proxy-specific fields. Returns "" when the body does not parse or
+// the type is missing; callers fall back to status-only
+// classification.
+func extractAnthropicErrorType(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	var body struct {
+		Error struct {
+			Type string `json:"type"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(raw), &body); err != nil {
+		return ""
+	}
+	return body.Error.Type
+}
+
+// sanitizeErrorCode trims whitespace, drops anything outside
+// printable ASCII, and caps the length. Provider error codes are
+// short identifiers (`authentication_error`, `ExpiredToken`, ...);
+// anything that does not fit that pattern is suspicious enough that
+// we'd rather log "" than risk leaking a body fragment.
+func sanitizeErrorCode(s string) string {
+	const maxLen = 64
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	for _, r := range s {
+		if r < 0x20 || r > 0x7e {
+			return ""
+		}
+	}
+	if len(s) > maxLen {
+		return s[:maxLen]
+	}
+	return s
+}
+
+// credentialExpiredErrorCodes is the secret-free set we promote
+// from `provider_forbidden` to `provider_auth` (so the cache gets
+// invalidated and the next hook fire produces a fresh credential).
+//
+// Sources are deliberately narrow:
+//   - AWS SigV4 (often surfaced through OpenAI-compatible proxies):
+//     ExpiredToken / ExpiredTokenException are documented HTTP-403
+//     responses for STS, see
+//     https://docs.aws.amazon.com/STS/latest/APIReference/CommonErrors.html
+//     InvalidClientTokenId / UnrecognizedClientException cover the
+//     "we used to know this credential, we don't anymore" cases that
+//     show up after a key rotation has propagated.
+//   - OAuth 2.0 RFC 6750: invalid_token / expired_token. Some
+//     OpenAI-compatible gateways forward these directly.
+//   - Anthropic / OpenAI SaaS: authentication_error / invalid_api_key
+//     are the documented 401 codes; we accept them under 403 too in
+//     case a proxy upgrades the status.
+//
+// We match case-insensitively because some proxies normalise to
+// snake_case (`expired_token`) and others preserve the AWS
+// PascalCase (`ExpiredToken`).
+var credentialExpiredErrorCodes = map[string]struct{}{
+	"expiredtoken":                {},
+	"expiredtokenexception":       {},
+	"invalidclienttokenid":        {},
+	"unrecognizedclientexception": {},
+	"invalid_token":               {},
+	"expired_token":               {},
+	"authentication_error":        {},
+	"invalid_api_key":             {},
+}
+
+func isCredentialExpiredCode(code string) bool {
+	if code == "" {
+		return false
+	}
+	_, ok := credentialExpiredErrorCodes[strings.ToLower(code)]
+	return ok
+}
+
+// sourceForAuthType maps an AuthConfig.Type discriminator to the
+// keystore Source label used in metrics + logs. Used by callers
+// that classify a failure happening in the runner (before / outside
+// keystore.Resolve) so the source attribute still points at the
+// configured auth path.
+func sourceForAuthType(t string) string {
+	switch t {
+	case config.AuthTypeFile:
+		return string(keystore.SourceFile)
+	default:
+		return string(keystore.SourceExec)
+	}
+}
+
+// guidanceTimeoutBuffer is the slack we expect users to leave
+// between auth.refresh_margin and provider.timeout_ms. The cache
+// path uses `now + refresh_margin < expires_at` to decide whether
+// to keep a cached credential; if the margin is smaller than the
+// API call's own timeout the cache will hand the SDK a credential
+// that may expire mid-request. 5s is enough headroom for normal
+// network jitter without making the warning fire on the default
+// 30s/20s combo.
+const guidanceTimeoutBuffer = 5 * time.Second
+
+// warnConfigGuidance emits soft (non-rejecting) warnings for
+// auth-related config combinations that ccgate cannot honour
+// safely without invasive validation.
+//
+// Currently only `auth.refresh_margin < provider.timeout_ms + 5s`
+// is checked: the API call's worst-case duration (timeout_ms) plus
+// a small buffer should fit inside the cache freshness margin so a
+// cached credential never expires mid-request. We deliberately
+// skip the check when timeout_ms == 0 (caller-configured "no
+// limit") because the inequality has no meaningful upper bound.
+//
+// Validate intentionally does not perform this check — it is a
+// soft warning, not an error, and Validate() is the pure-error
+// returning layer (no slog.Warn side effects), so it gets called
+// from Run after the logger has been wired up.
+func warnConfigGuidance(cfg config.Config) {
+	auth := cfg.Provider.Auth
+	if auth == nil {
 		return
 	}
-	if source == string(keystore.SourceFile) {
-		// File-mode resolution does not cache, so there is no
-		// keystore artifact to clear. The rotator that owns the
-		// file is what needs to re-issue.
+	timeoutMS := cfg.Provider.GetTimeoutMS()
+	if timeoutMS <= 0 {
+		// 0 means "no provider timeout"; the inequality cannot be
+		// satisfied in any meaningful sense so we skip the warning.
 		return
 	}
+	margin := auth.GetRefreshMargin()
+	timeout := time.Duration(timeoutMS) * time.Millisecond
+	threshold := timeout + guidanceTimeoutBuffer
+	if margin < threshold {
+		slog.Warn("auth.refresh_margin smaller than provider.timeout_ms + 5s; cached credential may expire during an API call",
+			"refresh_margin", margin.String(),
+			"provider_timeout_ms", timeoutMS,
+			"recommended_min", threshold.String(),
+		)
+	}
+}
+
+// invalidateAuthCache asks keystore to forget the cached credential
+// so the next hook fire forces a fresh helper exec. Only callable
+// when auth.type=exec actually produced a cache file; the file
+// branch and the env-var path never wrote one.
+//
+// We rebuild the same Options keystore.Resolve was given on the
+// preceding fire so CacheFingerprint hashes to the same path.
+// CacheKey expansion deliberately uses LookupEnv directly
+// (ignoring expansion errors): if the env disappeared between
+// resolve and invalidate we still want to delete whatever cache
+// file the resolve fingerprint actually wrote.
+func invalidateAuthCache(p config.ProviderConfig, target, providerName, baseURL string) {
+	if p.Auth == nil || p.Auth.Type != config.AuthTypeExec {
+		return
+	}
+	cacheKey, _ := p.Auth.ExpandedCacheKey()
 	opts := keystore.Options{
-		Command:      p.APIKeyCommand,
-		Path:         p.APIKeyFile,
+		Command:      p.Auth.Command,
 		ProviderName: providerName,
 		BaseURL:      baseURL,
 		TargetName:   target,
+		CacheKey:     cacheKey,
 	}
 	if err := keystore.Invalidate(opts); err != nil {
 		// Use a unique log-only attribute so triage can tell this
@@ -629,15 +840,36 @@ func resolveAPIKey(ctx context.Context, p config.ProviderConfig, providerName, t
 		return "", llm.FallthroughKindUnknownProvider, "", "", nil
 	}
 
-	if p.APIKeyCommand != "" || p.APIKeyFile != "" {
+	if p.Auth != nil {
+		// Expand cache_key against the live env. Undefined references
+		// fall through with cache_key_invalid (rather than collapsing
+		// to an empty salt and silently sharing a cache across
+		// profiles, which would defeat the whole point of cache_key).
+		// Only the exec branch consumes CacheKey; for the file branch
+		// the value is empty by validation and the call is a no-op.
+		cacheKey, err := p.Auth.ExpandedCacheKey()
+		if err != nil {
+			slog.Warn("keystore: auth.cache_key resolution failed, falling through",
+				"kind", llm.FallthroughKindCredentialUnavailable,
+				"reason", string(keystore.ReasonCacheKeyInvalid),
+				"source", sourceForAuthType(p.Auth.Type),
+				"error", err,
+			)
+			return "", llm.FallthroughKindCredentialUnavailable, string(keystore.ReasonCacheKeyInvalid), sourceForAuthType(p.Auth.Type), err
+		}
 		opts := keystore.Options{
-			Command:        p.APIKeyCommand,
-			Path:           p.APIKeyFile,
 			ProviderName:   providerName,
 			BaseURL:        strings.TrimSpace(p.BaseURL),
 			TargetName:     target,
-			RefreshMargin:  p.GetAPIKeyRefreshMargin(),
-			CommandTimeout: p.GetAPIKeyCommandTimeout(),
+			RefreshMargin:  p.Auth.GetRefreshMargin(),
+			CommandTimeout: p.Auth.GetCommandTimeout(),
+		}
+		switch p.Auth.Type {
+		case config.AuthTypeExec:
+			opts.Command = p.Auth.Command
+			opts.CacheKey = cacheKey
+		case config.AuthTypeFile:
+			opts.Path = p.Auth.Path
 		}
 		res, err := keystore.Resolve(ctx, opts)
 		if err != nil {

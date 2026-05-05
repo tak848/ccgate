@@ -14,43 +14,97 @@ import (
 	"github.com/tak848/ccgate/internal/llm"
 )
 
-// TestProviderAuthStatus pins the SDK-error type-assertion that the
-// runner relies on to distinguish "credential rejected" (401/403)
-// from other API errors. The promotion path is what lets ccgate
-// invalidate the cache and fall through gracefully on rotated /
-// revoked credentials, so a future SDK rename of `Error` would
-// silently break it without this guard.
-func TestProviderAuthStatus(t *testing.T) {
+// TestProviderErrorInfo pins the SDK-error type-assertion that the
+// runner relies on to extract the secret-free (status, code) pair
+// from anthropic-sdk-go and openai-go API errors. Both fields fuel
+// the 401 / 403-credential-expired / 403-non-credential split that
+// drives whether ccgate invalidates the cache and falls through.
+// A future SDK rename of `Error` would silently break this without
+// the guard.
+func TestProviderErrorInfo(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]struct {
 		err        error
+		wantOK     bool
 		wantStatus int
-		wantAuth   bool
+		wantCode   string
 	}{
-		"nil":              {err: nil, wantStatus: 0, wantAuth: false},
-		"plain error":      {err: errors.New("network closed"), wantStatus: 0, wantAuth: false},
-		"anthropic 401":    {err: &anthropicsdk.Error{StatusCode: 401}, wantStatus: 401, wantAuth: true},
-		"anthropic 403":    {err: &anthropicsdk.Error{StatusCode: 403}, wantStatus: 403, wantAuth: true},
-		"anthropic 429":    {err: &anthropicsdk.Error{StatusCode: 429}, wantStatus: 429, wantAuth: false},
-		"anthropic 500":    {err: &anthropicsdk.Error{StatusCode: 500}, wantStatus: 500, wantAuth: false},
-		"openai 401":       {err: &openaisdk.Error{StatusCode: 401}, wantStatus: 401, wantAuth: true},
-		"openai 403":       {err: &openaisdk.Error{StatusCode: 403}, wantStatus: 403, wantAuth: true},
-		"openai 429":       {err: &openaisdk.Error{StatusCode: 429}, wantStatus: 429, wantAuth: false},
-		"openai 502":       {err: &openaisdk.Error{StatusCode: 502}, wantStatus: 502, wantAuth: false},
-		"wrapped 401":      {err: fmt.Errorf("wrap: %w", &anthropicsdk.Error{StatusCode: 401}), wantStatus: 401, wantAuth: true},
-		"wrapped non-auth": {err: fmt.Errorf("wrap: %w", &openaisdk.Error{StatusCode: 500}), wantStatus: 500, wantAuth: false},
+		"nil":         {err: nil, wantOK: false},
+		"plain error": {err: errors.New("network closed"), wantOK: false},
+
+		// Anthropic: code is parsed from RawJSON()'s `error.type`.
+		// The fabricated *Error here has empty RawJSON so the code is "".
+		"anthropic 401": {err: &anthropicsdk.Error{StatusCode: 401}, wantOK: true, wantStatus: 401},
+		"anthropic 403": {err: &anthropicsdk.Error{StatusCode: 403}, wantOK: true, wantStatus: 403},
+		"anthropic 429": {err: &anthropicsdk.Error{StatusCode: 429}, wantOK: true, wantStatus: 429},
+		"anthropic 500": {err: &anthropicsdk.Error{StatusCode: 500}, wantOK: true, wantStatus: 500},
+
+		// OpenAI: Code / Type are exposed directly. We trust Code first;
+		// Type is the fallback when Code is empty.
+		"openai 401 code":          {err: &openaisdk.Error{StatusCode: 401, Code: "invalid_api_key"}, wantOK: true, wantStatus: 401, wantCode: "invalid_api_key"},
+		"openai 403 type fallback": {err: &openaisdk.Error{StatusCode: 403, Type: "permission_error"}, wantOK: true, wantStatus: 403, wantCode: "permission_error"},
+		"openai 502":               {err: &openaisdk.Error{StatusCode: 502}, wantOK: true, wantStatus: 502},
+
+		// errors.As must unwrap fmt.Errorf(%w) wrappers — that's the
+		// path real production errors take through llm.* and runner.
+		"wrapped anthropic":   {err: fmt.Errorf("wrap: %w", &anthropicsdk.Error{StatusCode: 401}), wantOK: true, wantStatus: 401},
+		"wrapped openai code": {err: fmt.Errorf("wrap: %w", &openaisdk.Error{StatusCode: 403, Code: "expired_token"}), wantOK: true, wantStatus: 403, wantCode: "expired_token"},
 	}
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			status, ok := providerAuthStatus(tc.err)
-			if ok != tc.wantAuth {
-				t.Fatalf("auth = %v, want %v (status=%d, err=%v)", ok, tc.wantAuth, status, tc.err)
+			info, ok := providerErrorInfo(tc.err)
+			if ok != tc.wantOK {
+				t.Fatalf("ok = %v, want %v (info=%+v, err=%v)", ok, tc.wantOK, info, tc.err)
 			}
-			if status != tc.wantStatus {
-				t.Fatalf("status = %d, want %d", status, tc.wantStatus)
+			if !ok {
+				return
+			}
+			if info.status != tc.wantStatus {
+				t.Fatalf("status = %d, want %d", info.status, tc.wantStatus)
+			}
+			if info.code != tc.wantCode {
+				t.Fatalf("code = %q, want %q", info.code, tc.wantCode)
+			}
+		})
+	}
+}
+
+// TestIsCredentialExpiredCode pins the AWS / OAuth / Anthropic /
+// OpenAI 403 error codes that ccgate promotes to provider_auth (so
+// the cache gets invalidated for auth.type=exec and the next fire
+// produces a fresh credential). Match is case-insensitive so AWS
+// PascalCase and proxy snake_case both work.
+func TestIsCredentialExpiredCode(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		code string
+		want bool
+	}{
+		"empty":                     {"", false},
+		"unknown":                   {"network_unreachable", false},
+		"AWS ExpiredToken":          {"ExpiredToken", true},
+		"AWS ExpiredTokenException": {"ExpiredTokenException", true},
+		"AWS InvalidClientTokenId":  {"InvalidClientTokenId", true},
+		"AWS UnrecognizedClient":    {"UnrecognizedClientException", true},
+		"AWS lower":                 {"expiredtoken", true},
+		"OAuth invalid_token":       {"invalid_token", true},
+		"OAuth expired_token":       {"expired_token", true},
+		"Anthropic auth_error":      {"authentication_error", true},
+		"Anthropic invalid_api_key": {"invalid_api_key", true},
+		"OpenAI Type fallback case": {"AUTHENTICATION_ERROR", true},
+		"non-credential 403":        {"permission_error", false},
+		"AWS access denied":         {"AccessDenied", false},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			got := isCredentialExpiredCode(tc.code)
+			if got != tc.want {
+				t.Fatalf("isCredentialExpiredCode(%q) = %v, want %v", tc.code, got, tc.want)
 			}
 		})
 	}
@@ -116,16 +170,19 @@ func TestRedactProviderError(t *testing.T) {
 func TestResolveAPIKeyUnknownProviderShortCircuit(t *testing.T) {
 	t.Parallel()
 
-	// We deliberately point api_key_command at a script that would
+	// We deliberately point auth.command at a script that would
 	// fail loudly (`exit 17`) so the test will catch any regression
 	// where the unknown-provider guard is removed and the helper
 	// actually runs.
 	cfg := config.ProviderConfig{
-		Name:                 "opena1", // deliberate typo
-		Model:                "x",
-		APIKeyCommand:        "exit 17",
-		APIKeyRefreshMargin:  "30s",
-		APIKeyCommandTimeout: "5s",
+		Name:  "opena1", // deliberate typo
+		Model: "x",
+		Auth: &config.AuthConfig{
+			Type:          "exec",
+			Command:       "exit 17",
+			RefreshMargin: "30s",
+			Timeout:       "5s",
+		},
 	}
 	key, kind, reason, source, err := resolveAPIKey(context.Background(), cfg, "opena1", "claude")
 	if err != nil {
