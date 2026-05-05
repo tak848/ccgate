@@ -176,10 +176,11 @@ func WithTargetName(name string) Option {
 // WithCacheTarget sets the per-target subdirectory name used for the
 // keystore cache layout ("claude" / "codex" / ...). It must match the
 // subdir cmd/<target>/ already uses for log_path / metrics_path so a
-// user looking at one place sees them all together. Empty string
-// disables credential caching: keystore.Resolve falls back to a
-// generic location that is shared across targets, which is fine for
-// Run callers that never configure provider.auth (env-var path only).
+// user looking at one place sees them all together. An empty string
+// is fed straight to keystore.Options.TargetName, which means the
+// cache file lands one level up under $XDG_CACHE_HOME/ccgate/ and is
+// shared across targets — fine for Run callers that never configure
+// provider.auth (env-var path only), since nothing is written there.
 func WithCacheTarget(name string) Option {
 	return func(o *runtimeOptions) { o.cacheTarget = name }
 }

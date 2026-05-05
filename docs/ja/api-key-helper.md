@@ -195,7 +195,7 @@ mv "$TMP" ~/.config/my-broker/anthropic.json
 
 ## provider が 401/403 を返したときの挙動
 
-ccgate がたった今使った認証情報を provider が拒否した場合、status と secret-free な error code (OpenAI: `Error.Code` / `Error.Type`、Anthropic: `RawJSON()` から `error.type` を抽出) を見て挙動を分けます。レスポンス本文は決して log には書きません。
+ccgate がたった今使った認証情報を provider が拒否した場合、HTTP status のみで挙動を決めます。レスポンス本文は parse しないので、proxy が誤って認証情報を error message に echo してきても log には残りません。
 
 | HTTP status         | `auth.type=exec`                              | `auth.type=file`                          | env var      |
 |---------------------|-----------------------------------------------|-------------------------------------------|--------------|
@@ -204,7 +204,7 @@ ccgate がたった今使った認証情報を provider が拒否した場合、
 
 env var 経路で 401 / 403 を exit 1 にする理由は、ccgate 側に env を rotate する手段がなく、黙って飲むと user 側の設定ミスを隠してしまうためです。
 
-ccgate は SDK error の body を読んで 403 を error code で更に分割する処理 (例えば AWS `ExpiredTokenException` を `provider_auth` に promote しつつ `permission_error` は通常の API error 経路に残す) は現在持っていません。サポート対象 (anthropic-sdk-go / openai-go / gemini = openai-compat) では credential 拒否は実際には 401 で出るので、status のみのルールで主要ケースは捕捉できます。code 別 403 分類は Bedrock サポートと合わせて [#62](https://github.com/tak848/ccgate/issues/62) で追跡しています。
+403 を error code でさらに分割する処理 (例えば AWS `ExpiredTokenException` を `provider_auth` に promote しつつ `permission_error` は通常の API error 経路に残す) は意図的にスコープ外です。サポート対象 (anthropic-sdk-go / openai-go / gemini = openai-compat) では credential 拒否は実際には 401 で出るので、status のみのルールで主要ケースは捕捉できます。code 別 403 分類は Bedrock サポートと合わせて [#62](https://github.com/tak848/ccgate/issues/62) で追跡しています。
 
 ## AWS `credential_process` との差分
 
@@ -216,7 +216,7 @@ ccgate は SDK error の body を読んで 403 を error code で更に分割す
 
 何かおかしいときは:
 
-1. `ccgate.log` (`$XDG_STATE_HOME/ccgate/<target>/ccgate.log`) を tail して `kind=credential_unavailable` のエントリを探し、`reason` / `source` (`exec` / `file` / `cache` / `lock`) / `provider_error_code` attribute を確認。どの段階で失敗したかが分かります
+1. `ccgate.log` (`$XDG_STATE_HOME/ccgate/<target>/ccgate.log`) を tail して `kind=credential_unavailable` のエントリを探し、`reason` と `source` (`exec` / `file` / `cache` / `lock`) attribute を確認。どの段階で失敗したかが分かります
 2. `ccgate <target> metrics` を実行し、**Credential failures** セクションで `(source, reason)` 別の集計を確認
 3. キャッシュ起因 (`cache_parse` / `cache_read` / `cache_write` の log warning) が疑わしい場合は `$XDG_CACHE_HOME/ccgate/<target>/api_key.*.json` を削除して再生成させます。隣接する `*.lock` は再利用されるので削除不要です
 4. `cache_key_invalid` が出続ける場合は、`auth.cache_key` で参照している env が hook の実行環境にセットされているか確認してください。hook は upstream tool (Claude Code / Codex CLI) の env を継承するため、shell の dotfiles が source されているとは限りません

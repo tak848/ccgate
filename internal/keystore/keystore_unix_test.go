@@ -721,3 +721,42 @@ func TestExpandHomePath(t *testing.T) {
 		})
 	}
 }
+
+// TestResolveCommandCacheUnavailableFailsFast pins that when the
+// cache directory cannot be created the helper is NOT executed.
+// Running the helper without the sibling lock file would let
+// concurrent hook fires hammer the broker in parallel — exactly the
+// thrash that single-valid-key brokers handle by revoking older
+// credentials. Surface cache_unavailable to the runner and let the
+// hook fall through instead.
+func TestResolveCommandCacheUnavailableFailsFast(t *testing.T) {
+	root := t.TempDir()
+	// Place a regular file where MkdirAll wants a directory: the
+	// per-target cache dir creation will fail with ENOTDIR.
+	blocker := filepath.Join(root, "ccgate")
+	if err := os.WriteFile(blocker, []byte("not a dir"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_CACHE_HOME", root)
+
+	helperRan := filepath.Join(t.TempDir(), "helper-ran")
+	cmd := helperScript(t, `touch '`+helperRan+`'; printf '{"key":"sk-x","expires_at":"`+
+		time.Now().Add(2*time.Hour).UTC().Format(time.RFC3339)+`"}'`)
+
+	res, err := Resolve(context.Background(), opts(cmd))
+	if err == nil {
+		t.Fatalf("resolve: want error, got %+v", res)
+	}
+	if res.Reason != ReasonCacheUnavailable {
+		t.Fatalf("reason = %q, want %q", res.Reason, ReasonCacheUnavailable)
+	}
+	if res.Source != SourceCache {
+		t.Fatalf("source = %q, want %q", res.Source, SourceCache)
+	}
+	if res.Key != "" {
+		t.Fatalf("key = %q, want empty (helper must not run)", res.Key)
+	}
+	if _, err := os.Stat(helperRan); !os.IsNotExist(err) {
+		t.Fatalf("helper ran (sentinel exists, err=%v) — must fail fast without exec", err)
+	}
+}

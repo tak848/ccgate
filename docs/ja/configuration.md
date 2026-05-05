@@ -124,7 +124,7 @@ ccgate codex  metrics --days 7         # codex 側も同 shape
 
 `ft_kind` は LLM (またはランタイム) が fallthrough を返したときに埋まり、どの fallback path が発火したかを示します (`llm`, `api_unusable`, `no_apikey`, `credential_unavailable`, `unknown_provider`, `bypass`, `dontask`, `user_interaction`)。`forced=true` は `fallthrough_strategy` が LLM `fallthrough` を `decision` に promote したことを意味します。
 
-`credential_source` は `ft_kind=credential_unavailable` のときだけ埋まります。keystore のどの段階で credential 解決が起きた / 失敗したかを示し (現状は `command` / `file` / `cache` / `lock`)、同じ `reason` を発生源別に集計するのに使えます。値の集合は open: 将来 OAuth refresh 経路や Windows ネイティブ backend が増えると新しい値が増えうるので、この field を parse する側は固定 enum で validation せず、未知の短い文字列を許容してください。
+`credential_source` は `ft_kind=credential_unavailable` のときだけ埋まります。keystore のどの段階で credential 解決が起きた / 失敗したかを示し (現状は `exec` / `file` / `cache` / `lock`、`auth.type=exec` の helper exec 経路と表記を揃えています)、同じ `reason` を発生源別に集計するのに使えます。値の集合は open: 将来 OAuth refresh 経路や Windows ネイティブ backend が増えると新しい値が増えうるので、この field を parse する側は固定 enum で validation せず、未知の短い文字列を許容してください。
 
 `reason` の意味は `ft_kind` で文脈が変わります:
 

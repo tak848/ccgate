@@ -124,7 +124,7 @@ ccgate codex  metrics --days 7         # same shape, codex side
 
 `ft_kind` is filled when the LLM returned (or the runtime forced) a fallthrough; the value tells you which fallback path fired (`llm`, `api_unusable`, `no_apikey`, `credential_unavailable`, `unknown_provider`, `bypass`, `dontask`, `user_interaction`). `forced=true` means `fallthrough_strategy` promoted an LLM `fallthrough` into the recorded `decision`.
 
-`credential_source` is set only when `ft_kind=credential_unavailable`. It carries the keystore stage that produced (or failed to produce) the credential — currently `command` / `file` / `cache` / `lock` — so the same `reason` can be grouped by where it actually broke. The set is open: future credential paths (e.g. an `OAuth refresh` stage, a Windows native backend) may add new values, so consumers parsing this field should treat it as a free-form short string and tolerate unknown values rather than enum-validate it.
+`credential_source` is set only when `ft_kind=credential_unavailable`. It carries the keystore stage that produced (or failed to produce) the credential — currently `exec` / `file` / `cache` / `lock` (matching `auth.type=exec` for the helper-exec path) — so the same `reason` can be grouped by where it actually broke. The set is open: future credential paths (e.g. an `OAuth refresh` stage, a Windows native backend) may add new values, so consumers parsing this field should treat it as a free-form short string and tolerate unknown values rather than enum-validate it.
 
 The `reason` field meaning depends on `ft_kind`:
 

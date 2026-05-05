@@ -12,6 +12,7 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -96,7 +97,7 @@ func TestDecideProviderErrorMatrix(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			cfg := buildTestConfig(tc.authType)
+			cfg := buildTestConfig(t, tc.authType)
 			fake := &fakeProvider{err: tc.err}
 			ro := runtimeOptions{
 				targetName:  "claude",
@@ -135,7 +136,8 @@ func TestDecideProviderErrorMatrix(t *testing.T) {
 // fields are populated so resolveAPIKey can produce a credential
 // without spinning up a real helper; the env path leaves Auth nil
 // and relies on the test setting CCGATE_OPENAI_API_KEY itself.
-func buildTestConfig(authType string) config.Config {
+func buildTestConfig(t *testing.T, authType string) config.Config {
+	t.Helper()
 	cfg := config.Default()
 	cfg.Provider.Name = "openai"
 	cfg.Provider.Model = "gpt-test"
@@ -147,13 +149,15 @@ func buildTestConfig(authType string) config.Config {
 		}
 	case "file":
 		// File body is a plain string with no expires_at so the
-		// file resolver returns it verbatim.
-		f, _ := os.CreateTemp("", "ccgate-fake-key-*")
-		_, _ = f.WriteString("sk-file")
-		_ = f.Close()
+		// file resolver returns it verbatim. t.TempDir cleans up
+		// for us so we don't leak fake-credential files into /tmp.
+		path := filepath.Join(t.TempDir(), "key")
+		if err := os.WriteFile(path, []byte("sk-file"), 0o600); err != nil {
+			t.Fatalf("write fake key: %v", err)
+		}
 		cfg.Provider.Auth = &config.AuthConfig{
 			Type: config.AuthTypeFile,
-			Path: f.Name(),
+			Path: path,
 		}
 	}
 	return cfg
@@ -168,7 +172,7 @@ func buildTestConfig(authType string) config.Config {
 func TestDecideRedactsRawErrorBody(t *testing.T) {
 	t.Setenv("CCGATE_OPENAI_API_KEY", "sk-fake")
 
-	cfg := buildTestConfig("exec")
+	cfg := buildTestConfig(t, "exec")
 	fake := &fakeProvider{err: &openaisdk.Error{
 		StatusCode: http.StatusInternalServerError,
 	}}

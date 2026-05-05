@@ -196,7 +196,7 @@ Then `auth: { type: 'file', path: '~/.config/my-broker/anthropic.json' }`. ccgat
 
 ## Provider 401/403 behaviour
 
-When the provider rejects the credential ccgate just used, the response shape determines how ccgate reacts. ccgate extracts a secret-free error code from the SDK's structured fields (OpenAI: `Error.Code` / `Error.Type`; Anthropic: parses `RawJSON()` for `error.type`) and never logs the raw response body.
+When the provider rejects the credential ccgate just used, the HTTP status alone determines the reaction — ccgate does not parse the response body, so credentials echoed in error messages by a misbehaving proxy never reach the log.
 
 | HTTP status         | `auth.type=exec`                          | `auth.type=file`                         | env var      |
 |---------------------|-------------------------------------------|------------------------------------------|--------------|
@@ -205,7 +205,7 @@ When the provider rejects the credential ccgate just used, the response shape de
 
 The env-var path keeps the existing exit-1 behaviour on 401/403 because ccgate cannot rotate env vars; swallowing the rejection would hide a real user-side configuration error.
 
-ccgate does not currently parse the SDK error body to split 403 by error code (e.g. promoting AWS `ExpiredTokenException` to `provider_auth` while keeping `permission_error` on the regular API-error path). The supported provider paths today (anthropic-sdk-go, openai-go, gemini via openai-compat) all surface credential rejection as 401, so a status-only rule covers the common cases. Per-code 403 classification is tracked alongside Bedrock support under [#62](https://github.com/tak848/ccgate/issues/62).
+Splitting 403 by error code (e.g. promoting AWS `ExpiredTokenException` to `provider_auth` while keeping `permission_error` on the regular API-error path) is intentionally out of scope here: the supported provider paths today (anthropic-sdk-go, openai-go, gemini via openai-compat) all surface credential rejection as 401, so a status-only rule covers the common cases. Per-code 403 classification is tracked alongside Bedrock support under [#62](https://github.com/tak848/ccgate/issues/62).
 
 ## Differences from AWS `credential_process`
 
@@ -217,7 +217,7 @@ If your broker does not want callers to memoize, return JSON without `expires_at
 
 When something looks wrong:
 
-1. `tail` `ccgate.log` (`$XDG_STATE_HOME/ccgate/<target>/ccgate.log`) and look for entries with `kind=credential_unavailable`. Read the `reason`, `source` (`exec` / `file` / `cache` / `lock`), and `provider_error_code` attributes — they pinpoint which step failed.
+1. `tail` `ccgate.log` (`$XDG_STATE_HOME/ccgate/<target>/ccgate.log`) and look for entries with `kind=credential_unavailable`. Read the `reason` and `source` (`exec` / `file` / `cache` / `lock`) attributes — they pinpoint which step failed.
 2. Run `ccgate <target> metrics` and inspect the **Credential failures** section. It groups failures by `(source, reason)`.
 3. If the failure looks cache-related (`cache_parse` / `cache_read` / `cache_write` log warnings), remove `$XDG_CACHE_HOME/ccgate/<target>/api_key.*.json` to force a refresh. The sibling `*.lock` files are reused — leave them alone.
 4. If `cache_key_invalid` keeps firing, check that the env var your `auth.cache_key` references is set in the hook's environment (not just in your shell). Hooks inherit the environment of the upstream tool — Claude Code / Codex CLI — which may not source the same dotfiles.

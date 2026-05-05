@@ -96,17 +96,16 @@ func resolveCommand(ctx context.Context, opts Options) (Result, error) {
 	ctx, cancel := context.WithTimeout(ctx, opts.CommandTimeout)
 	defer cancel()
 
-	cachePath, cacheErr := cachePath(opts)
-	if cacheErr != nil {
-		// cachePath only fails when we cannot derive the user's home
-		// dir, which is also where helper output would have nowhere
-		// to land. Continue cacheless.
-		slog.Warn("keystore: cache path unavailable, running helper without cache",
-			"reason", string(ReasonCacheUnavailable),
-			"source", string(SourceCache),
-			"error", cacheErr,
-		)
-		return execHelperOnly(ctx, opts)
+	// Fail fast if the cache subsystem is unavailable: without a
+	// sibling lock file every concurrent hook fire would hit the
+	// helper in parallel, which single-valid-key brokers handle by
+	// revoking the older credential. We'd rather surface
+	// cache_unavailable to the runner than silently degrade into a
+	// credential thrash.
+	cachePath, err := cachePath(opts)
+	if err != nil {
+		return Result{Reason: ReasonCacheUnavailable, Source: SourceCache},
+			fmt.Errorf("cache path unavailable: %w", err)
 	}
 
 	// Fast path: cache hit, no lock.
@@ -116,28 +115,17 @@ func resolveCommand(ctx context.Context, opts Options) (Result, error) {
 
 	cacheDir := filepath.Dir(cachePath)
 	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
-		slog.Warn("keystore: cache dir mkdir failed, running helper without cache",
-			"reason", string(ReasonCacheUnavailable),
-			"source", string(SourceCache),
-			"path", cacheDir,
-			"error", err,
-		)
-		return execHelperOnly(ctx, opts)
+		return Result{Reason: ReasonCacheUnavailable, Source: SourceCache},
+			fmt.Errorf("cache dir mkdir %s: %w", cacheDir, err)
 	}
 	// MkdirAll does not normalise permissions on existing dirs, so a
 	// pre-existing 0755 cache dir from an older ccgate version (or
 	// from an unrelated tool that happens to share `ccgate/`) would
 	// leak the cache file into world-readable territory. Tighten it
-	// here. Best-effort: chmod failure (e.g. dir owned by another
-	// user) goes through the cacheless degraded path.
+	// here.
 	if err := os.Chmod(cacheDir, 0o700); err != nil {
-		slog.Warn("keystore: cache dir chmod failed, running helper without cache",
-			"reason", string(ReasonCacheUnavailable),
-			"source", string(SourceCache),
-			"path", cacheDir,
-			"error", err,
-		)
-		return execHelperOnly(ctx, opts)
+		return Result{Reason: ReasonCacheUnavailable, Source: SourceCache},
+			fmt.Errorf("cache dir chmod %s: %w", cacheDir, err)
 	}
 
 	// Refresh path: take an exclusive non-blocking flock on a
@@ -243,23 +231,6 @@ func resolveFile(opts Options) (Result, error) {
 		return Result{Reason: reason, Source: SourceFile}, err
 	}
 	return Result{Key: payload.Key, Source: SourceFile}, nil
-}
-
-// execHelperOnly runs the helper without ever touching the cache.
-// Used when the cache subsystem is unavailable (mkdir failed, no
-// home dir, ...) so the hook still produces a credential — just
-// without the memoization benefit. Concurrent fires will all hit
-// the helper, which is the price for "the cache is broken but the
-// hook still works".
-func execHelperOnly(ctx context.Context, opts Options) (Result, error) {
-	payload, reason, err := execHelper(ctx, opts)
-	if err != nil {
-		return Result{Reason: reason, Source: SourceExec}, err
-	}
-	if reason, err := checkFresh(payload, opts.RefreshMargin); err != nil {
-		return Result{Reason: reason, Source: SourceExec}, err
-	}
-	return Result{Key: payload.Key, Source: SourceExec}, nil
 }
 
 // readCacheValid is the lock-free fast path. We accept any of:
