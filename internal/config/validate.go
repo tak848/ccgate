@@ -19,32 +19,8 @@ func (c Config) Validate() error {
 	if c.Provider.TimeoutMS != nil && *c.Provider.TimeoutMS < 0 {
 		errs = append(errs, fmt.Errorf("provider.timeout_ms must not be negative, got %d", *c.Provider.TimeoutMS))
 	}
-	if err := validateAPIKeyFile(c.Provider.APIKeyFile); err != nil {
+	if err := validateAuth(c.Provider.Auth); err != nil {
 		errs = append(errs, err)
-	}
-	// Refresh margin: must parse, non-negative. "0s" is a meaningful
-	// "no early refresh" setting so we accept it; negative values
-	// would silently disable the cache, so reject them up front.
-	if v := strings.TrimSpace(c.Provider.APIKeyRefreshMargin); v != "" {
-		d, err := time.ParseDuration(v)
-		switch {
-		case err != nil:
-			errs = append(errs, fmt.Errorf("provider.api_key_refresh_margin %q: %w", v, err))
-		case d < 0:
-			errs = append(errs, fmt.Errorf("provider.api_key_refresh_margin must not be negative, got %s", d))
-		}
-	}
-	// Command timeout: must parse and be strictly positive. "0s"
-	// would cause every helper exec to time out instantly and wedge
-	// the hot path, so reject it at config time.
-	if v := strings.TrimSpace(c.Provider.APIKeyCommandTimeout); v != "" {
-		d, err := time.ParseDuration(v)
-		switch {
-		case err != nil:
-			errs = append(errs, fmt.Errorf("provider.api_key_command_timeout %q: %w", v, err))
-		case d <= 0:
-			errs = append(errs, fmt.Errorf("provider.api_key_command_timeout must be positive, got %s", d))
-		}
 	}
 	if c.LogMaxSize != nil && *c.LogMaxSize < 0 {
 		errs = append(errs, fmt.Errorf("log_max_size must not be negative, got %d", *c.LogMaxSize))
@@ -63,24 +39,116 @@ func (c Config) Validate() error {
 	return errors.Join(errs...)
 }
 
-// validateAPIKeyFile rejects relative paths and the bare home
+// validateAuth enforces the discriminated-union shape of provider.auth.
+//
+// Rules per type:
+//
+//   - type=exec: command required (non-empty after trim); refresh_margin
+//     / timeout / cache_key are optional. path is forbidden — it would
+//     come along with a different type.
+//   - type=file: path required (absolute or `~/`-prefixed; bare `~`
+//     points at the home dir itself, not a file, so it's rejected);
+//     refresh_margin is allowed as a minimum-remaining-TTL guard;
+//     command / timeout / cache_key are forbidden (file-mode has no
+//     helper exec to time out, no cache to salt).
+//   - type unknown / empty: rejected.
+//
+// Auth omitted entirely (nil) means env-var fallback, which Validate
+// always accepts here — the resolution path is exercised in runner.
+func validateAuth(a *AuthConfig) error {
+	if a == nil {
+		return nil
+	}
+	switch a.Type {
+	case AuthTypeExec:
+		return validateAuthExec(a)
+	case AuthTypeFile:
+		return validateAuthFile(a)
+	case "":
+		return fmt.Errorf("provider.auth.type must be set to %q or %q", AuthTypeExec, AuthTypeFile)
+	default:
+		return fmt.Errorf("provider.auth.type %q is not supported (allowed: %q, %q)",
+			a.Type, AuthTypeExec, AuthTypeFile)
+	}
+}
+
+func validateAuthExec(a *AuthConfig) error {
+	var errs []error
+	if strings.TrimSpace(a.Command) == "" {
+		errs = append(errs, fmt.Errorf("provider.auth.command must not be empty when type=%q", AuthTypeExec))
+	}
+	if a.Path != "" {
+		errs = append(errs, fmt.Errorf("provider.auth.path is only allowed when type=%q", AuthTypeFile))
+	}
+	if v := strings.TrimSpace(a.RefreshMargin); v != "" {
+		d, err := time.ParseDuration(v)
+		switch {
+		case err != nil:
+			errs = append(errs, fmt.Errorf("provider.auth.refresh_margin %q: %w", v, err))
+		case d < 0:
+			errs = append(errs, fmt.Errorf("provider.auth.refresh_margin must not be negative, got %s", d))
+		}
+	}
+	if v := strings.TrimSpace(a.Timeout); v != "" {
+		d, err := time.ParseDuration(v)
+		switch {
+		case err != nil:
+			errs = append(errs, fmt.Errorf("provider.auth.timeout %q: %w", v, err))
+		case d <= 0:
+			errs = append(errs, fmt.Errorf("provider.auth.timeout must be positive, got %s", d))
+		}
+	}
+	// cache_key: any string accepted (including ones with `${VAR}`
+	// expansions). Env resolution happens at hot-path time in
+	// AuthConfig.ExpandedCacheKey, not here — Validate stays a pure
+	// error layer with no env / IO side effects.
+	return errors.Join(errs...)
+}
+
+func validateAuthFile(a *AuthConfig) error {
+	var errs []error
+	if err := validateAuthPath(a.Path); err != nil {
+		errs = append(errs, err)
+	}
+	if a.Command != "" {
+		errs = append(errs, fmt.Errorf("provider.auth.command is only allowed when type=%q", AuthTypeExec))
+	}
+	if a.Timeout != "" {
+		errs = append(errs, fmt.Errorf("provider.auth.timeout is only allowed when type=%q (Go cannot impose a hard read deadline on regular files)", AuthTypeExec))
+	}
+	if a.CacheKey != "" {
+		errs = append(errs, fmt.Errorf("provider.auth.cache_key is only allowed when type=%q (file paths separate themselves)", AuthTypeExec))
+	}
+	if v := strings.TrimSpace(a.RefreshMargin); v != "" {
+		d, err := time.ParseDuration(v)
+		switch {
+		case err != nil:
+			errs = append(errs, fmt.Errorf("provider.auth.refresh_margin %q: %w", v, err))
+		case d < 0:
+			errs = append(errs, fmt.Errorf("provider.auth.refresh_margin must not be negative, got %s", d))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// validateAuthPath rejects relative paths and the bare home
 // directory. The config loader does not pass the config file's
-// location into ProviderConfig, so a relative path here would have
-// no well-defined base — surface that at validate time instead of
+// location into AuthConfig, so a relative path here would have no
+// well-defined base — surface that at validate time instead of
 // guessing later. A bare "~" expands to the home directory itself
 // rather than a credential file, which would consistently fail at
 // read time, so reject it up front as the deterministic
 // misconfiguration it is.
-func validateAPIKeyFile(path string) error {
+func validateAuthPath(path string) error {
 	v := strings.TrimSpace(path)
 	if v == "" {
-		return nil
+		return fmt.Errorf("provider.auth.path must not be empty when type=%q", AuthTypeFile)
 	}
 	if v == "~" {
-		return fmt.Errorf("provider.api_key_file must point at a file, got bare %q", v)
+		return fmt.Errorf("provider.auth.path must point at a file, got bare %q", v)
 	}
 	if strings.HasPrefix(v, "/") || strings.HasPrefix(v, "~/") {
 		return nil
 	}
-	return fmt.Errorf("provider.api_key_file %q must be an absolute path or start with ~/", v)
+	return fmt.Errorf("provider.auth.path %q must be an absolute path or start with ~/", v)
 }

@@ -12,6 +12,9 @@ import (
 
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	jsonnet "github.com/google/go-jsonnet"
+	"github.com/google/go-jsonnet/ast"
+	"github.com/invopop/jsonschema"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
 
 	"github.com/tak848/ccgate/internal/gitutil"
 	"github.com/tak848/ccgate/internal/llm"
@@ -26,18 +29,27 @@ const (
 	BaseConfigName        = "ccgate.jsonnet"
 	LocalConfigName       = "ccgate.local.jsonnet"
 
-	// DefaultAPIKeyRefreshMargin is the early-refresh slack used when
+	// DefaultAuthRefreshMargin is the early-refresh slack used when
 	// deciding whether a cached helper credential is still valid:
 	// `now + margin < expires_at` keeps the cache, anything else
 	// triggers a refresh. Picked at 30s as a balance between burning
 	// the helper too often and exposing the SDK to a key that expires
 	// mid-request.
-	DefaultAPIKeyRefreshMargin = 30 * time.Second
-	// DefaultAPIKeyCommandTimeout caps the hot-path cost of resolving
-	// a credential (lock acquisition + helper exec). 5s is enough for
-	// most STS / OAuth-style helpers while still bounding hook latency
-	// when something is wrong upstream.
-	DefaultAPIKeyCommandTimeout = 5 * time.Second
+	DefaultAuthRefreshMargin = 30 * time.Second
+	// DefaultAuthCommandTimeout caps the hot-path cost of resolving a
+	// credential through `auth.type=exec` (lock acquisition + helper
+	// exec). 5s is enough for most STS / OAuth-style helpers while
+	// still bounding hook latency when something is wrong upstream.
+	// `auth.type=file` does not use this timeout — Go's
+	// os.File.SetDeadline is not supported on regular files, so the
+	// file path relies on a local-FS best-effort contract instead.
+	DefaultAuthCommandTimeout = 5 * time.Second
+
+	// AuthTypeExec / AuthTypeFile are the only AuthConfig.Type values
+	// accepted in v0.x. Future siblings (e.g. Workload Identity
+	// Federation) extend this list in their own PRs.
+	AuthTypeExec = "exec"
+	AuthTypeFile = "file"
 )
 
 // FallthroughStrategy* aliases re-export the canonical values from
@@ -99,42 +111,94 @@ type ProviderConfig struct {
 	//                   stop at the host root (e.g. "https://my-proxy").
 	// Empty value uses the SDK default.
 	BaseURL string `json:"base_url,omitempty"`
-	// APIKeyCommand is a shell command (run via `/bin/sh -c`) that
-	// prints the API key on stdout. The command is exec'd on the hot
-	// path of every hook fire that is missing a cached credential, so
-	// it should be fast and side-effect free. Output formats:
-	//   - JSON object `{"version":1,"key":"...","expires_at":"<RFC3339>"}`:
-	//     parsed strictly. With a future `expires_at`, the result is
-	//     memoized to a per-target cache file under
-	//     $XDG_CACHE_HOME/ccgate/<target>/ and refreshed early via
-	//     APIKeyRefreshMargin.
-	//   - Plain (non-JSON) stdout: trimmed and returned as-is, no
-	//     caching. Intended for low-frequency or experimental setups.
-	// Helper failures fall through with kind=credential_unavailable
-	// rather than falling back to env vars (silent fallback hides
-	// configuration errors). Unix-only.
-	APIKeyCommand string `json:"api_key_command,omitempty"`
-	// APIKeyFile is the absolute (or `~/`-prefixed) path of a file
-	// whose contents are the API key, in the same JSON / plain string
-	// shape as APIKeyCommand. Read on every hook fire. Used when
-	// APIKeyCommand is empty, intended for setups where an external
-	// rotator (cron / launchd / systemd timer) writes the file
-	// atomically on its own schedule, so the hook itself never exec's
-	// a helper. Unix-only.
-	APIKeyFile string `json:"api_key_file,omitempty"`
-	// APIKeyRefreshMargin is parsed via time.ParseDuration. Cache
-	// entries are considered stale once `now + margin >= expires_at`,
-	// which forces a refresh through APIKeyCommand. Empty string
-	// means DefaultAPIKeyRefreshMargin. Negative values are rejected
-	// at validate time; "0s" is allowed and means "no early refresh".
-	APIKeyRefreshMargin string `json:"api_key_refresh_margin,omitempty"`
-	// APIKeyCommandTimeout is parsed via time.ParseDuration and caps
-	// the hot-path cost of running APIKeyCommand (including any flock
-	// retry). Empty string means DefaultAPIKeyCommandTimeout.
-	// Non-positive values are rejected at validate time so a
-	// misconfigured "0s" cannot wedge every hook fire.
-	APIKeyCommandTimeout string `json:"api_key_command_timeout,omitempty"`
-	TimeoutMS            *int   `json:"timeout_ms,omitempty"`
+	// Auth selects an alternative credential source for the provider.
+	// When nil, ccgate reads the credential from the regular env vars
+	// (`$CCGATE_<PROVIDER>_API_KEY` then `$<PROVIDER>_API_KEY`). When
+	// set, env-var fallback is disabled — a misbehaving helper / file
+	// surfaces as `credential_unavailable` instead of silently going
+	// back to env, which would mask configuration errors.
+	//
+	// See AuthConfig for the discriminated union of credential
+	// sources (`type=exec` shell helper, `type=file` rotator file).
+	Auth      *AuthConfig `json:"auth,omitempty"`
+	TimeoutMS *int        `json:"timeout_ms,omitempty"`
+}
+
+// AuthConfig is the discriminated union that describes how to obtain
+// a short-lived / rotating credential without going through env vars.
+// `Type` selects the branch; the other fields are only meaningful for
+// the matching branch and validate() rejects fields set on the wrong
+// branch.
+//
+// JSON shape (jsonnet):
+//
+//	auth: {
+//	  type: 'exec',
+//	  command: '/usr/local/bin/my-broker --provider anthropic',
+//	  refresh_margin: '60s',  // optional
+//	  timeout: '5s',          // optional
+//	  cache_key: '${AWS_PROFILE}',  // optional
+//	}
+//
+//	auth: {
+//	  type: 'file',
+//	  path: '~/.config/my-broker/anthropic.json',
+//	  refresh_margin: '60s',  // optional
+//	}
+//
+// Helper output is the same shape on both branches:
+//   - JSON `{"key":"...","expires_at":"<RFC3339>"}`. With a future
+//     `expires_at`, the result is memoized for `type=exec` to a
+//     per-target cache file under $XDG_CACHE_HOME/ccgate/<target>/
+//     and refreshed early via RefreshMargin. `type=file` does not
+//     cache (the rotator owns refresh).
+//   - Plain (non-JSON) stdout: trimmed single line, returned as-is
+//     with no caching. Intended for experimental / low-frequency
+//     setups; multi-line plain output is rejected.
+//
+// Unix only. On non-Unix builds the runner falls through with
+// `unsupported_platform`; users who do not configure `auth` keep
+// using the env-var path unchanged.
+type AuthConfig struct {
+	// Type is the discriminator. Allowed values: AuthTypeExec ("exec")
+	// or AuthTypeFile ("file"). Validate rejects unknown values.
+	Type string `json:"type"`
+	// Command is the shell command (run via `/bin/sh -c`) for
+	// type=exec. Required when type=exec, forbidden otherwise.
+	Command string `json:"command,omitempty"`
+	// Path is the absolute (or `~/`-prefixed) file path for type=file.
+	// Required when type=file, forbidden otherwise. Local regular
+	// file only — NFS / FUSE / keychain mounts are unsupported by
+	// contract because Go's os.File.SetDeadline does not apply to
+	// regular files.
+	Path string `json:"path,omitempty"`
+	// RefreshMargin is parsed via time.ParseDuration. Empty means
+	// DefaultAuthRefreshMargin. Negative values are rejected at
+	// validate time; "0s" is allowed (means "no early refresh" for
+	// type=exec, "no minimum-remaining-TTL guard" for type=file).
+	// For type=exec, cache entries are considered stale once
+	// `now + margin >= expires_at`, forcing a refresh. For type=file,
+	// the same threshold is applied to file output as a minimum
+	// remaining TTL (cache-less, but still rejects credentials that
+	// would race the next API call).
+	RefreshMargin string `json:"refresh_margin,omitempty"`
+	// Timeout caps the hot-path cost of running Command (including
+	// any flock retry). Empty means DefaultAuthCommandTimeout. Only
+	// valid for type=exec; rejected for type=file (Go cannot impose
+	// a hard read deadline on regular files). Non-positive values
+	// are rejected at validate time.
+	Timeout string `json:"timeout,omitempty"`
+	// CacheKey is a secret-free salt that contributes to the
+	// fingerprint of the on-disk cache file. Use it when a single
+	// `auth.command` string returns different credentials per
+	// $AWS_PROFILE / $GCLOUD_ACCOUNT / etc, so each profile gets its
+	// own cache entry. The value supports `${VAR}` / `$VAR` env
+	// expansion at resolution time (custom mapping: `$$` escapes
+	// `$`, undefined env references make the resolver fall through
+	// with reason=`cache_key_invalid` to prevent typo-induced cache
+	// sharing). Only valid for type=exec; rejected for type=file
+	// (file paths separate themselves naturally).
+	CacheKey string `json:"cache_key,omitempty"`
 }
 
 // GetTimeoutMS returns the timeout in milliseconds.
@@ -146,39 +210,135 @@ func (p ProviderConfig) GetTimeoutMS() int {
 	return *p.TimeoutMS
 }
 
-// GetAPIKeyRefreshMargin returns the parsed refresh margin, falling
-// back to DefaultAPIKeyRefreshMargin when unset. Validation guarantees
-// the string parses cleanly with a non-negative duration, so this
-// method never errors at runtime. Trim whitespace before parsing so a
-// padded but otherwise-valid input ("  2m  ") matches what Validate
-// already accepted, instead of silently dropping back to the default.
-func (p ProviderConfig) GetAPIKeyRefreshMargin() time.Duration {
-	v := strings.TrimSpace(p.APIKeyRefreshMargin)
+// GetRefreshMargin returns the parsed refresh margin, falling back to
+// DefaultAuthRefreshMargin when unset. Validation guarantees the
+// string parses cleanly with a non-negative duration, so this method
+// never errors at runtime. Trim whitespace before parsing so a padded
+// but otherwise-valid input ("  2m  ") matches what Validate already
+// accepted, instead of silently dropping back to the default.
+func (a AuthConfig) GetRefreshMargin() time.Duration {
+	v := strings.TrimSpace(a.RefreshMargin)
 	if v == "" {
-		return DefaultAPIKeyRefreshMargin
+		return DefaultAuthRefreshMargin
 	}
 	d, err := time.ParseDuration(v)
 	if err != nil {
-		return DefaultAPIKeyRefreshMargin
+		return DefaultAuthRefreshMargin
 	}
 	return d
 }
 
-// GetAPIKeyCommandTimeout returns the parsed command timeout, falling
-// back to DefaultAPIKeyCommandTimeout when unset. Validation
+// GetCommandTimeout returns the parsed timeout for `auth.type=exec`,
+// falling back to DefaultAuthCommandTimeout when unset. Validation
 // guarantees a positive duration so this method never returns 0.
-// Same trim contract as GetAPIKeyRefreshMargin.
-func (p ProviderConfig) GetAPIKeyCommandTimeout() time.Duration {
-	v := strings.TrimSpace(p.APIKeyCommandTimeout)
+// Same trim contract as GetRefreshMargin.
+func (a AuthConfig) GetCommandTimeout() time.Duration {
+	v := strings.TrimSpace(a.Timeout)
 	if v == "" {
-		return DefaultAPIKeyCommandTimeout
+		return DefaultAuthCommandTimeout
 	}
 	d, err := time.ParseDuration(v)
 	if err != nil {
-		return DefaultAPIKeyCommandTimeout
+		return DefaultAuthCommandTimeout
 	}
 	return d
 }
+
+// ExpandedCacheKey resolves `auth.cache_key` against the current
+// environment. Empty CacheKey returns ("", nil).
+//
+// `${VAR}` / `$VAR` references are expanded via os.Expand with a
+// custom mapping:
+//
+//   - `$$` is treated as a literal `$` (the standard os.Getenv
+//     mapper would collapse `$$literal` to `literal`).
+//   - Other names are looked up via os.LookupEnv. A defined env
+//     variable returns its value (including the empty string).
+//   - An *undefined* env reference returns ("", error). The runner
+//     translates that to a `credential_unavailable`
+//     reason=`cache_key_invalid` fallthrough — silently collapsing
+//     to an empty salt would defeat the purpose of cache_key (which
+//     is to keep `aws sts ... --profile $AWS_PROFILE` from sharing a
+//     cache across profiles when AWS_PROFILE is unset / typoed).
+//
+// Validate intentionally does NOT call this method (it would tie
+// validation to the runtime environment); the runner calls it once
+// per hook fire when assembling keystore.Options.
+func (a AuthConfig) ExpandedCacheKey() (string, error) {
+	if a.CacheKey == "" {
+		return "", nil
+	}
+	var undefinedVar string
+	expanded := os.Expand(a.CacheKey, func(name string) string {
+		if name == "$" {
+			return "$"
+		}
+		v, ok := os.LookupEnv(name)
+		if !ok && undefinedVar == "" {
+			undefinedVar = name
+		}
+		return v
+	})
+	if undefinedVar != "" {
+		return "", fmt.Errorf("auth.cache_key references undefined env var: %s", undefinedVar)
+	}
+	return expanded, nil
+}
+
+// JSONSchema implements jsonschema.customSchemaImpl so the generated
+// schemas/{claude,codex}.schema.json present `provider.auth` as a
+// `oneOf` over the `type=exec` and `type=file` branches, mirroring
+// the validate() rules (required field per type, additionalProperties
+// false). Editor users get the same mutual-exclusion feedback that
+// runtime validate would give them at hook fire time.
+func (AuthConfig) JSONSchema() *jsonschema.Schema {
+	return &jsonschema.Schema{
+		Title:       "auth",
+		Description: "Discriminated union selecting the credential source for the provider.",
+		OneOf: []*jsonschema.Schema{
+			authExecBranchSchema(),
+			authFileBranchSchema(),
+		},
+	}
+}
+
+func authExecBranchSchema() *jsonschema.Schema {
+	props := orderedmap.New[string, *jsonschema.Schema]()
+	props.Set("type", &jsonschema.Schema{Type: "string", Const: AuthTypeExec})
+	props.Set("command", &jsonschema.Schema{Type: "string", MinLength: ptr(uint64(1)), Description: "Shell command run via `/bin/sh -c`. Stdout is the credential."})
+	props.Set("refresh_margin", durationSchema("Cache early-refresh threshold + minimum remaining TTL guard for fresh credentials."))
+	props.Set("timeout", durationSchema("Hot-path upper bound for one helper invocation."))
+	props.Set("cache_key", &jsonschema.Schema{Type: "string", Description: "Secret-free salt for separating cache files across env / profile contexts. Supports ${VAR} env expansion."})
+	return &jsonschema.Schema{
+		Type:                 "object",
+		Required:             []string{"type", "command"},
+		Properties:           props,
+		AdditionalProperties: jsonschema.FalseSchema,
+	}
+}
+
+func authFileBranchSchema() *jsonschema.Schema {
+	props := orderedmap.New[string, *jsonschema.Schema]()
+	props.Set("type", &jsonschema.Schema{Type: "string", Const: AuthTypeFile})
+	props.Set("path", &jsonschema.Schema{Type: "string", MinLength: ptr(uint64(1)), Description: "Absolute or ~/-prefixed file path. Read every hook fire."})
+	props.Set("refresh_margin", durationSchema("Minimum remaining TTL guard for file output."))
+	return &jsonschema.Schema{
+		Type:                 "object",
+		Required:             []string{"type", "path"},
+		Properties:           props,
+		AdditionalProperties: jsonschema.FalseSchema,
+	}
+}
+
+func durationSchema(desc string) *jsonschema.Schema {
+	return &jsonschema.Schema{
+		Type:        "string",
+		Pattern:     `^[0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$`,
+		Description: desc + " Parsed via time.ParseDuration (e.g. \"30s\", \"5m\").",
+	}
+}
+
+func ptr[T any](v T) *T { return &v }
 
 // Default returns a Config seeded with the provider/log/metrics
 // defaults common to every target. LogPath / MetricsPath are left
@@ -430,9 +590,59 @@ func safeProjectLocalConfigPaths(cwd string, relativePaths []string) []string {
 	return safe
 }
 
-func mergeConfigFile(path string, cfg *Config) error {
+// newJsonnetVM returns a jsonnet VM with ccgate's host-language
+// extensions registered. The same VM shape is used by every entry
+// point that evaluates jsonnet (file or string), so adding a new
+// helper happens in one place and stays consistent across global /
+// project / embedded layers.
+//
+// `std.native('env')(name)` returns os.Getenv(name), defaulting to an
+// empty string for undefined variables (permissive). Use this when a
+// config value should fall back to literal defaults when the env is
+// not set.
+//
+// `std.native('must_env')(name)` returns os.Getenv(name) but raises a
+// jsonnet evaluation error when the variable is unset, so misconfig
+// surfaces at config load time instead of being silently empty. This
+// is the strict variant for places where an unset env means "broken
+// config".
+//
+// Pattern follows ecspresso v2.4+ — both functions are documented in
+// docs/api-key-helper.md so users know they can use them in any
+// string field, not just `auth.cache_key`.
+func newJsonnetVM() *jsonnet.VM {
 	vm := jsonnet.MakeVM()
-	data, err := vm.EvaluateFile(path)
+	vm.NativeFunction(&jsonnet.NativeFunction{
+		Name:   "env",
+		Params: ast.Identifiers{"name"},
+		Func: func(args []any) (any, error) {
+			name, ok := args[0].(string)
+			if !ok {
+				return nil, fmt.Errorf("env: expected string name, got %T", args[0])
+			}
+			return os.Getenv(name), nil
+		},
+	})
+	vm.NativeFunction(&jsonnet.NativeFunction{
+		Name:   "must_env",
+		Params: ast.Identifiers{"name"},
+		Func: func(args []any) (any, error) {
+			name, ok := args[0].(string)
+			if !ok {
+				return nil, fmt.Errorf("must_env: expected string name, got %T", args[0])
+			}
+			v, ok := os.LookupEnv(name)
+			if !ok {
+				return nil, fmt.Errorf("must_env: undefined env var %q", name)
+			}
+			return v, nil
+		},
+	})
+	return vm
+}
+
+func mergeConfigFile(path string, cfg *Config) error {
+	data, err := newJsonnetVM().EvaluateFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return os.ErrNotExist
@@ -447,26 +657,76 @@ func mergeConfigFile(path string, cfg *Config) error {
 }
 
 func mergeConfigString(snippet string, cfg *Config) error {
-	vm := jsonnet.MakeVM()
-	data, err := vm.EvaluateAnonymousSnippet("defaults.jsonnet", snippet)
+	data, err := newJsonnetVM().EvaluateAnonymousSnippet("defaults.jsonnet", snippet)
 	if err != nil {
 		return fmt.Errorf("evaluate jsonnet snippet: %w", err)
 	}
 	return mergeConfigJSON(data, cfg)
 }
 
+// legacyAPIKeyFields lists the v0.3-and-earlier `provider.api_key_*`
+// keys that have been replaced by the `provider.auth` discriminated
+// union. We reject them at merge time with a migration message
+// instead of letting `json.Unmarshal` silently drop them, which
+// would leave a user wondering why their helper config is being
+// ignored. v0.4 is the first release that ships `provider.auth`,
+// so no compat shim is needed.
+var legacyAPIKeyFields = []string{
+	"api_key_command",
+	"api_key_file",
+	"api_key_refresh_margin",
+	"api_key_command_timeout",
+}
+
+// rejectLegacyProviderKeys scans the raw merge JSON for old
+// pre-`provider.auth` field names and returns a migration error if
+// any are present. We do this BEFORE json.Unmarshal because
+// encoding/json drops unknown struct fields silently — without this
+// guard a stale dotfile would lose its helper config and fall back
+// to env vars without the user noticing.
+func rejectLegacyProviderKeys(data []byte) error {
+	var top struct {
+		Provider json.RawMessage `json:"provider"`
+	}
+	if err := json.Unmarshal(data, &top); err != nil {
+		// Don't double-report: the upstream Unmarshal will surface a
+		// proper error message for malformed input. Fall through.
+		return nil //nolint:nilerr
+	}
+	if len(top.Provider) == 0 {
+		return nil
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(top.Provider, &fields); err != nil {
+		return nil //nolint:nilerr
+	}
+	for _, k := range legacyAPIKeyFields {
+		if _, ok := fields[k]; ok {
+			return fmt.Errorf(
+				"provider.%s was removed in v0.4; migrate to provider.auth (see docs/api-key-helper.md)",
+				k,
+			)
+		}
+	}
+	return nil
+}
+
 func mergeConfigJSON(data string, cfg *Config) error {
+	if err := rejectLegacyProviderKeys([]byte(data)); err != nil {
+		return err
+	}
+
 	var override Config
 	if err := json.Unmarshal([]byte(data), &override); err != nil {
 		return fmt.Errorf("unmarshal config: %w", err)
 	}
 
 	// `provider` is a tightly-coupled block: name / model / base_url /
-	// timeout_ms describe one provider together, and per-field merge
-	// across layers produces incoherent combinations (e.g. a higher
-	// layer switching `name` while a lower layer's `base_url` for a
-	// different proxy stays stuck). When a layer specifies `provider`,
-	// replace the block atomically.
+	// timeout_ms / auth describe one provider together, and per-field
+	// merge across layers produces incoherent combinations (e.g. a
+	// higher layer switching `name` while a lower layer's `base_url`
+	// for a different proxy stays stuck). When a layer specifies
+	// `provider`, replace the block atomically.
 	var keys map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(data), &keys); err != nil {
 		return fmt.Errorf("unmarshal config keys: %w", err)

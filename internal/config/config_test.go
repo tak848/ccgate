@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -83,53 +84,69 @@ func TestValidateErrors(t *testing.T) {
 	}
 }
 
-func TestValidateAPIKeyFields(t *testing.T) {
+func TestValidateAuthFields(t *testing.T) {
 	t.Parallel()
 
-	base := func(p ProviderConfig) Config {
+	base := func(a *AuthConfig) Config {
 		// Required fields filled in so the only validation outcome we
 		// observe is whatever the table case targets.
 		return Config{Provider: ProviderConfig{
-			Name:                 "anthropic",
-			Model:                "m",
-			TimeoutMS:            intPtr(1000),
-			APIKeyCommand:        p.APIKeyCommand,
-			APIKeyFile:           p.APIKeyFile,
-			APIKeyRefreshMargin:  p.APIKeyRefreshMargin,
-			APIKeyCommandTimeout: p.APIKeyCommandTimeout,
+			Name:      "anthropic",
+			Model:     "m",
+			TimeoutMS: intPtr(1000),
+			Auth:      a,
 		}}
 	}
 
 	cases := map[string]struct {
-		provider ProviderConfig
-		wantErr  bool
+		auth    *AuthConfig
+		wantErr bool
 	}{
+		// auth omit = env var path, must validate cleanly.
+		"omit auth": {auth: nil, wantErr: false},
+
+		// type=exec: command required, refresh_margin/timeout/cache_key optional.
+		"exec ok":                 {auth: &AuthConfig{Type: "exec", Command: "echo"}, wantErr: false},
+		"exec missing command":    {auth: &AuthConfig{Type: "exec"}, wantErr: true},
+		"exec with path":          {auth: &AuthConfig{Type: "exec", Command: "x", Path: "y"}, wantErr: true},
+		"exec with cache_key":     {auth: &AuthConfig{Type: "exec", Command: "x", CacheKey: "prod"}, wantErr: false},
+		"exec with cache_key var": {auth: &AuthConfig{Type: "exec", Command: "x", CacheKey: "${AWS_PROFILE}"}, wantErr: false},
+
 		// refresh_margin: >= 0 accepted, "0s" allowed, negative/garbage rejected.
-		"refresh_margin empty defaults": {provider: ProviderConfig{}, wantErr: false},
-		"refresh_margin 30s":            {provider: ProviderConfig{APIKeyRefreshMargin: "30s"}, wantErr: false},
-		"refresh_margin 0s allowed":     {provider: ProviderConfig{APIKeyRefreshMargin: "0s"}, wantErr: false},
-		"refresh_margin negative":       {provider: ProviderConfig{APIKeyRefreshMargin: "-5s"}, wantErr: true},
-		"refresh_margin garbage":        {provider: ProviderConfig{APIKeyRefreshMargin: "garbage"}, wantErr: true},
+		"refresh_margin 30s":        {auth: &AuthConfig{Type: "exec", Command: "x", RefreshMargin: "30s"}, wantErr: false},
+		"refresh_margin 0s allowed": {auth: &AuthConfig{Type: "exec", Command: "x", RefreshMargin: "0s"}, wantErr: false},
+		"refresh_margin negative":   {auth: &AuthConfig{Type: "exec", Command: "x", RefreshMargin: "-5s"}, wantErr: true},
+		"refresh_margin garbage":    {auth: &AuthConfig{Type: "exec", Command: "x", RefreshMargin: "garbage"}, wantErr: true},
 
-		// command_timeout: > 0 required, "0s" rejected (would wedge hot path).
-		"command_timeout empty defaults": {provider: ProviderConfig{}, wantErr: false},
-		"command_timeout 5s":             {provider: ProviderConfig{APIKeyCommandTimeout: "5s"}, wantErr: false},
-		"command_timeout 0s rejected":    {provider: ProviderConfig{APIKeyCommandTimeout: "0s"}, wantErr: true},
-		"command_timeout negative":       {provider: ProviderConfig{APIKeyCommandTimeout: "-1s"}, wantErr: true},
-		"command_timeout garbage":        {provider: ProviderConfig{APIKeyCommandTimeout: "garbage"}, wantErr: true},
+		// timeout: > 0 required, "0s" rejected (would wedge hot path).
+		"timeout 5s":          {auth: &AuthConfig{Type: "exec", Command: "x", Timeout: "5s"}, wantErr: false},
+		"timeout 0s rejected": {auth: &AuthConfig{Type: "exec", Command: "x", Timeout: "0s"}, wantErr: true},
+		"timeout negative":    {auth: &AuthConfig{Type: "exec", Command: "x", Timeout: "-1s"}, wantErr: true},
+		"timeout garbage":     {auth: &AuthConfig{Type: "exec", Command: "x", Timeout: "garbage"}, wantErr: true},
 
-		// api_key_file: absolute or ~/ accepted, relative / bare ~
-		// (== home dir, not a file) rejected.
-		"file abs":      {provider: ProviderConfig{APIKeyFile: "/etc/ccgate/key"}, wantErr: false},
-		"file home":     {provider: ProviderConfig{APIKeyFile: "~/.ccgate/key"}, wantErr: false},
-		"file bare ~":   {provider: ProviderConfig{APIKeyFile: "~"}, wantErr: true},
-		"file relative": {provider: ProviderConfig{APIKeyFile: "./key"}, wantErr: true},
-		"file bare":     {provider: ProviderConfig{APIKeyFile: "key"}, wantErr: true},
+		// type=file: path required (absolute or ~/), command/timeout/cache_key forbidden,
+		// refresh_margin allowed (minimum-remaining-TTL guard).
+		"file abs":            {auth: &AuthConfig{Type: "file", Path: "/etc/ccgate/key"}, wantErr: false},
+		"file home":           {auth: &AuthConfig{Type: "file", Path: "~/.ccgate/key"}, wantErr: false},
+		"file bare ~":         {auth: &AuthConfig{Type: "file", Path: "~"}, wantErr: true},
+		"file relative":       {auth: &AuthConfig{Type: "file", Path: "./key"}, wantErr: true},
+		"file bare":           {auth: &AuthConfig{Type: "file", Path: "key"}, wantErr: true},
+		"file missing path":   {auth: &AuthConfig{Type: "file"}, wantErr: true},
+		"file with command":   {auth: &AuthConfig{Type: "file", Path: "/k", Command: "x"}, wantErr: true},
+		"file with timeout":   {auth: &AuthConfig{Type: "file", Path: "/k", Timeout: "5s"}, wantErr: true},
+		"file with cache_key": {auth: &AuthConfig{Type: "file", Path: "/k", CacheKey: "x"}, wantErr: true},
+		"file refresh_margin": {auth: &AuthConfig{Type: "file", Path: "/k", RefreshMargin: "60s"}, wantErr: false},
+
+		// Unknown type values are rejected — keeps the discriminator
+		// closed so editors and validate agree on what's accepted.
+		"unknown type":   {auth: &AuthConfig{Type: "wif"}, wantErr: true},
+		"empty type":     {auth: &AuthConfig{Type: ""}, wantErr: true},
+		"missing fields": {auth: &AuthConfig{Type: "exec"}, wantErr: true},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			err := base(tc.provider).Validate()
+			err := base(tc.auth).Validate()
 			if tc.wantErr && err == nil {
 				t.Fatal("expected validation error, got nil")
 			}
@@ -140,24 +157,100 @@ func TestValidateAPIKeyFields(t *testing.T) {
 	}
 }
 
-func TestProviderGetAPIKeyDurationDefaults(t *testing.T) {
+func TestAuthDurationDefaults(t *testing.T) {
 	t.Parallel()
 
-	p := ProviderConfig{}
-	if got := p.GetAPIKeyRefreshMargin(); got != DefaultAPIKeyRefreshMargin {
-		t.Fatalf("GetAPIKeyRefreshMargin() default = %s, want %s", got, DefaultAPIKeyRefreshMargin)
+	a := AuthConfig{}
+	if got := a.GetRefreshMargin(); got != DefaultAuthRefreshMargin {
+		t.Fatalf("GetRefreshMargin() default = %s, want %s", got, DefaultAuthRefreshMargin)
 	}
-	if got := p.GetAPIKeyCommandTimeout(); got != DefaultAPIKeyCommandTimeout {
-		t.Fatalf("GetAPIKeyCommandTimeout() default = %s, want %s", got, DefaultAPIKeyCommandTimeout)
+	if got := a.GetCommandTimeout(); got != DefaultAuthCommandTimeout {
+		t.Fatalf("GetCommandTimeout() default = %s, want %s", got, DefaultAuthCommandTimeout)
 	}
 
-	p.APIKeyRefreshMargin = "1m30s"
-	p.APIKeyCommandTimeout = "12s"
-	if got := p.GetAPIKeyRefreshMargin(); got != 90*time.Second {
-		t.Fatalf("GetAPIKeyRefreshMargin() = %s, want 90s", got)
+	a.RefreshMargin = "1m30s"
+	a.Timeout = "12s"
+	if got := a.GetRefreshMargin(); got != 90*time.Second {
+		t.Fatalf("GetRefreshMargin() = %s, want 90s", got)
 	}
-	if got := p.GetAPIKeyCommandTimeout(); got != 12*time.Second {
-		t.Fatalf("GetAPIKeyCommandTimeout() = %s, want 12s", got)
+	if got := a.GetCommandTimeout(); got != 12*time.Second {
+		t.Fatalf("GetCommandTimeout() = %s, want 12s", got)
+	}
+}
+
+func TestExpandedCacheKey(t *testing.T) {
+	// No t.Parallel(): subtests use t.Setenv to control the env, and
+	// Go forbids that in any test (parent or subtest) that called
+	// t.Parallel().
+
+	cases := map[string]struct {
+		cacheKey string
+		envName  string
+		envValue string
+		envSet   bool
+		want     string
+		wantErr  bool
+	}{
+		"empty":              {cacheKey: "", want: ""},
+		"literal":            {cacheKey: "prod", want: "prod"},
+		"brace defined":      {cacheKey: "${TEST_PROFILE}", envName: "TEST_PROFILE", envValue: "prod", envSet: true, want: "prod"},
+		"bare defined":       {cacheKey: "$TEST_PROFILE", envName: "TEST_PROFILE", envValue: "dev", envSet: true, want: "dev"},
+		"defined empty":      {cacheKey: "${TEST_PROFILE}", envName: "TEST_PROFILE", envValue: "", envSet: true, want: ""},
+		"undefined brace":    {cacheKey: "${TEST_UNSET}", wantErr: true},
+		"undefined bare":     {cacheKey: "$TEST_UNSET", wantErr: true},
+		"escaped dollar":     {cacheKey: "$$literal", want: "$literal"},
+		"compound":           {cacheKey: "${TEST_PROFILE}-x", envName: "TEST_PROFILE", envValue: "prod", envSet: true, want: "prod-x"},
+		"undefined compound": {cacheKey: "${TEST_DEFINED}-${TEST_UNSET}", envName: "TEST_DEFINED", envValue: "p", envSet: true, wantErr: true},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			// Cannot run in parallel: t.Setenv mutates process env.
+			if tc.envName != "" {
+				if tc.envSet {
+					t.Setenv(tc.envName, tc.envValue)
+				} else {
+					_ = os.Unsetenv(tc.envName)
+				}
+			}
+			a := AuthConfig{CacheKey: tc.cacheKey}
+			got, err := a.ExpandedCacheKey()
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error for %q, got %q", tc.cacheKey, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("ExpandedCacheKey(%q) = %q, want %q", tc.cacheKey, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRejectLegacyAPIKeyFields(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		"api_key_command":         `{"provider": {"name": "anthropic", "api_key_command": "echo"}}`,
+		"api_key_file":            `{"provider": {"name": "anthropic", "api_key_file": "/x"}}`,
+		"api_key_refresh_margin":  `{"provider": {"name": "anthropic", "api_key_refresh_margin": "30s"}}`,
+		"api_key_command_timeout": `{"provider": {"name": "anthropic", "api_key_command_timeout": "5s"}}`,
+	}
+	for name, snippet := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			cfg := Default()
+			err := mergeConfigJSON(snippet, &cfg)
+			if err == nil {
+				t.Fatalf("expected migration error for %q", name)
+			}
+			if !strings.Contains(err.Error(), "provider.auth") {
+				t.Fatalf("error %q must mention provider.auth migration", err.Error())
+			}
+		})
 	}
 }
 
@@ -260,10 +353,13 @@ func TestMergeConfigFileReplacesProviderBlock(t *testing.T) {
 		name: "openai",
 		model: "custom-model",
 		base_url: "https://proxy.example/v1",
-		api_key_command: "echo sk-test",
-		api_key_file: "/tmp/key",
-		api_key_refresh_margin: "45s",
-		api_key_command_timeout: "8s",
+		auth: {
+			type: "exec",
+			command: "echo sk-test",
+			refresh_margin: "45s",
+			timeout: "8s",
+			cache_key: "prod",
+		},
 		timeout_ms: 30000,
 	} }`
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
@@ -287,23 +383,30 @@ func TestMergeConfigFileReplacesProviderBlock(t *testing.T) {
 	if cfg.Provider.BaseURL != "https://proxy.example/v1" {
 		t.Fatalf("base_url = %q, want %q", cfg.Provider.BaseURL, "https://proxy.example/v1")
 	}
-	if cfg.Provider.APIKeyCommand != "echo sk-test" {
-		t.Fatalf("api_key_command = %q, want %q", cfg.Provider.APIKeyCommand, "echo sk-test")
+	auth := cfg.Provider.Auth
+	if auth == nil {
+		t.Fatal("auth is nil after merge")
 	}
-	if cfg.Provider.APIKeyFile != "/tmp/key" {
-		t.Fatalf("api_key_file = %q, want %q", cfg.Provider.APIKeyFile, "/tmp/key")
+	if auth.Type != "exec" {
+		t.Fatalf("auth.type = %q, want %q", auth.Type, "exec")
 	}
-	if cfg.Provider.APIKeyRefreshMargin != "45s" {
-		t.Fatalf("api_key_refresh_margin = %q, want %q", cfg.Provider.APIKeyRefreshMargin, "45s")
+	if auth.Command != "echo sk-test" {
+		t.Fatalf("auth.command = %q, want %q", auth.Command, "echo sk-test")
 	}
-	if got := cfg.Provider.GetAPIKeyRefreshMargin(); got != 45*time.Second {
-		t.Fatalf("GetAPIKeyRefreshMargin() = %s, want 45s", got)
+	if auth.RefreshMargin != "45s" {
+		t.Fatalf("auth.refresh_margin = %q, want %q", auth.RefreshMargin, "45s")
 	}
-	if cfg.Provider.APIKeyCommandTimeout != "8s" {
-		t.Fatalf("api_key_command_timeout = %q, want %q", cfg.Provider.APIKeyCommandTimeout, "8s")
+	if got := auth.GetRefreshMargin(); got != 45*time.Second {
+		t.Fatalf("GetRefreshMargin() = %s, want 45s", got)
 	}
-	if got := cfg.Provider.GetAPIKeyCommandTimeout(); got != 8*time.Second {
-		t.Fatalf("GetAPIKeyCommandTimeout() = %s, want 8s", got)
+	if auth.Timeout != "8s" {
+		t.Fatalf("auth.timeout = %q, want %q", auth.Timeout, "8s")
+	}
+	if got := auth.GetCommandTimeout(); got != 8*time.Second {
+		t.Fatalf("GetCommandTimeout() = %s, want 8s", got)
+	}
+	if auth.CacheKey != "prod" {
+		t.Fatalf("auth.cache_key = %q, want %q", auth.CacheKey, "prod")
 	}
 	if cfg.Provider.GetTimeoutMS() != 30000 {
 		t.Fatalf("timeout_ms = %d, want 30000", cfg.Provider.GetTimeoutMS())
