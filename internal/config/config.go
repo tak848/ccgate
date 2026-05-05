@@ -673,13 +673,13 @@ func mergeConfigString(snippet string, cfg *Config) error {
 	return mergeConfigJSON(data, cfg)
 }
 
-// legacyAPIKeyFields lists the v0.3-and-earlier `provider.api_key_*`
+// legacyAPIKeyFields lists the previously-proposed `provider.api_key_*`
 // keys that have been replaced by the `provider.auth` discriminated
 // union. We reject them at merge time with a migration message
 // instead of letting `json.Unmarshal` silently drop them, which
 // would leave a user wondering why their helper config is being
-// ignored. v0.4 is the first release that ships `provider.auth`,
-// so no compat shim is needed.
+// ignored. The rename happens before any release ships
+// `provider.api_key_*`, so no compat shim is needed.
 var legacyAPIKeyFields = []string{
 	"api_key_command",
 	"api_key_file",
@@ -712,7 +712,7 @@ func rejectLegacyProviderKeys(data []byte) error {
 	for _, k := range legacyAPIKeyFields {
 		if _, ok := fields[k]; ok {
 			return fmt.Errorf(
-				"provider.%s was removed in v0.4; migrate to provider.auth (see docs/api-key-helper.md)",
+				"provider.%s is no longer supported; migrate to provider.auth (see docs/api-key-helper.md, ccgate#61)",
 				k,
 			)
 		}
