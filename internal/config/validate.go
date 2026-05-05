@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 )
 
 // Validate checks Config invariants. Returns an error describing all violations.
@@ -80,23 +79,11 @@ func validateAuthExec(a *AuthConfig) error {
 	if a.Path != "" {
 		errs = append(errs, fmt.Errorf("provider.auth.path is only allowed when type=%q", AuthTypeFile))
 	}
-	if v := strings.TrimSpace(a.RefreshMargin); v != "" {
-		d, err := time.ParseDuration(v)
-		switch {
-		case err != nil:
-			errs = append(errs, fmt.Errorf("provider.auth.refresh_margin %q: %w", v, err))
-		case d < 0:
-			errs = append(errs, fmt.Errorf("provider.auth.refresh_margin must not be negative, got %s", d))
-		}
+	if a.RefreshMarginMS != nil && *a.RefreshMarginMS < 0 {
+		errs = append(errs, fmt.Errorf("provider.auth.refresh_margin_ms must not be negative, got %d", *a.RefreshMarginMS))
 	}
-	if v := strings.TrimSpace(a.Timeout); v != "" {
-		d, err := time.ParseDuration(v)
-		switch {
-		case err != nil:
-			errs = append(errs, fmt.Errorf("provider.auth.timeout %q: %w", v, err))
-		case d <= 0:
-			errs = append(errs, fmt.Errorf("provider.auth.timeout must be positive, got %s", d))
-		}
+	if a.TimeoutMS != nil && *a.TimeoutMS <= 0 {
+		errs = append(errs, fmt.Errorf("provider.auth.timeout_ms must be positive, got %d", *a.TimeoutMS))
 	}
 	// cache_key: any string accepted (including ones with `${VAR}`
 	// expansions). Env resolution happens at hot-path time in
@@ -113,20 +100,14 @@ func validateAuthFile(a *AuthConfig) error {
 	if a.Command != "" {
 		errs = append(errs, fmt.Errorf("provider.auth.command is only allowed when type=%q", AuthTypeExec))
 	}
-	if a.Timeout != "" {
-		errs = append(errs, fmt.Errorf("provider.auth.timeout is only allowed when type=%q (Go cannot impose a hard read deadline on regular files)", AuthTypeExec))
+	if a.TimeoutMS != nil {
+		errs = append(errs, fmt.Errorf("provider.auth.timeout_ms is only allowed when type=%q (Go cannot impose a hard read deadline on regular files)", AuthTypeExec))
 	}
 	if a.CacheKey != "" {
 		errs = append(errs, fmt.Errorf("provider.auth.cache_key is only allowed when type=%q (file paths separate themselves)", AuthTypeExec))
 	}
-	if v := strings.TrimSpace(a.RefreshMargin); v != "" {
-		d, err := time.ParseDuration(v)
-		switch {
-		case err != nil:
-			errs = append(errs, fmt.Errorf("provider.auth.refresh_margin %q: %w", v, err))
-		case d < 0:
-			errs = append(errs, fmt.Errorf("provider.auth.refresh_margin must not be negative, got %s", d))
-		}
+	if a.RefreshMarginMS != nil && *a.RefreshMarginMS < 0 {
+		errs = append(errs, fmt.Errorf("provider.auth.refresh_margin_ms must not be negative, got %d", *a.RefreshMarginMS))
 	}
 	return errors.Join(errs...)
 }

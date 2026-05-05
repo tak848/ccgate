@@ -17,10 +17,10 @@ helper は次のいずれかの形を stdout (もしくは `auth.type=file` の�
 
 キャッシュの扱いは経路ごとに違います:
 
-- `auth.type=exec` の場合: 未来の `expires_at` を含む JSON は target 別のキャッシュファイル ([キャッシュ](#キャッシュ) 参照) に保存し、`auth.refresh_margin` に従って期限前に更新します。`expires_at` を含まない JSON と plain string は受け付けますが **キャッシュしません** — hook が呼ばれるたびに helper を再実行します
+- `auth.type=exec` の場合: 未来の `expires_at` を含む JSON は target 別のキャッシュファイル ([キャッシュ](#キャッシュ) 参照) に保存し、`auth.refresh_margin_ms` に従って期限前に更新します。`expires_at` を含まない JSON と plain string は受け付けますが **キャッシュしません** — hook が呼ばれるたびに helper を再実行します
 - `auth.type=file` の場合: ccgate は hook が呼ばれるたびにファイルを読み直すだけで、内部キャッシュは持ちません。credential をいつ更新するかは外部 rotator の責務です
 
-`auth.refresh_margin` は **新しく取得した認証情報の最低残 TTL ガード** としても効きます (helper exec 出力 / file 中身の両方に適用)。残 TTL がマージン未満の認証情報は SDK に渡さず `expired` で fallthrough し、次回 API 呼び出しの最中に切れて 401 になる事故を防ぎます。
+`auth.refresh_margin_ms` は **新しく取得した認証情報の最低残 TTL ガード** としても効きます (helper exec 出力 / file 中身の両方に適用)。残 TTL がマージン未満の認証情報は SDK に渡さず `expired` で fallthrough し、次回 API 呼び出しの最中に切れて 401 になる事故を防ぎます。
 
 ## 設定
 
@@ -33,8 +33,8 @@ helper は次のいずれかの形を stdout (もしくは `auth.type=file` の�
     auth: {
       type: 'exec',
       command: '/usr/local/bin/my-key-broker --provider anthropic',
-      refresh_margin: '60s', // 任意、デフォルト 30s
-      timeout: '5s',         // 任意、デフォルト 5s
+      refresh_margin_ms: 60000, // 任意、デフォルト 60000
+      timeout_ms: 5000,         // 任意、デフォルト 5000
       cache_key: '${AWS_PROFILE}', // 任意、後述「アカウント分離」参照
     },
   },
@@ -47,7 +47,7 @@ helper は次のいずれかの形を stdout (もしくは `auth.type=file` の�
     auth: {
       type: 'file',
       path: '~/.config/my-broker/anthropic.json',
-      refresh_margin: '60s', // 任意、デフォルト 30s
+      refresh_margin_ms: 60000, // 任意、デフォルト 60000
     },
   },
 }
@@ -58,15 +58,15 @@ helper は次のいずれかの形を stdout (もしくは `auth.type=file` の�
 | `auth.type` | `"exec"` / `"file"` | (`auth` を書くなら必須) | 識別子。どの他フィールドが有効になるかを決める |
 | `auth.command` | string | `""` | (`type=exec` 専用、必須) `/bin/sh -c` で実行されるシェルコマンド。stdout が認証情報になる |
 | `auth.path` | string (絶対パス または `~/...`) | `""` | (`type=file` 専用、必須) ローカル regular file。中身は exec と同じ JSON / plain string |
-| `auth.refresh_margin` | duration | `"30s"` | `now + margin >= expires_at` でキャッシュを stale 扱いに (`type=exec`)。新しく取れた認証情報の最低残 TTL ガード (両 type)。`>= 0` (`0s` でガード無効化) |
-| `auth.timeout` | duration | `"5s"` | (`type=exec` 専用) helper 1 回の hot-path 上限。`> 0` |
+| `auth.refresh_margin_ms` | int (ms) | `60000` | `now + margin >= expires_at` でキャッシュを stale 扱いに (`type=exec`)。新しく取れた認証情報の最低残 TTL ガード (両 type)。`>= 0` (`0` でガード無効化) |
+| `auth.timeout_ms` | int (ms) | `5000` | (`type=exec` 専用) helper 1 回の hot-path 上限。`> 0` |
 | `auth.cache_key` | string | `""` | (`type=exec` 専用) cache fingerprint に加える secret-free な salt。`${VAR}` 形式の env 展開対応。後述「[アカウント分離](#キャッシュキーとアカウント分離)」参照 |
 
 `provider` ブロックは設定レイヤー間で **丸ごと置換** される設計のため、project-local 設定で `provider` を再掲する場合は global で書いた `auth` ブロックも忘れずに書き写してください。書き漏らすと当該プロジェクトでだけ helper 設定が静かに消えます。
 
 ### `auth.type=file` はローカル FS 専用
 
-`auth.path` は **ローカル regular file 専用の best-effort 契約** です。ローカル POSIX ファイルシステム (XFS / ext4 / APFS / HFS+) はサポート対象。NFS / SMB / FUSE / keychain mount は **明示的に非対応** — Go の `os.File.SetDeadline` は regular file には適用されず、遅延の大きいリモート mount に hard read deadline をかける手段が無いためです。認証情報読み取りに hard timeout が必須なら `auth.type=exec` (`auth.timeout` が効く) に切り替えてください。
+`auth.path` は **ローカル regular file 専用の best-effort 契約** です。ローカル POSIX ファイルシステム (XFS / ext4 / APFS / HFS+) はサポート対象。NFS / SMB / FUSE / keychain mount は **明示的に非対応** — Go の `os.File.SetDeadline` は regular file には適用されず、遅延の大きいリモート mount に hard read deadline をかける手段が無いためです。認証情報読み取りに hard timeout が必須なら `auth.type=exec` (`auth.timeout_ms` が効く) に切り替えてください。
 
 ccgate はファイルを `O_NONBLOCK` で開くので、誤って FIFO / device を指してしまった場合は早期に return します。ただし NFS が応答を返してこない regular file を指した場合は、kernel I/O の完了まで hook が固まることがあります。
 
@@ -112,7 +112,6 @@ cache fingerprint は `(target, provider.name, base_url, auth.command, auth.cach
 - `auth.command`: コマンド文字列に literal な秘密情報を **直書きしない** こと。文字列は `/bin/sh -c` に渡されるため、`ps` / `/proc/<pid>/cmdline` / 監査ログ / シェル履歴に残ります。秘密情報はファイルや keychain に置き、helper の中で読む形にしてください
 - helper の stderr 本文は `ccgate.log` には **書き出されません**。ccgate は stderr をメモリ上限のために内部 capture しますが、log には byte 数と exit error しか残しません。stderr の内容を見たい場合は ccgate のログを覗くのではなく、helper を `2>&1` 付きで手動実行してください
 - provider のエラーレスポンス本文は `ccgate.log` / `metrics.jsonl` に到達する前にマスクされます。`anthropic-sdk-go` と `openai-go` はどちらも `Error.Error()` にレスポンス本文を埋め込む実装なので、ccgate 側でこれを `<provider> API error (status N)` の短い要約に置き換えています。proxy がデバッグ用のレスポンス本文に認証情報を含めた場合でも、ログには漏れません
-- `auth.refresh_margin < provider.timeout_ms + 5s` のとき ccgate は `slog.Warn` を出します (`timeout_ms == 0` のときはスキップ — 「タイムアウト無し」では意味のある不等式にならないため)。マージンが小さすぎるとキャッシュした認証情報が API 呼び出しの最中に期限切れになり、紛らわしい 401 を引き起こします
 
 ## helper が満たすべき条件
 
@@ -150,7 +149,7 @@ printf '%s' "${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is not set}"
 # ~/bin/ccgate-key-broker.sh
 set -eu
 TOKEN=$(my-key-broker --provider anthropic) # API キーを stdout に出すコマンド
-# refresh_margin (デフォルト 30s) に余裕を持たせるため、broker の TTL より少し短めにする
+# refresh_margin_ms (デフォルト 60000) に余裕を持たせるため、broker の TTL より少し短めにする
 EXP=$(date -u -v+50M +%FT%TZ 2>/dev/null || date -u -d '+50 minutes' +%FT%TZ)
 jq -nc --arg key "$TOKEN" --arg expires_at "$EXP" '{key:$key, expires_at:$expires_at}'
 ```
@@ -221,7 +220,7 @@ ccgate は SDK error の body を読んで 403 を error code で更に分割す
 2. `ccgate <target> metrics` を実行し、**Credential failures** セクションで `(source, reason)` 別の集計を確認
 3. キャッシュ起因 (`cache_parse` / `cache_read` / `cache_write` の log warning) が疑わしい場合は `$XDG_CACHE_HOME/ccgate/<target>/api_key.*.json` を削除して再生成させます。隣接する `*.lock` は再利用されるので削除不要です
 4. `cache_key_invalid` が出続ける場合は、`auth.cache_key` で参照している env が hook の実行環境にセットされているか確認してください。hook は upstream tool (Claude Code / Codex CLI) の env を継承するため、shell の dotfiles が source されているとは限りません
-5. `expired` が出続ける場合は helper の `expires_at` と `date -u` を比較してください。helper 内部の TTL ロジックや時計ズレが原因のことが多いです。`refresh_margin` が helper の TTL より大きいときも同じ症状になります
+5. `expired` が出続ける場合は helper の `expires_at` と `date -u` を比較してください。helper 内部の TTL ロジックや時計ズレが原因のことが多いです。`refresh_margin_ms` が helper の TTL より大きいときも同じ症状になります
 6. `provider_auth` がキャッシュ削除しても繰り返される場合、helper 自体が provider に拒否される認証情報を生成しています。`/bin/sh -c "$your_command"` を手で実行し、helper が出力する stdout が SDK に渡っているのと同じ内容かを確認してください
 
 reason の完全な分類 (metrics に乗るものと、log のみで出るキャッシュ層 warning の違い) は [docs/ja/configuration.md](configuration.md#credential_unavailable-の-reason-値) を参照してください。

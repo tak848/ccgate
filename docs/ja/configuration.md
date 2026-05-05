@@ -140,11 +140,11 @@ ccgate codex  metrics --days 7         # codex 側も同 shape
 | `invalid_expiration`    | JSON parse は成功したが `expires_at` が RFC3339 として解釈不能                                       |
 | `empty_output`          | plain 出力が trim 後に空                                                                             |
 | `invalid_plain_output`  | plain 出力に内部改行 (複数行は reject)                                                               |
-| `expired`               | 読み取り時点で `expires_at` が過去、または残り TTL が `auth.refresh_margin` 未満                     |
+| `expired`               | 読み取り時点で `expires_at` が過去、または残り TTL が `auth.refresh_margin_ms` 未満                  |
 | `file_missing`          | `auth.path` が存在しない                                                                             |
 | `file_read`             | ファイルはあるが読み取り失敗 (権限・FS エラー等)                                                     |
 | `unsupported_platform`  | 非 Unix ビルド (Windows)。`auth` 経路は stub                                                          |
-| `timeout`               | `auth.command` が `auth.timeout` を超過                                                              |
+| `timeout`               | `auth.command` が `auth.timeout_ms` を超過                                                           |
 | `output_too_large`      | helper の stdout が 64 KiB 上限超過                                                                  |
 | `lock_timeout`          | flock retry budget 切れ (peer が refresh 中)                                                         |
 | `lock_error`            | flock syscall が EWOULDBLOCK 以外で失敗 (lock 系が壊れている → helper exec はスキップ)               |

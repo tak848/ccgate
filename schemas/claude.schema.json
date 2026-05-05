@@ -31,15 +31,15 @@
                   "minLength": 1,
                   "description": "Shell command run via `/bin/sh -c`. Stdout is the credential."
                 },
-                "refresh_margin": {
-                  "type": "string",
-                  "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$",
-                  "description": "Cache early-refresh threshold + minimum remaining TTL guard for fresh credentials. Parsed via time.ParseDuration (e.g. \"30s\", \"5m\")."
+                "refresh_margin_ms": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Cache early-refresh threshold + minimum remaining TTL guard for fresh credentials, in milliseconds. Default: 60000."
                 },
-                "timeout": {
-                  "type": "string",
-                  "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$",
-                  "description": "Hot-path upper bound for one helper invocation. Parsed via time.ParseDuration (e.g. \"30s\", \"5m\")."
+                "timeout_ms": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Hot-path upper bound for one helper invocation, in milliseconds. Default: 5000."
                 },
                 "cache_key": {
                   "type": "string",
@@ -64,10 +64,10 @@
                   "minLength": 1,
                   "description": "Absolute or ~/-prefixed file path. Read every hook fire."
                 },
-                "refresh_margin": {
-                  "type": "string",
-                  "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$",
-                  "description": "Minimum remaining TTL guard for file output. Parsed via time.ParseDuration (e.g. \"30s\", \"5m\")."
+                "refresh_margin_ms": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Minimum remaining TTL guard for file output, in milliseconds. Default: 60000."
                 }
               },
               "additionalProperties": false,

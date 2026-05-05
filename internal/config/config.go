@@ -29,21 +29,21 @@ const (
 	BaseConfigName        = "ccgate.jsonnet"
 	LocalConfigName       = "ccgate.local.jsonnet"
 
-	// DefaultAuthRefreshMargin is the early-refresh slack used when
+	// DefaultAuthRefreshMarginMS is the early-refresh slack used when
 	// deciding whether a cached helper credential is still valid:
 	// `now + margin < expires_at` keeps the cache, anything else
-	// triggers a refresh. Picked at 30s as a balance between burning
-	// the helper too often and exposing the SDK to a key that expires
-	// mid-request.
-	DefaultAuthRefreshMargin = 30 * time.Second
-	// DefaultAuthCommandTimeout caps the hot-path cost of resolving a
+	// triggers a refresh. 60 seconds is comfortably larger than the
+	// default `provider.timeout_ms` (20 000 ms = 20s) so a cached
+	// credential will not race the next API call.
+	DefaultAuthRefreshMarginMS = 60_000
+	// DefaultAuthTimeoutMS caps the hot-path cost of resolving a
 	// credential through `auth.type=exec` (lock acquisition + helper
-	// exec). 5s is enough for most STS / OAuth-style helpers while
-	// still bounding hook latency when something is wrong upstream.
-	// `auth.type=file` does not use this timeout — Go's
+	// exec). 5 seconds is enough for most STS / OAuth-style helpers
+	// while still bounding hook latency when something is wrong
+	// upstream. `auth.type=file` does not use this timeout — Go's
 	// os.File.SetDeadline is not supported on regular files, so the
 	// file path relies on a local-FS best-effort contract instead.
-	DefaultAuthCommandTimeout = 5 * time.Second
+	DefaultAuthTimeoutMS = 5_000
 
 	// AuthTypeExec / AuthTypeFile are the only AuthConfig.Type values
 	// accepted in v0.x. Future siblings (e.g. Workload Identity
@@ -178,22 +178,28 @@ type AuthConfig struct {
 	// contract because Go's os.File.SetDeadline does not apply to
 	// regular files.
 	Path string `json:"path,omitempty"`
-	// RefreshMargin is parsed via time.ParseDuration. Empty means
-	// DefaultAuthRefreshMargin. Negative values are rejected at
-	// validate time; "0s" is allowed (means "no early refresh" for
-	// type=exec, "no minimum-remaining-TTL guard" for type=file).
+	// RefreshMarginMS is the early-refresh slack in milliseconds.
+	// nil means DefaultAuthRefreshMarginMS (60 000 = 60s). Negative
+	// values are rejected at validate time; 0 disables the guard
+	// ("no early refresh" for type=exec, "no minimum-remaining-TTL
+	// check" for type=file).
+	//
 	// For type=exec, cache entries are considered stale once
 	// `now + margin >= expires_at`, forcing a refresh. For type=file,
 	// the same threshold is applied to file output as a minimum
 	// remaining TTL (cache-less, but still rejects credentials that
 	// would race the next API call).
-	RefreshMargin string `json:"refresh_margin,omitempty"`
-	// Timeout caps the hot-path cost of running Command (including
-	// any flock retry). Empty means DefaultAuthCommandTimeout. Only
-	// valid for type=exec; rejected for type=file (Go cannot impose
-	// a hard read deadline on regular files). Non-positive values
-	// are rejected at validate time.
-	Timeout string `json:"timeout,omitempty"`
+	//
+	// The unit matches `provider.timeout_ms` so the two interact in
+	// obvious arithmetic ("set refresh_margin_ms above timeout_ms").
+	RefreshMarginMS *int `json:"refresh_margin_ms,omitempty"`
+	// TimeoutMS caps the hot-path cost of running Command (including
+	// any flock retry), in milliseconds. nil means
+	// DefaultAuthTimeoutMS (5 000 = 5s). Only valid for type=exec;
+	// rejected for type=file (Go cannot impose a hard read deadline
+	// on regular files). Non-positive values are rejected at
+	// validate time.
+	TimeoutMS *int `json:"timeout_ms,omitempty"`
 	// CacheKey is a secret-free salt that contributes to the
 	// fingerprint of the on-disk cache file. Use it when a single
 	// `auth.command` string returns different credentials per
@@ -216,38 +222,28 @@ func (p ProviderConfig) GetTimeoutMS() int {
 	return *p.TimeoutMS
 }
 
-// GetRefreshMargin returns the parsed refresh margin, falling back to
-// DefaultAuthRefreshMargin when unset. Validation guarantees the
-// string parses cleanly with a non-negative duration, so this method
-// never errors at runtime. Trim whitespace before parsing so a padded
-// but otherwise-valid input ("  2m  ") matches what Validate already
-// accepted, instead of silently dropping back to the default.
+// GetRefreshMargin returns the refresh margin as a time.Duration,
+// falling back to DefaultAuthRefreshMarginMS when unset. Validation
+// guarantees the value is non-negative, so this method never returns
+// a negative duration.
 func (a AuthConfig) GetRefreshMargin() time.Duration {
-	v := strings.TrimSpace(a.RefreshMargin)
-	if v == "" {
-		return DefaultAuthRefreshMargin
+	ms := DefaultAuthRefreshMarginMS
+	if a.RefreshMarginMS != nil {
+		ms = *a.RefreshMarginMS
 	}
-	d, err := time.ParseDuration(v)
-	if err != nil {
-		return DefaultAuthRefreshMargin
-	}
-	return d
+	return time.Duration(ms) * time.Millisecond
 }
 
-// GetCommandTimeout returns the parsed timeout for `auth.type=exec`,
-// falling back to DefaultAuthCommandTimeout when unset. Validation
-// guarantees a positive duration so this method never returns 0.
-// Same trim contract as GetRefreshMargin.
-func (a AuthConfig) GetCommandTimeout() time.Duration {
-	v := strings.TrimSpace(a.Timeout)
-	if v == "" {
-		return DefaultAuthCommandTimeout
+// GetTimeout returns the helper-exec timeout as a time.Duration,
+// falling back to DefaultAuthTimeoutMS when unset. Validation
+// guarantees a positive value so this method never returns 0 for an
+// auth.type=exec config that reached the runner.
+func (a AuthConfig) GetTimeout() time.Duration {
+	ms := DefaultAuthTimeoutMS
+	if a.TimeoutMS != nil {
+		ms = *a.TimeoutMS
 	}
-	d, err := time.ParseDuration(v)
-	if err != nil {
-		return DefaultAuthCommandTimeout
-	}
-	return d
+	return time.Duration(ms) * time.Millisecond
 }
 
 // ExpandedCacheKey resolves `auth.cache_key` against the current
@@ -321,8 +317,8 @@ func authExecBranchSchema() *jsonschema.Schema {
 	props := orderedmap.New[string, *jsonschema.Schema]()
 	props.Set("type", &jsonschema.Schema{Type: "string", Const: AuthTypeExec})
 	props.Set("command", &jsonschema.Schema{Type: "string", MinLength: ptr(uint64(1)), Description: "Shell command run via `/bin/sh -c`. Stdout is the credential."})
-	props.Set("refresh_margin", durationSchema("Cache early-refresh threshold + minimum remaining TTL guard for fresh credentials."))
-	props.Set("timeout", durationSchema("Hot-path upper bound for one helper invocation."))
+	props.Set("refresh_margin_ms", &jsonschema.Schema{Type: "integer", Minimum: json.Number("0"), Description: "Cache early-refresh threshold + minimum remaining TTL guard for fresh credentials, in milliseconds. Default: 60000."})
+	props.Set("timeout_ms", &jsonschema.Schema{Type: "integer", Minimum: json.Number("1"), Description: "Hot-path upper bound for one helper invocation, in milliseconds. Default: 5000."})
 	props.Set("cache_key", &jsonschema.Schema{Type: "string", Description: "Secret-free salt for separating cache files across env / profile contexts. Supports ${VAR} env expansion."})
 	return &jsonschema.Schema{
 		Type:                 "object",
@@ -336,20 +332,12 @@ func authFileBranchSchema() *jsonschema.Schema {
 	props := orderedmap.New[string, *jsonschema.Schema]()
 	props.Set("type", &jsonschema.Schema{Type: "string", Const: AuthTypeFile})
 	props.Set("path", &jsonschema.Schema{Type: "string", MinLength: ptr(uint64(1)), Description: "Absolute or ~/-prefixed file path. Read every hook fire."})
-	props.Set("refresh_margin", durationSchema("Minimum remaining TTL guard for file output."))
+	props.Set("refresh_margin_ms", &jsonschema.Schema{Type: "integer", Minimum: json.Number("0"), Description: "Minimum remaining TTL guard for file output, in milliseconds. Default: 60000."})
 	return &jsonschema.Schema{
 		Type:                 "object",
 		Required:             []string{"type", "path"},
 		Properties:           props,
 		AdditionalProperties: jsonschema.FalseSchema,
-	}
-}
-
-func durationSchema(desc string) *jsonschema.Schema {
-	return &jsonschema.Schema{
-		Type:        "string",
-		Pattern:     `^[0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$`,
-		Description: desc + " Parsed via time.ParseDuration (e.g. \"30s\", \"5m\").",
 	}
 }
 

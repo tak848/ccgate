@@ -701,7 +701,7 @@ func resolveAPIKey(ctx context.Context, p config.ProviderConfig, providerName, t
 			BaseURL:        strings.TrimSpace(p.BaseURL),
 			TargetName:     target,
 			RefreshMargin:  p.Auth.GetRefreshMargin(),
-			CommandTimeout: p.Auth.GetCommandTimeout(),
+			CommandTimeout: p.Auth.GetTimeout(),
 		}
 		switch p.Auth.Type {
 		case config.AuthTypeExec:

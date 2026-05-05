@@ -35,17 +35,17 @@
                 "command": {
                   "type": "string",
                   "minLength": 1,
-                  "description": "Shell command run via `/bin/sh -c` whose stdout is the API key. JSON `{\"key\":\"...\",\"expires_at\":\"<RFC3339>\"}` is parsed strictly and memoized to a per-target cache file (early-refreshed via `refresh_margin`). Plain non-JSON stdout is returned uncached and must be a single non-empty line."
+                  "description": "Shell command run via `/bin/sh -c` whose stdout is the API key. JSON `{\"key\":\"...\",\"expires_at\":\"<RFC3339>\"}` is parsed strictly and memoized to a per-target cache file (early-refreshed via `refresh_margin_ms`). Plain non-JSON stdout is returned uncached and must be a single non-empty line."
                 },
-                "refresh_margin": {
-                  "type": "string",
-                  "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$",
-                  "description": "Duration string (Go time.ParseDuration syntax, e.g. \"30s\", \"1m\"). Cache entries are stale once `now + margin >= expires_at`, forcing a helper refresh. The same threshold is enforced as a minimum-remaining-TTL guard on freshly produced credentials. Must be `>= 0`; `0s` disables early refresh. Default: 30s."
+                "refresh_margin_ms": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Cache early-refresh threshold + minimum remaining TTL guard for fresh credentials, in milliseconds. Cache entries are stale once `now + margin >= expires_at`, forcing a helper refresh. Must be `>= 0`; `0` disables the guard. Default: 60000."
                 },
-                "timeout": {
-                  "type": "string",
-                  "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$",
-                  "description": "Duration string. Caps the hot-path cost of one helper invocation including flock retries. Must be `> 0` (`0s` is rejected to avoid wedging every hook fire). Default: 5s."
+                "timeout_ms": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Hot-path upper bound for one helper invocation (lock retries + exec), in milliseconds. Must be `> 0` (`0` is rejected to avoid wedging every hook fire). Default: 5000."
                 },
                 "cache_key": {
                   "type": "string",
@@ -67,10 +67,10 @@
                   "minLength": 1,
                   "description": "Absolute path (or `~/`-prefixed) of a file whose contents follow the same JSON / plain-string shape as the exec branch. Local regular files only — NFS / FUSE / keychain mounts are unsupported by contract. Read every hook fire (no caching) so an external rotator can write atomically on its own schedule."
                 },
-                "refresh_margin": {
-                  "type": "string",
-                  "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$",
-                  "description": "Duration string. Minimum remaining TTL guard for the file's `expires_at`: a credential about to expire surfaces as `expired` instead of being handed to the SDK. `>= 0`; default 30s."
+                "refresh_margin_ms": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Minimum remaining TTL guard for the file's `expires_at`, in milliseconds: a credential about to expire surfaces as `expired` instead of being handed to the SDK. `>= 0`; default 60000."
                 }
               }
             }

@@ -124,10 +124,8 @@ func TestResolveAPIKeyUnknownProviderShortCircuit(t *testing.T) {
 		Name:  "opena1", // deliberate typo
 		Model: "x",
 		Auth: &config.AuthConfig{
-			Type:          "exec",
-			Command:       "exit 17",
-			RefreshMargin: "30s",
-			Timeout:       "5s",
+			Type:    "exec",
+			Command: "exit 17",
 		},
 	}
 	key, kind, reason, source, err := resolveAPIKey(context.Background(), cfg, "opena1", "claude")

@@ -112,20 +112,19 @@ func TestValidateAuthFields(t *testing.T) {
 		"exec with cache_key":     {auth: &AuthConfig{Type: "exec", Command: "x", CacheKey: "prod"}, wantErr: false},
 		"exec with cache_key var": {auth: &AuthConfig{Type: "exec", Command: "x", CacheKey: "${AWS_PROFILE}"}, wantErr: false},
 
-		// refresh_margin: >= 0 accepted, "0s" allowed, negative/garbage rejected.
-		"refresh_margin 30s":        {auth: &AuthConfig{Type: "exec", Command: "x", RefreshMargin: "30s"}, wantErr: false},
-		"refresh_margin 0s allowed": {auth: &AuthConfig{Type: "exec", Command: "x", RefreshMargin: "0s"}, wantErr: false},
-		"refresh_margin negative":   {auth: &AuthConfig{Type: "exec", Command: "x", RefreshMargin: "-5s"}, wantErr: true},
-		"refresh_margin garbage":    {auth: &AuthConfig{Type: "exec", Command: "x", RefreshMargin: "garbage"}, wantErr: true},
+		// refresh_margin_ms: >= 0 accepted, 0 allowed (disables guard),
+		// negative rejected.
+		"refresh_margin 30000": {auth: &AuthConfig{Type: "exec", Command: "x", RefreshMarginMS: intPtr(30000)}, wantErr: false},
+		"refresh_margin 0":     {auth: &AuthConfig{Type: "exec", Command: "x", RefreshMarginMS: intPtr(0)}, wantErr: false},
+		"refresh_margin -1":    {auth: &AuthConfig{Type: "exec", Command: "x", RefreshMarginMS: intPtr(-1)}, wantErr: true},
 
-		// timeout: > 0 required, "0s" rejected (would wedge hot path).
-		"timeout 5s":          {auth: &AuthConfig{Type: "exec", Command: "x", Timeout: "5s"}, wantErr: false},
-		"timeout 0s rejected": {auth: &AuthConfig{Type: "exec", Command: "x", Timeout: "0s"}, wantErr: true},
-		"timeout negative":    {auth: &AuthConfig{Type: "exec", Command: "x", Timeout: "-1s"}, wantErr: true},
-		"timeout garbage":     {auth: &AuthConfig{Type: "exec", Command: "x", Timeout: "garbage"}, wantErr: true},
+		// timeout_ms: > 0 required, 0 rejected (would wedge hot path).
+		"timeout 5000":     {auth: &AuthConfig{Type: "exec", Command: "x", TimeoutMS: intPtr(5000)}, wantErr: false},
+		"timeout 0":        {auth: &AuthConfig{Type: "exec", Command: "x", TimeoutMS: intPtr(0)}, wantErr: true},
+		"timeout negative": {auth: &AuthConfig{Type: "exec", Command: "x", TimeoutMS: intPtr(-1)}, wantErr: true},
 
-		// type=file: path required (absolute or ~/), command/timeout/cache_key forbidden,
-		// refresh_margin allowed (minimum-remaining-TTL guard).
+		// type=file: path required (absolute or ~/), command/timeout_ms/cache_key forbidden,
+		// refresh_margin_ms allowed (minimum-remaining-TTL guard).
 		"file abs":            {auth: &AuthConfig{Type: "file", Path: "/etc/ccgate/key"}, wantErr: false},
 		"file home":           {auth: &AuthConfig{Type: "file", Path: "~/.ccgate/key"}, wantErr: false},
 		"file bare ~":         {auth: &AuthConfig{Type: "file", Path: "~"}, wantErr: true},
@@ -133,9 +132,9 @@ func TestValidateAuthFields(t *testing.T) {
 		"file bare":           {auth: &AuthConfig{Type: "file", Path: "key"}, wantErr: true},
 		"file missing path":   {auth: &AuthConfig{Type: "file"}, wantErr: true},
 		"file with command":   {auth: &AuthConfig{Type: "file", Path: "/k", Command: "x"}, wantErr: true},
-		"file with timeout":   {auth: &AuthConfig{Type: "file", Path: "/k", Timeout: "5s"}, wantErr: true},
+		"file with timeout":   {auth: &AuthConfig{Type: "file", Path: "/k", TimeoutMS: intPtr(5000)}, wantErr: true},
 		"file with cache_key": {auth: &AuthConfig{Type: "file", Path: "/k", CacheKey: "x"}, wantErr: true},
-		"file refresh_margin": {auth: &AuthConfig{Type: "file", Path: "/k", RefreshMargin: "60s"}, wantErr: false},
+		"file refresh_margin": {auth: &AuthConfig{Type: "file", Path: "/k", RefreshMarginMS: intPtr(60000)}, wantErr: false},
 
 		// Unknown type values are rejected — keeps the discriminator
 		// closed so editors and validate agree on what's accepted.
@@ -161,20 +160,22 @@ func TestAuthDurationDefaults(t *testing.T) {
 	t.Parallel()
 
 	a := AuthConfig{}
-	if got := a.GetRefreshMargin(); got != DefaultAuthRefreshMargin {
-		t.Fatalf("GetRefreshMargin() default = %s, want %s", got, DefaultAuthRefreshMargin)
+	wantMargin := time.Duration(DefaultAuthRefreshMarginMS) * time.Millisecond
+	wantTimeout := time.Duration(DefaultAuthTimeoutMS) * time.Millisecond
+	if got := a.GetRefreshMargin(); got != wantMargin {
+		t.Fatalf("GetRefreshMargin() default = %s, want %s", got, wantMargin)
 	}
-	if got := a.GetCommandTimeout(); got != DefaultAuthCommandTimeout {
-		t.Fatalf("GetCommandTimeout() default = %s, want %s", got, DefaultAuthCommandTimeout)
+	if got := a.GetTimeout(); got != wantTimeout {
+		t.Fatalf("GetTimeout() default = %s, want %s", got, wantTimeout)
 	}
 
-	a.RefreshMargin = "1m30s"
-	a.Timeout = "12s"
+	a.RefreshMarginMS = intPtr(90000)
+	a.TimeoutMS = intPtr(12000)
 	if got := a.GetRefreshMargin(); got != 90*time.Second {
 		t.Fatalf("GetRefreshMargin() = %s, want 90s", got)
 	}
-	if got := a.GetCommandTimeout(); got != 12*time.Second {
-		t.Fatalf("GetCommandTimeout() = %s, want 12s", got)
+	if got := a.GetTimeout(); got != 12*time.Second {
+		t.Fatalf("GetTimeout() = %s, want 12s", got)
 	}
 }
 
@@ -369,8 +370,8 @@ func TestMergeConfigFileReplacesProviderBlock(t *testing.T) {
 		auth: {
 			type: "exec",
 			command: "echo sk-test",
-			refresh_margin: "45s",
-			timeout: "8s",
+			refresh_margin_ms: 45000,
+			timeout_ms: 8000,
 			cache_key: "prod",
 		},
 		timeout_ms: 30000,
@@ -406,17 +407,17 @@ func TestMergeConfigFileReplacesProviderBlock(t *testing.T) {
 	if auth.Command != "echo sk-test" {
 		t.Fatalf("auth.command = %q, want %q", auth.Command, "echo sk-test")
 	}
-	if auth.RefreshMargin != "45s" {
-		t.Fatalf("auth.refresh_margin = %q, want %q", auth.RefreshMargin, "45s")
+	if auth.RefreshMarginMS == nil || *auth.RefreshMarginMS != 45000 {
+		t.Fatalf("auth.refresh_margin_ms = %v, want 45000", auth.RefreshMarginMS)
 	}
 	if got := auth.GetRefreshMargin(); got != 45*time.Second {
 		t.Fatalf("GetRefreshMargin() = %s, want 45s", got)
 	}
-	if auth.Timeout != "8s" {
-		t.Fatalf("auth.timeout = %q, want %q", auth.Timeout, "8s")
+	if auth.TimeoutMS == nil || *auth.TimeoutMS != 8000 {
+		t.Fatalf("auth.timeout_ms = %v, want 8000", auth.TimeoutMS)
 	}
-	if got := auth.GetCommandTimeout(); got != 8*time.Second {
-		t.Fatalf("GetCommandTimeout() = %s, want 8s", got)
+	if got := auth.GetTimeout(); got != 8*time.Second {
+		t.Fatalf("GetTimeout() = %s, want 8s", got)
 	}
 	if auth.CacheKey != "prod" {
 		t.Fatalf("auth.cache_key = %q, want %q", auth.CacheKey, "prod")

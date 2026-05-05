@@ -17,10 +17,10 @@ The helper writes one of two shapes on stdout (or, for `auth.type=file`, into th
 
 How caching applies depends on the source:
 
-- For `auth.type=exec`: JSON with a future `expires_at` is memoized to a per-target cache file (see [Caching](#caching)) and refreshed early via `auth.refresh_margin`. JSON without `expires_at` and plain string output are accepted but **not cached** — the helper re-runs on every hook invocation.
+- For `auth.type=exec`: JSON with a future `expires_at` is memoized to a per-target cache file (see [Caching](#caching)) and refreshed early via `auth.refresh_margin_ms`. JSON without `expires_at` and plain string output are accepted but **not cached** — the helper re-runs on every hook invocation.
 - For `auth.type=file`: ccgate reads the file on every hook invocation and does not maintain an internal cache. The external rotator owns when the credential is refreshed.
 
-`auth.refresh_margin` is also enforced as a *minimum-remaining-TTL* guard on freshly produced credentials (helper exec output and file contents alike). A credential that would expire inside the margin window surfaces as `expired` instead of being handed to the SDK to race the next API call.
+`auth.refresh_margin_ms` is also enforced as a *minimum-remaining-TTL* guard on freshly produced credentials (helper exec output and file contents alike). A credential that would expire inside the margin window surfaces as `expired` instead of being handed to the SDK to race the next API call.
 
 ## Config
 
@@ -33,8 +33,8 @@ How caching applies depends on the source:
     auth: {
       type: 'exec',
       command: '/usr/local/bin/my-key-broker --provider anthropic',
-      refresh_margin: '60s', // optional, default 30s
-      timeout: '5s',         // optional, default 5s
+      refresh_margin_ms: 60000, // optional, default 60000
+      timeout_ms: 5000,         // optional, default 5000
       cache_key: '${AWS_PROFILE}', // optional; see Account isolation
     },
   },
@@ -47,7 +47,7 @@ How caching applies depends on the source:
     auth: {
       type: 'file',
       path: '~/.config/my-broker/anthropic.json',
-      refresh_margin: '60s', // optional, default 30s
+      refresh_margin_ms: 60000, // optional, default 60000
     },
   },
 }
@@ -58,15 +58,15 @@ How caching applies depends on the source:
 | `auth.type` | `"exec"` / `"file"` | (required when `auth` is set) | Discriminator. Selects which other fields are valid. |
 | `auth.command` | string | `""` | (`type=exec` only, required) Shell command run via `/bin/sh -c` whose stdout is the credential. |
 | `auth.path` | string (abs or `~/`) | `""` | (`type=file` only, required) Local regular file whose contents follow the same JSON / plain-string shape. |
-| `auth.refresh_margin` | duration | `"30s"` | Cache is stale once `now + margin >= expires_at` (`type=exec`); minimum-remaining-TTL guard on freshly produced credentials (both branches). `>= 0` (`0s` disables the guard). |
-| `auth.timeout` | duration | `"5s"` | (`type=exec` only) Hot-path upper bound for one helper invocation. `> 0`. |
+| `auth.refresh_margin_ms` | int (ms) | `60000` | Cache is stale once `now + margin >= expires_at` (`type=exec`); minimum-remaining-TTL guard on freshly produced credentials (both branches). `>= 0` (`0` disables the guard). |
+| `auth.timeout_ms` | int (ms) | `5000` | (`type=exec` only) Hot-path upper bound for one helper invocation. `> 0`. |
 | `auth.cache_key` | string | `""` | (`type=exec` only) Secret-free salt added to the cache fingerprint; supports `${VAR}` env expansion. See [Account isolation](#cache-key-and-account-isolation). |
 
 The `provider` block is replaced atomically across config layers, so a project-local config that restates `provider` must repeat the `auth` block — otherwise the helper config is silently dropped on that project.
 
 ### `auth.type=file` is local-FS only
 
-`auth.path` is a **best-effort, local regular file** contract. Local POSIX filesystems (XFS, ext4, APFS, HFS+) are supported; NFS / SMB / FUSE / keychain mounts are explicitly **unsupported** because Go's `os.File.SetDeadline` does not apply to regular files, and we cannot impose a hard read deadline on a slow remote mount without leaking goroutines. If you need a hard timeout on credential reads, switch to `auth.type=exec` (the helper runs under `auth.timeout`).
+`auth.path` is a **best-effort, local regular file** contract. Local POSIX filesystems (XFS, ext4, APFS, HFS+) are supported; NFS / SMB / FUSE / keychain mounts are explicitly **unsupported** because Go's `os.File.SetDeadline` does not apply to regular files, and we cannot impose a hard read deadline on a slow remote mount without leaking goroutines. If you need a hard timeout on credential reads, switch to `auth.type=exec` (the helper runs under `auth.timeout_ms`).
 
 ccgate opens the file with `O_NONBLOCK` so a misconfigured FIFO / device returns immediately instead of wedging the hook, but a slow regular file on a stalled NFS mount can still hang for the duration of the kernel I/O.
 
@@ -112,7 +112,6 @@ Three ways to isolate accounts:
 - `auth.command`: do **not** put a literal secret into the command string. The string is passed to `/bin/sh -c`, so it appears in `ps`, `/proc/<pid>/cmdline`, audit logs, and shell history. Wrap secret material in a file or keychain that the helper reads internally.
 - Helper stderr body is **never** written to `ccgate.log`. ccgate captures stderr internally to bound memory but logs only the byte count and exit error on failure. Re-run the helper manually with `2>&1` if you need to inspect its diagnostic output.
 - Provider error response bodies are redacted before they reach `ccgate.log` and `metrics.jsonl`. Both `anthropic-sdk-go` and `openai-go` embed the response body in `Error.Error()`; ccgate replaces that with a short `<provider> API error (status N)` summary so a misbehaving proxy cannot leak credentials through the log.
-- ccgate emits a `slog.Warn` when `auth.refresh_margin < provider.timeout_ms + 5s` (skipped when `timeout_ms == 0`, since "no timeout" has no meaningful inequality). Smaller margins risk a cached credential expiring mid-API-call and surfacing as a confusing 401.
 
 ## Helper contract
 
@@ -151,7 +150,7 @@ When a real broker mints time-limited credentials, wrap the response in `{key, e
 set -eu
 TOKEN=$(my-key-broker --provider anthropic) # outputs the API key
 # Pick an `expires_at` slightly inside the broker's TTL so the
-# refresh_margin (default 30s) has slack.
+# refresh_margin_ms (default 60000) has slack.
 EXP=$(date -u -v+50M +%FT%TZ 2>/dev/null || date -u -d '+50 minutes' +%FT%TZ)
 jq -nc --arg key "$TOKEN" --arg expires_at "$EXP" '{key:$key, expires_at:$expires_at}'
 ```

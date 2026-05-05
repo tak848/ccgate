@@ -140,11 +140,11 @@ The `reason` field meaning depends on `ft_kind`:
 | `invalid_expiration`    | Helper / file JSON parsed but `expires_at` was not RFC3339.                                            |
 | `empty_output`          | Plain-string output was empty after trim.                                                              |
 | `invalid_plain_output`  | Plain-string output had internal newlines (multi-line is rejected).                                    |
-| `expired`               | `expires_at` was already in the past, or remaining TTL was below `auth.refresh_margin`, at read time.  |
+| `expired`               | `expires_at` was already in the past, or remaining TTL was below `auth.refresh_margin_ms`, at read time.  |
 | `file_missing`          | `auth.path` did not exist.                                                                             |
 | `file_read`             | `auth.path` exists but failed to read (permissions, FS error).                                         |
 | `unsupported_platform`  | Build is non-Unix (Windows). `auth` paths are stub'd.                                                  |
-| `timeout`               | `auth.command` exceeded `auth.timeout`.                                                                |
+| `timeout`               | `auth.command` exceeded `auth.timeout_ms`.                                                              |
 | `output_too_large`      | Helper stdout exceeded the 64 KiB limit.                                                               |
 | `lock_timeout`          | flock retry budget exhausted while peers were refreshing.                                              |
 | `lock_error`            | flock syscall returned a non-EWOULDBLOCK error (broken lock subsystem; helper exec is skipped).        |
