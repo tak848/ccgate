@@ -62,7 +62,7 @@ statusMessage = "ccgate evaluating request"
 
 ### dotfiles を触らずに dev build を試す
 
-Project-local `<repo>/.codex/{hooks.json,config.toml}` は project が trusted のときのみ load されます。in-tree dev build を試すには、project-local hooks file (untracked) を置いて `go run` を指す:
+project-local の `<repo>/.codex/{hooks.json,config.toml}` は、project が trusted の場合だけ読み込まれます。リポジトリ内の開発ビルドを試したい場合は、Git 未追跡の project-local hooks file を置き、`go run` を指す形にします:
 
 ```jsonc
 // <repo>/.codex/hooks.json (untracked)
@@ -88,7 +88,7 @@ Project-local `<repo>/.codex/{hooks.json,config.toml}` は project が trusted �
 
 ## ccgate が HookInput から見るフィールド
 
-ccgate は `tool_input` JSON 全体を verbatim で LLM に転送するので、ccgate が typed field を持たない MCP arguments や `apply_patch` hunk metadata も classifier に届きます。metrics 層は parsed view (`command` / `description` / `file_path` / `path` / `pattern`) のみ JSONL に書きますが、raw payload を LLM message から削ぐことはありません。
+ccgate は `tool_input` の JSON 全体をそのまま LLM に渡します。そのため、ccgate 側に専用フィールドのない MCP arguments や `apply_patch` の hunk metadata も判定対象に含まれます。metrics には parsed view (`command` / `description` / `file_path` / `path` / `pattern`) だけを書きますが、LLM に渡す内容から raw payload を削ることはありません。
 
 upstream Codex docs に記載があり ccgate が利用するフィールド:
 
@@ -107,7 +107,7 @@ Codex は Claude の `permission_mode` / `permission_suggestions` / `recent_tran
 
 ccgate は埋込 Codex defaults (`internal/cmd/codex/defaults.jsonnet`) を持ち、Claude 側と同じ allow + deny + environment 構造です。Codex 固有の主要エントリ:
 
-- `allow`: 読み取り専用 Bash 検査、workspace 内 write (`apply_patch` の cwd / repo_root 配下のハンク、AI が今やってるプロジェクトファイル編集)、project script による build/test、repo 内パッケージインストール、feature branch git 操作、ユーザーが trust してる MCP server で side effect が user-authorized scope に収まる MCP tool
+- `allow`: 読み取り専用の Bash 検査、workspace 内の write (`apply_patch` の cwd / repo_root 配下のハンク、AI が現在編集しているプロジェクトファイル)、project script による build / test、リポジトリ内に閉じたパッケージインストール、feature branch 上の git 操作、ユーザーが信頼した MCP server で、影響範囲がユーザーの許可した範囲に収まる MCP tool
 - `deny`: remote content の pipe-to-shell、one-shot remote package execution (`npx` / `pnpx` / `bunx` で unfamiliar package)、`sudo`、workspace 外への `rm -rf` / `mv` / `apply_patch` hunks、protected branch への破壊的 git、無制限 network out (`nc` / `ssh` / `scp` / `ftp` の非 allowlist 先)、destructive side effect を advertise する MCP tool で per-rule allow なし
 - `environment`: heterogeneous tool surface、trusted-repo 境界、path scope ルール、**ccgate は upstream prompt の代替** -- 真に曖昧なときだけ fallthrough、それ以外は allow / deny を返す、`recent_transcript` は不在
 

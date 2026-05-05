@@ -1,4 +1,4 @@
-# 短命 / ローテーションする API キー
+# 期限付き・自動更新される API キー
 
 [English version (docs/api-key-helper.md)](../api-key-helper.md)
 
@@ -10,10 +10,15 @@ provider が必要とする認証情報が静的な環境変数では追従で�
 
 helper は次のいずれかの形を stdout (もしくは `api_key_file` の中身として) に書きます。
 
-- **JSON**: `{"key":"sk-...","expires_at":"2026-05-04T01:23:45Z"}`。厳密に解析されます。`expires_at` が未来の場合、結果は target 別のキャッシュファイル ([キャッシュ](#キャッシュ) 参照) に保存され、`api_key_refresh_margin` で期限前に更新されます。任意指定の `version` field は未指定だと `1` 扱い、現状は `1` のみ受け付けます (将来の schema 拡張用に予約)。
-- **plain string**: 改行を含まない単一の非空文字列。そのまま渡され、**キャッシュされません**。hook が呼ばれるたびに helper が再実行されるため、低頻度・実験用途向け。常用するには向きません。
+- **JSON**: `{"key":"sk-...","expires_at":"2026-05-04T01:23:45Z"}`。厳密に解析されます。`key` は必須、`expires_at` と `version` は任意。`version` は未指定だと `1` 扱いで、将来 schema を拡張する余地として予約しています (現状受け付けるのは `1` または未指定のみ)。
+- **plain string**: 改行を含まない単一の非空文字列。そのまま渡されます。
 
-`expires_at` は RFC3339。helper の stdout が 64 KiB を超えると `output_too_large` で拒否されます。`api_key_file` の内容にも同じ 64 KiB 上限が適用されます。
+`expires_at` は RFC3339。helper の stdout が 64 KiB を超えると `output_too_large` で拒否します。`api_key_file` の内容にも同じ 64 KiB 上限が適用されます。
+
+キャッシュの扱いは経路ごとに違います:
+
+- `api_key_command` の場合: 未来の `expires_at` を含む JSON は target 別のキャッシュファイル ([キャッシュ](#キャッシュ) 参照) に保存し、`api_key_refresh_margin` に従って期限前に更新します。`expires_at` を含まない JSON と plain string は受け付けますが **キャッシュしません** — hook が呼ばれるたびに helper を再実行します。
+- `api_key_file` の場合: ccgate は hook が呼ばれるたびにファイルを読み直すだけで、内部キャッシュは持ちません。credential をいつ更新するかは外部 rotator の責務です。
 
 ## 設定
 
@@ -42,7 +47,7 @@ helper は次のいずれかの形を stdout (もしくは `api_key_file` の中
 
 `api_key_command` > `api_key_file` > `CCGATE_*_API_KEY` > `*_API_KEY`
 
-helper / file が設定済みの状態で失敗しても、ccgate は env var に **fallback しません**: silent fallback は helper のバグを隠してしまうため。代わりに `kind=credential_unavailable` で fallthrough し、reason がどの段階で失敗したかを示します (reason の網羅は [docs/configuration.md](../configuration.md) を参照)。
+`api_key_command` または `api_key_file` を設定している状態で解決に失敗しても、ccgate は env var 経路へ **暗黙に fallback しません**。silent fallback は helper のバグを隠してしまうためです。代わりに `kind=credential_unavailable` で fallthrough し、reason がどの段階で失敗したかを示します (reason の網羅は [docs/ja/configuration.md](configuration.md) を参照)。
 
 `api_key_command` / `api_key_file` は Unix のみ (Linux / macOS / *BSD) の対応です。Windows でこれらを設定すると `reason=unsupported_platform` で fallthrough します。どちらも設定していない Windows ユーザーは従来通り `*_API_KEY` の env var 経路で動きますが、設定済みの helper / file が unsupported だったときに ccgate が黙って env var に fallback することはありません。
 
@@ -50,7 +55,7 @@ helper / file が設定済みの状態で失敗しても、ccgate は env var �
 
 - パス: `$XDG_CACHE_HOME/ccgate/<target>/api_key.<sha256[:16]>.json` (target は `claude` / `codex`)。`XDG_CACHE_HOME` 未設定時は `~/.cache/ccgate/<target>/...` にフォールバック
 - パーミッション: ディレクトリ `0700`、ファイル `0600`。既存ディレクトリが緩いモードで作られていた場合も `0700` に締め直します
-- キャッシュの中身は正規化された `{version, key, expires_at}` のみ。helper が printout した余計な field (refresh token / broker session ID など) はディスクには残しません
+- キャッシュの中身は正規化した `{version, key, expires_at}` のみ。helper が出力した余分なフィールド (refresh token / broker session ID など) はディスクには残しません
 - atomic rename: 一時ファイルを同じディレクトリ内に作って rename で差し替えるので、ファイルシステム跨ぎの問題はありません
 - 同時呼び出しは隣接する lock ファイル (`*.lock`) の `flock` で直列化されます。lock ファイルは消されないので、残っていても異常ではありません
 
@@ -70,7 +75,7 @@ helper / file が設定済みの状態で失敗しても、ccgate は env var �
 - `api_key_file`: ccgate は読むだけで mode の正規化はしません。ファイル本体は `chmod 0600`、親ディレクトリは `chmod 0700` を user 側で設定してください
 - `api_key_command`: コマンド文字列に literal な秘密情報を **直書きしない** こと。文字列は `/bin/sh -c` に渡されるため、`ps` / `/proc/<pid>/cmdline` / 監査ログ / シェル履歴に残ります。秘密情報はファイルや keychain に置き、helper の中で読む形にしてください
 - helper の stderr 本文は `ccgate.log` には **書き出されません**。ccgate は stderr をメモリ上限のために内部 capture しますが、log には byte 数と exit error しか残しません。stderr の内容を見たい場合は ccgate のログを覗くのではなく、helper を `2>&1` 付きで手動実行してください
-- provider のエラーレスポンス本文は `ccgate.log` / `metrics.jsonl` に到達する前に編集 (redact) されます。`anthropic-sdk-go` と `openai-go` はどちらも `Error.Error()` にレスポンス本文を埋め込む実装なので、ccgate 側でこれを `<provider> API error (status N)` の短い要約に置き換えており、proxy が暴れて debug body に認証情報を載せても log には漏れません
+- provider のエラーレスポンス本文は `ccgate.log` / `metrics.jsonl` に到達する前にマスクされます。`anthropic-sdk-go` と `openai-go` はどちらも `Error.Error()` にレスポンス本文を埋め込む実装なので、ccgate 側でこれを `<provider> API error (status N)` の短い要約に置き換えています。proxy がデバッグ用のレスポンス本文に認証情報を含めた場合でも、ログには漏れません
 
 ## helper が満たすべき条件
 
@@ -88,7 +93,7 @@ ccgate は helper の環境変数に `CCGATE_API_KEY_RESOLUTION=1` を追加し�
 
 ### plain string: 既存の env var を中継するだけ
 
-最も単純な helper は、operator がすでに env var に持っている認証情報をそのまま echo するだけです。実際の broker を組む前に解決経路の動作確認をするのに便利です。
+最も単純な helper は、運用者がすでに環境変数として持っている認証情報をそのまま出力するだけのものです。実際の broker を組む前に解決経路の動作確認をするのに便利です。
 
 ```sh
 #!/bin/sh
@@ -143,9 +148,9 @@ ccgate がたった今使った認証情報を provider が拒否した場合の
 
 ## AWS `credential_process` との差分
 
-出力 shape は AWS `credential_process` に意図的に近づけてあるので、既存 helper を 1 行 wrapper で流用しやすくなっています。一方で **ccgate はディスクにメモ化する** のに対し、AWS CLI は呼び出しのたびに再 exec します。hook は 1 セッションで何十回も呼ばれるため、hot-path 遅延を優先したトレードオフです。
+出力形式は AWS `credential_process` に意図的に近づけています。そのため、既存の helper は薄いラッパーを 1 枚挟むだけで流用しやすくなっています。一方、**ccgate は helper の出力をディスクにキャッシュする** 設計です。AWS CLI が呼び出しのたびに helper を再実行するのとは違い、hook の実行経路での遅延を抑えるためのトレードオフです。
 
-メモ化させたくない broker の場合は `expires_at` を含めない JSON (`{"key":"..."}`) を返せば毎回再実行されます。
+キャッシュさせたくない broker の場合は、`expires_at` を含めない JSON (`{"key":"..."}`) を返せば毎回再実行されます。
 
 ## 障害時の復旧チェックリスト
 

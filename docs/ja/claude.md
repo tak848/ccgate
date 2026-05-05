@@ -6,7 +6,7 @@
 
 ## hook 登録
 
-ccgate は Claude Code の [PermissionRequest hook](https://code.claude.com/docs/en/hooks) イベントに plug します。`~/.claude/settings.json` に追加:
+ccgate は Claude Code の [PermissionRequest hook](https://code.claude.com/docs/en/hooks) イベントに接続します。`~/.claude/settings.json` に追加:
 
 ```json
 {
@@ -40,7 +40,7 @@ ccgate は Claude Code の [PermissionRequest hook](https://code.claude.com/docs
 
 Claude Code は標準 PermissionRequest payload を流します ([upstream hooks reference](https://code.claude.com/docs/en/hooks))。ccgate が読むのは:
 
-- `tool_name`: ユーザーインタラクション専用 tool (`ExitPlanMode`, `AskUserQuestion`) で early-return -- これらは常に Claude Code prompt に fallthrough、ccgate は判定しない
+- `tool_name`: ユーザー操作専用 tool (`ExitPlanMode`, `AskUserQuestion`) は早期に処理を終え、常に Claude Code の確認 prompt に委ねます。ccgate はこれらを判定しません
 - `tool_input`: LLM に転送。metrics 層は `command` / `file_path` / `path` / `pattern` のみ記録
 - `permission_mode`: `"plan"` のとき system prompt を plan mode rule に切替。`"bypassPermissions"` / `"dontAsk"` は ccgate を fallthrough で短絡
 - `cwd`: git context builder (`gitutil.RepoRoot`, branch, worktree) に渡す
@@ -64,8 +64,8 @@ allow guidance は plan mode で write 操作を allow に promote しません�
 
 `recent_transcript` は transcript JSONL の末尾 (直近のユーザーメッセージ + tool 呼び出し) を持ちます。system prompt は LLM にこう指示:
 
-- ユーザーが直近の transcript で当該操作を明示的に依頼してたら、`deny` より `allow` / `fallthrough` を優先せよ
-- ユーザーの明示依頼は `deny` を `fallthrough` に escalate できるが、`allow` には escalate できない (deny guidance は依然として勝つ)
+- ユーザーが直近の transcript で当該操作を明示的に依頼していた場合、`deny` より `allow` / `fallthrough` を優先せよ
+- ユーザーの明示依頼は `deny` を `fallthrough` に引き上げられるが、`allow` までは引き上げられない (deny guidance は依然として勝つ)
 
 これが LLM に「deny ルールに該当するが、ユーザーが明確に依頼してるので、refuse せず Claude Code の prompt に判断を委ねる」と言わせる唯一の signal です。Codex には現状 transcript field が無いので、この lever は Claude のみ。
 

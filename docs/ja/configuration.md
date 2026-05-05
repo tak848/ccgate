@@ -54,7 +54,7 @@ LLM は `allow` / `deny` / `fallthrough` のいずれかを返します。`fallt
 
 ### `fallthrough_strategy` の対象**外**
 
-対象は LLM 判定の `fallthrough` のみ。runtime mode の fallthrough は strategy に関わらず上流ツールへ deferred されます:
+対象になるのは、LLM が返した `fallthrough` だけです。実行時条件による fallthrough は、`fallthrough_strategy` の値に関係なく上流ツールへ委ねられます:
 
 - API 応答が truncate / refused された (`api_unusable`)
 - API キー未設定 (`no_apikey`)
