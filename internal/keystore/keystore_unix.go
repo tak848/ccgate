@@ -55,7 +55,7 @@ const (
 	lockBackoff = 50 * time.Millisecond
 )
 
-// Resolve dispatches to the command or file implementation based on
+// Resolve dispatches to the exec or file implementation based on
 // Options. The runner is responsible for picking exactly one of the
 // two; if both are empty we return a generic error rather than
 // silently succeeding (it would mean the runner forgot to short-
@@ -64,10 +64,10 @@ func Resolve(ctx context.Context, opts Options) (Result, error) {
 	switch {
 	case opts.Command != "":
 		return resolveCommand(ctx, opts)
-	case opts.File != "":
+	case opts.Path != "":
 		return resolveFile(opts)
 	default:
-		return Result{Source: SourceCommand}, errors.New("keystore: no api_key_command or api_key_file configured")
+		return Result{Source: SourceExec}, errors.New("keystore: no auth.command or auth.path configured")
 	}
 }
 
@@ -166,20 +166,20 @@ func resolveCommand(ctx context.Context, opts Options) (Result, error) {
 
 	payload, reason, err := execHelper(ctx, opts)
 	if err != nil {
-		return Result{Reason: reason, Source: SourceCommand}, err
+		return Result{Reason: reason, Source: SourceExec}, err
 	}
 
 	// Reject expired keys returned freshly: replaying a doomed
 	// credential just to re-exec the helper next fire would burn
 	// the broker's rate limit. Surface as `expired` so the user can
 	// notice their helper is producing invalid output.
-	if reason, err := checkFreshExpiration(payload); err != nil {
+	if reason, err := checkFresh(payload, opts.RefreshMargin); err != nil {
 		slog.Warn("keystore: helper returned an already-expired credential",
 			"reason", string(reason),
-			"source", string(SourceCommand),
+			"source", string(SourceExec),
 			"expires_at", payload.ExpiresAt,
 		)
-		return Result{Reason: reason, Source: SourceCommand}, err
+		return Result{Reason: reason, Source: SourceExec}, err
 	}
 
 	if payload.ExpiresAt != "" {
@@ -195,19 +195,20 @@ func resolveCommand(ctx context.Context, opts Options) (Result, error) {
 			)
 		}
 	}
-	return Result{Key: payload.Key, Source: SourceCommand}, nil
+	return Result{Key: payload.Key, Source: SourceExec}, nil
 }
 
 func resolveFile(opts Options) (Result, error) {
 	// Validate trims whitespace before checking the path shape, so a
-	// config like `api_key_file: " ~/.ccgate/key "` passes validation.
-	// Trim here too, otherwise the raw value would be sent to
-	// expandHomePath / os.Open and surface as a misleading file_missing.
-	path, err := expandHomePath(strings.TrimSpace(opts.File))
+	// config like `auth: { type: 'file', path: " ~/.ccgate/key " }`
+	// passes validation. Trim here too, otherwise the raw value would
+	// be sent to expandHomePath / os.Open and surface as a misleading
+	// file_missing.
+	path, err := expandHomePath(strings.TrimSpace(opts.Path))
 	if err != nil {
 		return Result{Reason: ReasonFileRead, Source: SourceFile}, err
 	}
-	data, err := readBoundedRegularFile(path, stdoutLimit)
+	data, info, err := openBoundedRegularFile(path, stdoutLimit)
 	if err != nil {
 		switch {
 		case os.IsNotExist(err):
@@ -219,6 +220,7 @@ func resolveFile(opts Options) (Result, error) {
 		}
 		return Result{Reason: ReasonFileRead, Source: SourceFile}, err
 	}
+	warnLoosePermissions(path, info)
 	payload, reason, err := parseHelperOutput(data)
 	if err != nil {
 		return Result{Reason: reason, Source: SourceFile}, err
@@ -226,9 +228,13 @@ func resolveFile(opts Options) (Result, error) {
 	// Files have no fresh-vs-cache distinction (we did not produce
 	// the file ourselves, the rotator did) so any past expires_at
 	// here is the rotator's bug, not ours. Surface it as expired so
-	// the user notices instead of letting the SDK 401.
-	if reason, err := checkFreshExpiration(payload); err != nil {
-		slog.Warn("keystore: api_key_file contains an already-expired credential",
+	// the user notices instead of letting the SDK 401. We also enforce
+	// the same minimum-remaining-TTL guard (RefreshMargin) the cache
+	// path uses, so a file containing a credential that's about to
+	// expire mid-API-call surfaces as expired here instead of being
+	// handed to the SDK and producing a confused 401.
+	if reason, err := checkFresh(payload, opts.RefreshMargin); err != nil {
+		slog.Warn("keystore: auth.path contains an expired or near-expiry credential",
 			"reason", string(reason),
 			"source", string(SourceFile),
 			"path", path,
@@ -248,12 +254,12 @@ func resolveFile(opts Options) (Result, error) {
 func execHelperOnly(ctx context.Context, opts Options) (Result, error) {
 	payload, reason, err := execHelper(ctx, opts)
 	if err != nil {
-		return Result{Reason: reason, Source: SourceCommand}, err
+		return Result{Reason: reason, Source: SourceExec}, err
 	}
-	if reason, err := checkFreshExpiration(payload); err != nil {
-		return Result{Reason: reason, Source: SourceCommand}, err
+	if reason, err := checkFresh(payload, opts.RefreshMargin); err != nil {
+		return Result{Reason: reason, Source: SourceExec}, err
 	}
-	return Result{Key: payload.Key, Source: SourceCommand}, nil
+	return Result{Key: payload.Key, Source: SourceExec}, nil
 }
 
 // readCacheValid is the lock-free fast path. We accept any of:
@@ -438,7 +444,7 @@ func execHelper(ctx context.Context, opts Options) (helperPayload, Reason, error
 		// need the actual stderr contents.
 		slog.Warn("keystore: api_key_command exited non-zero",
 			"reason", string(ReasonCommandExit),
-			"source", string(SourceCommand),
+			"source", string(SourceExec),
 			"stderr_bytes", stderr.buf.Len(),
 			"error", runErr,
 		)
@@ -506,10 +512,18 @@ func parseHelperJSON(trimmed string) (helperPayload, Reason, error) {
 	return payload, ReasonOK, nil
 }
 
-// checkFreshExpiration validates that a freshly-produced payload
-// (helper or file) hasn't already passed expires_at. Distinct from
-// the "cache stale" check, which uses RefreshMargin.
-func checkFreshExpiration(payload helperPayload) (Reason, error) {
+// checkFresh validates that a freshly-produced payload (helper or
+// file) has remaining TTL strictly greater than RefreshMargin. The
+// boundary is the same one the cache fast path uses
+// (now+margin < expires_at), so the equality case is treated as
+// stale. Without margin (margin == 0) this collapses to the
+// "already expired" check.
+//
+// The margin guard matters even for fresh credentials: if a helper
+// hands us a key with 1 second of TTL left, the next API call
+// (provider.timeout_ms = default 20s) would race the expiry and
+// surface as a confused 401. Surface it here as `expired` instead.
+func checkFresh(payload helperPayload, margin time.Duration) (Reason, error) {
 	if payload.ExpiresAt == "" {
 		return ReasonOK, nil
 	}
@@ -519,8 +533,8 @@ func checkFreshExpiration(payload helperPayload) (Reason, error) {
 		// belt-and-braces in case a future refactor reorders calls.
 		return ReasonInvalidExpiration, fmt.Errorf("expires_at not RFC3339: %w", err)
 	}
-	if !time.Now().Before(exp) {
-		return ReasonExpired, fmt.Errorf("credential already expired at %s", payload.ExpiresAt)
+	if !time.Now().Add(margin).Before(exp) {
+		return ReasonExpired, fmt.Errorf("credential expired or within refresh_margin (expires_at=%s)", payload.ExpiresAt)
 	}
 	return ReasonOK, nil
 }
@@ -560,7 +574,7 @@ var (
 // readBoundedRegularFile reads up to limit+1 bytes from path,
 // rejecting non-regular files (FIFO / device / socket / symlink to
 // device, ...) and anything larger than limit. We need the cap on
-// both `api_key_file` and the cache file because a misconfigured
+// both `auth.path` and the cache file because a misconfigured
 // path like `/dev/zero` or a corrupt cache symlink would otherwise
 // let the hot path read unboundedly and either OOM or hang. The
 // helper-stdout reader has the same cap (stdoutLimit); applying it
@@ -569,35 +583,76 @@ var (
 //
 // We pass O_NONBLOCK so opening a FIFO (or a symlink that resolves
 // to one) returns immediately instead of waiting for a writer —
-// otherwise a misconfigured api_key_file pointed at a named pipe
+// otherwise a misconfigured auth.path pointed at a named pipe
 // would wedge every hook invocation, since file-mode resolution
 // has no command-timeout wrapper. O_NONBLOCK is a no-op for regular
 // files on POSIX, so the read path stays unchanged for the happy
 // case.
 func readBoundedRegularFile(path string, limit int) ([]byte, error) {
+	data, _, err := openBoundedRegularFile(path, limit)
+	return data, err
+}
+
+// openBoundedRegularFile is the same as readBoundedRegularFile but
+// also returns the os.FileInfo from the same fd. Callers that need
+// to inspect mode/uid (e.g. permission warnings) should use this so
+// the stat happens on the opened fd, avoiding TOCTOU between
+// os.Stat and os.Open.
+func openBoundedRegularFile(path string, limit int) ([]byte, os.FileInfo, error) {
 	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer func() { _ = f.Close() }()
 	info, err := f.Stat()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("%w: %s", errNotRegularFile, path)
+		return nil, info, fmt.Errorf("%w: %s", errNotRegularFile, path)
 	}
 	// Read one byte beyond the limit so we can detect "exactly
 	// limit bytes" vs "limit+1 or more bytes" without consuming
 	// arbitrary amounts of memory.
 	data, err := io.ReadAll(io.LimitReader(f, int64(limit)+1))
 	if err != nil {
-		return nil, err
+		return nil, info, err
 	}
 	if len(data) > limit {
-		return nil, fmt.Errorf("%w: %s (>%d bytes)", errOutputTooLarge, path, limit)
+		return nil, info, fmt.Errorf("%w: %s (>%d bytes)", errOutputTooLarge, path, limit)
 	}
-	return data, nil
+	return data, info, nil
+}
+
+// warnLoosePermissions emits a slog.Warn when the on-disk
+// auth.path file has either a non-current owner or any
+// group/other read bit set. It does NOT hard-reject — the user is
+// authoritative on filesystem layout — but it surfaces a security
+// nudge so the next sweep of `chmod 0600 ~/.config/...` is obvious.
+//
+// We only nudge on Unix; permission semantics on Windows / wasi /
+// plan9 don't map cleanly onto this check (and those platforms run
+// the keystore_other.go stub anyway).
+func warnLoosePermissions(path string, info os.FileInfo) {
+	if info == nil {
+		return
+	}
+	mode := info.Mode().Perm()
+	uid := -1
+	if st, ok := info.Sys().(*syscall.Stat_t); ok {
+		uid = int(st.Uid)
+	}
+	groupOrOtherReadable := mode&0o044 != 0
+	wrongOwner := uid >= 0 && uid != os.Geteuid()
+	if !groupOrOtherReadable && !wrongOwner {
+		return
+	}
+	slog.Warn("keystore: auth.path has loose permissions, recommend 0600",
+		"source", string(SourceFile),
+		"path", path,
+		"mode", fmt.Sprintf("%#o", mode),
+		"uid", uid,
+	)
 }
 
 // expandHomePath turns `~` / `~/foo` into the absolute path. The

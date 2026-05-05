@@ -14,15 +14,16 @@ const Supported = false
 // Resolve always reports unsupported_platform on this build. The
 // runner uses this to fall through with kind=credential_unavailable
 // rather than failing validation, so a Linux/macOS dotfile that
-// configures api_key_command does not break the hook on Windows
-// — env var fallback continues to work.
+// configures auth.type=exec does not break the hook on Windows —
+// users who do not configure auth at all keep using the regular
+// *_API_KEY env-var path unchanged.
 //
 // Source is derived from Options so the user sees the correct
-// component in metrics / logs: a Windows user who set api_key_file
-// should not see their failure misclassified as a command failure.
+// component in metrics / logs: a Windows user who set auth.type=file
+// should not see their failure misclassified as an exec failure.
 func Resolve(_ context.Context, opts Options) (Result, error) {
-	source := SourceCommand
-	if opts.Command == "" && opts.File != "" {
+	source := SourceExec
+	if opts.Command == "" && opts.Path != "" {
 		source = SourceFile
 	}
 	return Result{

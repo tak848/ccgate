@@ -487,7 +487,7 @@ func invalidateOnAuthFailure(p config.ProviderConfig, target, source, providerNa
 	}
 	opts := keystore.Options{
 		Command:      p.APIKeyCommand,
-		File:         p.APIKeyFile,
+		Path:         p.APIKeyFile,
 		ProviderName: providerName,
 		BaseURL:      baseURL,
 		TargetName:   target,
@@ -632,7 +632,7 @@ func resolveAPIKey(ctx context.Context, p config.ProviderConfig, providerName, t
 	if p.APIKeyCommand != "" || p.APIKeyFile != "" {
 		opts := keystore.Options{
 			Command:        p.APIKeyCommand,
-			File:           p.APIKeyFile,
+			Path:           p.APIKeyFile,
 			ProviderName:   providerName,
 			BaseURL:        strings.TrimSpace(p.BaseURL),
 			TargetName:     target,

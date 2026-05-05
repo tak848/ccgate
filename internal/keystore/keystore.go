@@ -1,12 +1,12 @@
 // Package keystore resolves a provider API key from one of two
-// short-lived sources — an `api_key_command` shell helper or an
-// `api_key_file` path — for use by the ccgate hook on its hot path.
+// short-lived sources — an `auth.type=exec` shell helper or an
+// `auth.type=file` path — for use by the ccgate hook on its hot path.
 //
 // Resolve takes the configuration in Options and returns a Result
 // carrying the credential, an optional secret-free Reason classifier
-// for failures, and a Source label ("command", "file", "cache",
-// "lock") describing where the result came from. Reason and Source
-// are deliberately orthogonal: Reason fuels the metrics
+// for failures, and a Source label ("exec", "file", "cache", "lock")
+// describing where the result came from. Reason and Source are
+// deliberately orthogonal: Reason fuels the metrics
 // `CredentialFailures` aggregation, Source fuels the `slog` `source`
 // attribute that the operational recovery checklist points users at.
 //
@@ -35,6 +35,7 @@ package keystore
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"time"
@@ -49,11 +50,12 @@ import (
 //	command_exit, json_parse, invalid_expiration, empty_output,
 //	invalid_plain_output, expired, file_missing, file_read,
 //	unsupported_platform, timeout, output_too_large, lock_timeout,
-//	lock_error, provider_auth.
+//	lock_error, cache_unavailable, cache_key_invalid, provider_auth,
+//	provider_forbidden.
 //
 // log-only credential warnings (degraded but successful resolution):
 //
-//	cache_parse, cache_read, cache_write, cache_unavailable.
+//	cache_parse, cache_read, cache_write.
 type Reason string
 
 // Reason values. Keep these aligned with docs/configuration.md and
@@ -73,13 +75,15 @@ const (
 	ReasonOutputTooLarge      Reason = "output_too_large"
 	ReasonLockTimeout         Reason = "lock_timeout"
 	ReasonLockError           Reason = "lock_error"
+	ReasonCacheUnavailable    Reason = "cache_unavailable"
+	ReasonCacheKeyInvalid     Reason = "cache_key_invalid"
 	ReasonProviderAuth        Reason = "provider_auth"
+	ReasonProviderForbidden   Reason = "provider_forbidden"
 
 	// Log-only (Resolve still succeeds; these never sit in metrics).
-	ReasonCacheParse       Reason = "cache_parse"
-	ReasonCacheRead        Reason = "cache_read"
-	ReasonCacheWrite       Reason = "cache_write"
-	ReasonCacheUnavailable Reason = "cache_unavailable"
+	ReasonCacheParse Reason = "cache_parse"
+	ReasonCacheRead  Reason = "cache_read"
+	ReasonCacheWrite Reason = "cache_write"
 )
 
 // Source labels where Resolve actually produced (or failed to
@@ -89,10 +93,10 @@ const (
 type Source string
 
 const (
-	SourceCommand Source = "command"
-	SourceFile    Source = "file"
-	SourceCache   Source = "cache"
-	SourceLock    Source = "lock"
+	SourceExec  Source = "exec"
+	SourceFile  Source = "file"
+	SourceCache Source = "cache"
+	SourceLock  Source = "lock"
 )
 
 // Options carries everything Resolve needs from the runner. It is
@@ -105,12 +109,12 @@ const (
 // happens at config load, so resolving never re-parses or has to
 // fall back to defaults at hot-path time.
 type Options struct {
-	// Command is the verbatim `provider.api_key_command` shell
-	// command (passed to `/bin/sh -c`). Empty when only File is set.
+	// Command is the verbatim `provider.auth.command` shell command
+	// (passed to `/bin/sh -c`). Empty when only Path is set.
 	Command string
-	// File is the verbatim `provider.api_key_file` path (absolute or
+	// Path is the verbatim `provider.auth.path` file path (absolute or
 	// `~/`-prefixed). Empty when only Command is set.
-	File string
+	Path string
 	// ProviderName is the lower-cased provider key
 	// (`anthropic`/`openai`/`gemini`/...). Used in the cache hash so
 	// the same helper command does not silently share a credential
@@ -125,6 +129,13 @@ type Options struct {
 	// different targets keep credential scopes separate even when
 	// the rest of the config matches.
 	TargetName string
+	// CacheKey is the `provider.auth.cache_key` value after `${VAR}`
+	// env expansion. It contributes to the cache fingerprint as a
+	// user-supplied salt so an env / profile dependent helper (e.g.
+	// `aws sts ... --profile $AWS_PROFILE`) gets a separate cache
+	// file per profile. Secret-free; runner is responsible for
+	// rejecting undefined-env references upstream.
+	CacheKey string
 	// RefreshMargin is the early-refresh slack used by Resolve when
 	// deciding whether the cached `expires_at` is still in the
 	// future. Validated as `>= 0`; "0s" means "no early refresh".
@@ -149,27 +160,36 @@ type Result struct {
 // the built-in `unix` build tag). Callers can errors.Is against it
 // to distinguish "the OS lacks our flock/exec primitives" from
 // other Resolve failures.
-var ErrUnsupported = errors.New("keystore: api_key_command/api_key_file are not supported on this platform")
+var ErrUnsupported = errors.New("keystore: auth.type=exec / auth.type=file are not supported on this platform")
 
 // CacheFingerprint is the deterministic per-cache-entry identifier.
 // The same Options that should share a cache file produce the same
 // fingerprint; differences in TargetName / ProviderName / BaseURL /
-// Command always produce a fresh path.
+// Command / CacheKey always produce a fresh path.
 //
-// `v1\0` prefix gives us a versioning hook if the inputs ever need
-// to change without immediately invalidating user caches; we don't
-// include `Model` because users tend to flip models more often than
-// they want to re-issue credentials.
+// Inputs are fed length-prefixed (`uint32 BE len || raw bytes`) so
+// any byte (including NUL) inside any field stays inside its own
+// segment and never collides with adjacent fields. The leading
+// "v1" tag itself is fed length-prefixed so the format version is
+// part of the same uniform encoding.
+//
+// We don't include `Model` because users tend to flip models more
+// often than they want to re-issue credentials.
 func CacheFingerprint(opts Options) string {
 	h := sha256.New()
-	_, _ = h.Write([]byte("v1\x00"))
-	_, _ = h.Write([]byte(opts.TargetName))
-	_, _ = h.Write([]byte{0})
-	_, _ = h.Write([]byte(opts.ProviderName))
-	_, _ = h.Write([]byte{0})
-	_, _ = h.Write([]byte(opts.BaseURL))
-	_, _ = h.Write([]byte{0})
-	_, _ = h.Write([]byte(opts.Command))
+	writeLP(h, "v1")
+	writeLP(h, opts.TargetName)
+	writeLP(h, opts.ProviderName)
+	writeLP(h, opts.BaseURL)
+	writeLP(h, opts.Command)
+	writeLP(h, opts.CacheKey)
 	sum := h.Sum(nil)
 	return hex.EncodeToString(sum[:8]) // 16 hex chars
+}
+
+func writeLP(w interface{ Write([]byte) (int, error) }, s string) {
+	var buf [4]byte
+	binary.BigEndian.PutUint32(buf[:], uint32(len(s)))
+	_, _ = w.Write(buf[:])
+	_, _ = w.Write([]byte(s))
 }

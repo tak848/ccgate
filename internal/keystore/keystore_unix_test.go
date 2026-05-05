@@ -151,7 +151,7 @@ printf '{"key":"sk-cache","expires_at":"` + future + `"}'`
 	if err != nil {
 		t.Fatalf("first resolve: %v", err)
 	}
-	if first.Key != "sk-cache" || first.Source != SourceCommand {
+	if first.Key != "sk-cache" || first.Source != SourceExec {
 		t.Fatalf("first: key=%q source=%q", first.Key, first.Source)
 	}
 	second, err := Resolve(context.Background(), opts(cmd))
@@ -248,7 +248,7 @@ func TestResolveFile(t *testing.T) {
 				t.Fatal(err)
 			}
 			res, err := Resolve(context.Background(), Options{
-				File:           path,
+				Path:           path,
 				ProviderName:   "test",
 				TargetName:     "claude",
 				RefreshMargin:  30 * time.Second,
@@ -272,7 +272,7 @@ func TestResolveFileMissing(t *testing.T) {
 	withCacheRoot(t)
 
 	res, err := Resolve(context.Background(), Options{
-		File:           filepath.Join(t.TempDir(), "absent"),
+		Path:           filepath.Join(t.TempDir(), "absent"),
 		ProviderName:   "test",
 		TargetName:     "claude",
 		RefreshMargin:  30 * time.Second,
@@ -346,7 +346,7 @@ func TestResolveCommandStaleCacheRefreshes(t *testing.T) {
 	if res.Key != "sk-fresh" {
 		t.Fatalf("key = %q, want sk-fresh (helper should have refreshed stale cache)", res.Key)
 	}
-	if res.Source != SourceCommand {
+	if res.Source != SourceExec {
 		t.Fatalf("source = %q, want command", res.Source)
 	}
 }
@@ -415,7 +415,7 @@ func TestResolveFileTooLarge(t *testing.T) {
 		t.Fatal(err)
 	}
 	res, err := Resolve(context.Background(), Options{
-		File:           path,
+		Path:           path,
 		ProviderName:   "test",
 		TargetName:     "claude",
 		RefreshMargin:  30 * time.Second,
@@ -440,7 +440,7 @@ func TestResolveFileNonRegularRejected(t *testing.T) {
 	// platform-specific FIFO/device tricks.
 	dir := t.TempDir()
 	res, err := Resolve(context.Background(), Options{
-		File:           dir,
+		Path:           dir,
 		ProviderName:   "test",
 		TargetName:     "claude",
 		RefreshMargin:  30 * time.Second,
@@ -476,7 +476,7 @@ func TestResolveFileFifoDoesNotBlock(t *testing.T) {
 	done := make(chan result, 1)
 	go func() {
 		res, err := Resolve(context.Background(), Options{
-			File:           path,
+			Path:           path,
 			ProviderName:   "test",
 			TargetName:     "claude",
 			RefreshMargin:  30 * time.Second,
