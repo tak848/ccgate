@@ -237,7 +237,7 @@ Claude Code と同じ環境変数を使います — [provider table](#3-api-キ
 
 - **list**: `allow` / `deny` / `environment` は値を設定した layer が前の layer から引き継いだ list を **置き換える** (`[]` を書けば空 list に置き換え)。`append_*` 系 (`append_allow` / `append_deny` / `append_environment`) は前の layer の累積 list の **末尾に追加** する。
 - **スカラー**: `log_*` / `metrics_*` / `fallthrough_strategy` はその layer がフィールドを設定していれば per-field で上書き、設定していなければ前の値を保持。
-- **`provider` block**: `provider` を書いた layer では `provider.*` の全フィールド (`name` / `model` / `base_url` / `api_key_command` / `api_key_file` / `api_key_refresh_margin` / `api_key_command_timeout` / `timeout_ms`) をまとめて置き換えます。書かなかった layer では前の block をそのまま引き継ぎます。`name` を切り替えると `model` の名前空間や `base_url` の意味も変わる密結合のため、フィールド単位では merge しません。注意: project-local 設定で `provider` を再掲する場合、global layer に書いた `api_key_command` / `api_key_file` も忘れずに書き写してください。書き漏らすと当該プロジェクトだけ helper 設定が静かに消えます。
+- **`provider` block**: `provider` を書いた layer では `provider.*` の全フィールド (`name` / `model` / `base_url` / `auth` / `timeout_ms`) をまとめて置き換えます。書かなかった layer では前の block をそのまま引き継ぎます。`name` を切り替えると `model` の名前空間や `base_url` の意味も変わる密結合のため、フィールド単位では merge しません。注意: project-local 設定で `provider` を再掲する場合、global layer に書いた `auth` ブロックも忘れずに書き写してください。書き漏らすと当該プロジェクトだけ helper 設定が静かに消えます。
 
 `~/.<target>/ccgate.jsonnet` で model だけ変えたい場合でも `provider: {name: 'anthropic', model: 'claude-sonnet-4-6'}` のように block 全体を書き直す必要があります (embedded の `allow` / `deny` はそのまま残ります)。`allow: [...]` を書けば embedded の allow を完全に差し替え (これは v0.6 以前のグローバル設定がすでに行っていた挙動なので、そのまま冪等)。プロジェクトローカル設定は典型的に `append_deny: [...]` / `append_environment: [...]` で追加制限を載せます。
 プロジェクトローカル設定は **Git に追跡されていないファイルのみ** 読み込まれます。
@@ -250,10 +250,7 @@ Claude Code と同じ環境変数を使います — [provider table](#3-api-キ
 | `provider.name`          | string                            | `"anthropic"`                                                                   | プロバイダー名。`"anthropic"` / `"openai"` / `"gemini"` のいずれか                                          |
 | `provider.model`         | string                            | `"claude-haiku-4-5"`                                                            | モデル名。例: `claude-haiku-4-5` / `claude-sonnet-4-6` (anthropic)、`gpt-5.4-nano-2026-03-17` (openai)、`gemini-3-flash-preview` (gemini)。互換 proxy 経由なら proxy が公開している任意の名前 (例: `anthropic/claude-haiku-4-5`) |
 | `provider.base_url`      | string                            | `""`                                                                            | API base URL の上書き。空文字列 (default) で SDK の既定 endpoint を使用。OpenAI 互換 / Anthropic 互換 proxy (LiteLLM proxy, Azure OpenAI, オンプレ gateway, 地域別 endpoint 等) 経由で叩きたい時に指定 |
-| `provider.api_key_command` | string                          | `""`                                                                            | Unix 限定。stdout に API キーを出すシェルコマンド (`/bin/sh -c`)。JSON `{key, expires_at}` ならキャッシュ + 期限前更新、plain stdout はキャッシュなし。詳細は [docs/ja/api-key-helper.md](api-key-helper.md) |
-| `provider.api_key_file`  | string                            | `""`                                                                            | Unix 限定。abs path もしくは `~/...` のファイルを hook 起動ごとに読む。`api_key_command` と同じ shape を期待。`api_key_command` が空のときのみ参照 |
-| `provider.api_key_refresh_margin` | duration                 | `"30s"`                                                                         | cache 有効性判定の早期 refresh 余裕。`now + margin >= expires_at` で stale 扱い。`>= 0` (`0s` で早期 refresh 無効) |
-| `provider.api_key_command_timeout` | duration                | `"5s"`                                                                          | helper 1 回起動の hot-path 上限 (lock retry + exec)。`> 0` (`0s` は reject)                                |
+| `provider.auth`          | object (`{type, ...}`)            | (省略時は env var)                                                              | Unix 限定。短命 / ローテーションする認証情報を扱う discriminated union。`type=exec` (helper コマンド) / `type=file` (rotator が更新するファイル)。詳細は [docs/ja/api-key-helper.md](api-key-helper.md) |
 | `provider.timeout_ms`    | int                               | `20000`                                                                         | API タイムアウト (ms)。`0` = タイムアウトなし                                                              |
 | `log_path`               | string                            | `$XDG_STATE_HOME/ccgate/<target>/ccgate.log`                                    | ログファイルパス。`~` でホームディレクトリ展開                                                             |
 | `log_disabled`           | bool                              | `false`                                                                         | ログ出力を完全に無効化                                                                                     |
@@ -330,26 +327,42 @@ proxy の API キーを `CCGATE_ANTHROPIC_API_KEY` で export。Anthropic SDK �
 
 ### 期限付き・自動更新される API キー
 
-認証情報が静的な環境変数では追従できない頻度で更新される (AWS STS / Vertex ADC / OpenAI 互換 gateway の virtual key / 社内 key broker など) 場合、`provider.api_key_command` に helper スクリプトを、もしくは `provider.api_key_file` に rotator が更新するパスを指定します。
+認証情報が静的な環境変数では追従できない頻度で更新される (AWS STS / Vertex ADC / OpenAI 互換 gateway の virtual key / 社内 key broker など) 場合は `provider.auth` を使います。2 つの形式の discriminated union — 用途に合う方を選びます。
 
 ```jsonnet
+// helper コマンドを実行して認証情報を取得
 {
   provider: {
     name: 'anthropic',
-    model: 'claude-haiku-4-5',
-    api_key_command: '/usr/local/bin/my-key-broker --provider anthropic',
+    auth: {
+      type: 'exec',
+      command: '/usr/local/bin/my-key-broker --provider anthropic',
+    },
+  },
+}
+
+// 外部 rotator が認証情報をファイルに書き込む
+{
+  provider: {
+    name: 'anthropic',
+    auth: {
+      type: 'file',
+      path: '~/.config/my-broker/anthropic.json',
+    },
   },
 }
 ```
 
-helper は次のいずれかを書きます。
+helper / file の中身は次のいずれかを書きます。
 
-- **JSON** `{"key":"sk-...","expires_at":"<RFC3339>"}` — `$XDG_CACHE_HOME/ccgate/<target>/` にキャッシュされ、期限前に更新されます
+- **JSON** `{"key":"sk-...","expires_at":"<RFC3339>"}` — `auth.type=exec` の場合 `$XDG_CACHE_HOME/ccgate/<target>/` にキャッシュされ、期限前に更新されます
 - **plain string** — 単一行の非空文字列。キャッシュなし
 
-解決順序: `api_key_command` > `api_key_file` > `CCGATE_*_API_KEY` > `*_API_KEY`。helper を設定済みのときに失敗しても **env var に黙って fallback はしません**。代わりに `kind=credential_unavailable` で fallthrough します。Unix のみ。
+解決順序: `provider.auth` (設定済み) > `CCGATE_*_API_KEY` > `*_API_KEY`。`auth` を設定済みのときに失敗しても **env var に黙って fallback はしません**。代わりに `kind=credential_unavailable` で fallthrough します。Unix のみ。
 
-helper の完全な仕様 (動かせる例 / アカウント別キャッシュ / セキュリティ上の注意 / 障害復旧チェックリスト) は [docs/ja/api-key-helper.md](api-key-helper.md) を参照してください。
+ccgate は jsonnet helper として `std.native('env')(name)` (未定義で空文字) と `std.native('must_env')(name)` (未定義で config-load エラー) も登録しているので (ecspresso v2.4+ と同じ pattern)、ccgate 独自の記法を使わずに任意の文字列フィールドから環境変数を読めます。
+
+helper の完全な仕様 (動かせる例 / `auth.cache_key` によるアカウント別キャッシュ / セキュリティ上の注意 / 401/403 の挙動マトリクス / 障害復旧チェックリスト) は [docs/ja/api-key-helper.md](api-key-helper.md) を参照してください。
 ## デフォルトルール
 
 ccgate は target ごとに組み込みのデフォルトルールを持っています。常にベースとして適用され、その上にグローバル / プロジェクトローカル設定が重なります。
@@ -425,7 +438,7 @@ ccgate codex  metrics --days 7        # codex 側、同じシェイプ
 - [docs/ja/claude.md](claude.md) — Claude Code 固有
 - [docs/ja/codex.md](codex.md) — Codex CLI 固有
 - [docs/ja/configuration.md](configuration.md) — 設定 layering、fallthrough_strategy、metrics、既知の制約
-- [docs/ja/api-key-helper.md](api-key-helper.md) — `api_key_command` / `api_key_file` リファレンス (helper の契約、キャッシュ、セキュリティ、復旧手順)
+- [docs/ja/api-key-helper.md](api-key-helper.md) — `provider.auth` リファレンス (helper の契約、キャッシュ、セキュリティ、401/403 挙動、復旧手順)
 - [English documentation (docs/)](../claude.md)
 
 ## 開発

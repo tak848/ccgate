@@ -26,7 +26,7 @@ ccgate は target ごとに 3 layer を順に評価します。すべての laye
 | list: `allow` / `deny` / `environment` | 値を設定した layer が前の layer から引き継いだ list を **置き換える** (`[]` でも置換)。設定していない layer は前の値を保持 | embedded `allow: ["A","B"]` + global `allow: ["X"]` → 最終 `allow: ["X"]` |
 | list: `append_allow` / `append_deny` / `append_environment` | 値を設定した layer が前の layer の累積 list の **末尾に追加** | embedded `deny: ["A"]` + project `append_deny: ["P"]` → 最終 `deny: ["A","P"]` |
 | スカラー: `log_*` / `metrics_*` / `fallthrough_strategy` | 各 layer が値を設定していれば per-field で **overwrite**、設定していなければ前の値を保持 | embedded `log_max_size: 5MB` + global `log_max_size: 10MB` → 最終 `log_max_size: 10MB` |
-| ブロック: `provider` (`provider.*` の全 field — `name` / `model` / `base_url` / `api_key_command` / `api_key_file` / `api_key_refresh_margin` / `api_key_command_timeout` / `timeout_ms`) | `provider` を書いた layer は **block 全体を置換**、書かなかった layer はそのまま継承。per-field merge にすると、下位 layer の proxy 用 `base_url` や helper 用 `api_key_command` が `name` を切り替えただけの上位 layer に残る等の不整合が起きるため | embedded `provider: {name: anthropic, model: haiku}` + global `provider: {name: openai, model: gpt-5.4-nano-2026-03-17}` → 最終 `provider: {name: openai, model: gpt-5.4-nano-2026-03-17}`。model だけ変えたい場合は `provider: {name: anthropic, model: claude-sonnet-4-6}` のように block 全体を書き直す。global で `api_key_command` を設定している場合、project-local 側で `provider` を上書きするときも忘れずに書き写すこと (書き漏らすと当該プロジェクトで helper 設定が静かに消える) |
+| ブロック: `provider` (`provider.*` の全 field — `name` / `model` / `base_url` / `auth` / `timeout_ms`) | `provider` を書いた layer は **block 全体を置換**、書かなかった layer はそのまま継承。per-field merge にすると、下位 layer の proxy 用 `base_url` や helper 用 `auth.command` が `name` を切り替えただけの上位 layer に残る等の不整合が起きるため | embedded `provider: {name: anthropic, model: haiku}` + global `provider: {name: openai, model: gpt-5.4-nano-2026-03-17}` → 最終 `provider: {name: openai, model: gpt-5.4-nano-2026-03-17}`。model だけ変えたい場合は `provider: {name: anthropic, model: claude-sonnet-4-6}` のように block 全体を書き直す。global で `auth` を設定している場合、project-local 側で `provider` を上書きするときも `auth` ブロック全体を忘れずに書き写すこと (書き漏らすと当該プロジェクトで helper 設定が静かに消える) |
 
 `allow` と `append_allow` (他 list も同じ) は同じ layer に共存可能 — 先に置換、その結果に対して append が積まれる。embedded の list を厳選版に **差し替えつつ** プロジェクト固有のルールを **追加** したいときに使います: `{ allow: ['only this base'], append_allow: ['plus this project rule'] }`。
 
@@ -135,20 +135,25 @@ ccgate codex  metrics --days 7         # codex 側も同 shape
 
 | reason                  | 意味                                                                                                |
 |-------------------------|-----------------------------------------------------------------------------------------------------|
-| `command_exit`          | `api_key_command` が非 0 exit                                                                        |
+| `command_exit`          | `auth.command` が非 0 exit                                                                           |
 | `json_parse`            | helper / file の JSON が厳密 parse に失敗 / `key` 欠落                                                |
 | `invalid_expiration`    | JSON parse は成功したが `expires_at` が RFC3339 として解釈不能                                       |
 | `empty_output`          | plain 出力が trim 後に空                                                                             |
 | `invalid_plain_output`  | plain 出力に内部改行 (複数行は reject)                                                               |
-| `expired`               | 読み取り時点で `expires_at` が過去                                                                   |
-| `file_missing`          | `api_key_file` が存在しない                                                                          |
+| `expired`               | 読み取り時点で `expires_at` が過去、または残り TTL が `auth.refresh_margin` 未満                     |
+| `file_missing`          | `auth.path` が存在しない                                                                             |
 | `file_read`             | ファイルはあるが読み取り失敗 (権限・FS エラー等)                                                     |
-| `unsupported_platform`  | 非 Unix ビルド (Windows)。helper / file 経路は stub                                                   |
-| `timeout`               | `api_key_command` が `api_key_command_timeout` を超過                                                |
+| `unsupported_platform`  | 非 Unix ビルド (Windows)。`auth` 経路は stub                                                          |
+| `timeout`               | `auth.command` が `auth.timeout` を超過                                                              |
 | `output_too_large`      | helper の stdout が 64 KiB 上限超過                                                                  |
 | `lock_timeout`          | flock retry budget 切れ (peer が refresh 中)                                                         |
 | `lock_error`            | flock syscall が EWOULDBLOCK 以外で失敗 (lock 系が壊れている → helper exec はスキップ)               |
-| `provider_auth`         | provider API が 401/403 で credential を拒否。`api_key_command` 経路では keystore のキャッシュファイルを unlink して次回呼び出しで helper 再実行、`api_key_file` 経路は内部キャッシュを持たないため復旧は外部 rotator の責務、env var 経路は **意図的にこの経路に乗せない** (ccgate からは rotate できず、401/403 を握り潰すと user 側の設定ミスを隠してしまうため) |
+| `cache_unavailable`     | cache dir を作成 / `chmod` できない。隣接 lock file も作れず concurrent helper の race を防げないため fail-fast (helper exec せずに fallthrough) |
+| `cache_key_invalid`     | `auth.cache_key` が未定義 env を参照。空 salt に潰すとプロファイル間で credential が誤共有されてしまうため、fallthrough して user に config 修正を促す |
+| `provider_auth`         | provider が **401**、または **403 + 認証情報期限切れ系 code** (AWS `ExpiredToken*` / OAuth `invalid_token` / Anthropic-OpenAI `authentication_error` / `invalid_api_key` 等) で credential を拒否。`auth.type=exec` は cache を invalidate して次回 fire で helper 再実行、`auth.type=file` は内部 cache がないため fallthrough のみ、env var 経路は 401 / 認証情報期限切れ 403 では **意図的にこの経路に乗せず exit 1** (ccgate からは rotate できず、握り潰すと user 側の設定ミスを隠してしまうため) |
+| `provider_forbidden`    | provider が **403 + 非認証情報系 code** (`permission_error` / `model_not_allowed` / AWS `AccessDenied` 等) もしくは未知 code で拒否。全経路で fallthrough、**cache invalidate しない** (権限・ポリシー・region 制限が原因なので credential rotate しても直らない) |
+
+`credential_unavailable` は単に「credential 解決に失敗した」だけでなく、「provider が credential を受け取った上で拒否した」(401 / 403) ケースも含みます。`provider_auth` と `provider_forbidden` の分割により、「rotate して再試行すべき」と「設定が credential の権限を超えた要求になっている」をレスポンス本文を読むことなく区別できます。
 
 #### log のみで出る credential 警告 (metrics には乗らない)
 
@@ -157,7 +162,6 @@ cache 層の失敗は fallthrough せずに自動回復するので、`slog.Warn
 - `cache_parse`: cache JSON が壊れていたので unlink、helper を再実行
 - `cache_read`: cache 読み取り失敗で unlink、helper を再実行
 - `cache_write`: cache 書き込み / atomic-rename 失敗。fresh key は cache せずに返す
-- `cache_unavailable`: cache dir 作成 / `chmod` 失敗。helper は走るが cache は使わない
 
 ### ドリルダウン節
 

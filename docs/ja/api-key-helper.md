@@ -2,54 +2,90 @@
 
 [English version (docs/api-key-helper.md)](../api-key-helper.md)
 
-provider が必要とする認証情報が静的な環境変数では追従できない頻度で更新される — AWS STS セッション、Vertex ADC、OpenAI 互換 gateway の virtual key、社内 key broker など — 場合に、`*_API_KEY` の代わりに helper プロセスやファイル経由で解決させる仕組みです。
+provider が必要とする認証情報が静的な環境変数では追従できない頻度で更新される — AWS STS セッション、Vertex ADC、OpenAI 互換 gateway の virtual key、社内 key broker など — 場合に、`*_API_KEY` の代わりに `provider.auth` 経由で解決させる仕組みです。
 
 このドキュメントが完全な参照です。README には最小限の設定例しか載せず、helper の契約・キャッシュの挙動・アカウント分離・セキュリティ上の注意・障害時の復旧手順はすべてこのページに集約しています。
 
 ## 出力フォーマット
 
-helper は次のいずれかの形を stdout (もしくは `api_key_file` の中身として) に書きます。
+helper は次のいずれかの形を stdout (もしくは `auth.type=file` のファイル中身として) に書きます。
 
-- **JSON**: `{"key":"sk-...","expires_at":"2026-05-04T01:23:45Z"}`。厳密に解析されます。`key` は必須、`expires_at` は任意。未知のトップレベルフィールド (broker のメタデータ等) は受け入れますが捨てます — キャッシュにも SDK にも `{key, expires_at}` だけが渡ります。
-- **plain string**: 改行を含まない単一の非空文字列。そのまま渡されます。
+- **JSON**: `{"key":"sk-...","expires_at":"2026-05-04T01:23:45Z"}`。厳密に解析されます。`key` は必須、`expires_at` は任意。未知のトップレベルフィールド (broker のメタデータ等) は受け入れますが捨てます — キャッシュにも SDK にも `{key, expires_at}` だけが渡ります
+- **plain string**: 改行を含まない単一の非空文字列。そのまま渡されます
 
-`expires_at` は RFC3339。helper の stdout が 64 KiB を超えると `output_too_large` で拒否します。`api_key_file` の内容にも同じ 64 KiB 上限が適用されます。
+`expires_at` は RFC3339。helper の stdout が 64 KiB を超えると `output_too_large` で拒否します。ファイル経路の中身にも同じ 64 KiB 上限が適用されます。
 
 キャッシュの扱いは経路ごとに違います:
 
-- `api_key_command` の場合: 未来の `expires_at` を含む JSON は target 別のキャッシュファイル ([キャッシュ](#キャッシュ) 参照) に保存し、`api_key_refresh_margin` に従って期限前に更新します。`expires_at` を含まない JSON と plain string は受け付けますが **キャッシュしません** — hook が呼ばれるたびに helper を再実行します。
-- `api_key_file` の場合: ccgate は hook が呼ばれるたびにファイルを読み直すだけで、内部キャッシュは持ちません。credential をいつ更新するかは外部 rotator の責務です。
+- `auth.type=exec` の場合: 未来の `expires_at` を含む JSON は target 別のキャッシュファイル ([キャッシュ](#キャッシュ) 参照) に保存し、`auth.refresh_margin` に従って期限前に更新します。`expires_at` を含まない JSON と plain string は受け付けますが **キャッシュしません** — hook が呼ばれるたびに helper を再実行します
+- `auth.type=file` の場合: ccgate は hook が呼ばれるたびにファイルを読み直すだけで、内部キャッシュは持ちません。credential をいつ更新するかは外部 rotator の責務です
+
+`auth.refresh_margin` は **新しく取得した認証情報の最低残 TTL ガード** としても効きます (helper exec 出力 / file 中身の両方に適用)。残 TTL がマージン未満の認証情報は SDK に渡さず `expired` で fallthrough し、次回 API 呼び出しの最中に切れて 401 になる事故を防ぎます。
 
 ## 設定
 
 ```jsonnet
+// auth.type=exec: ccgate がコマンドを実行して stdout を読む
 {
   provider: {
     name: 'anthropic',
     model: 'claude-haiku-4-5',
-    api_key_command: '/usr/local/bin/my-key-broker --provider anthropic',
-    api_key_refresh_margin: '60s', // 任意、デフォルト 30s
-    api_key_command_timeout: '5s', // 任意、デフォルト 5s
+    auth: {
+      type: 'exec',
+      command: '/usr/local/bin/my-key-broker --provider anthropic',
+      refresh_margin: '60s', // 任意、デフォルト 30s
+      timeout: '5s',         // 任意、デフォルト 5s
+      cache_key: '${AWS_PROFILE}', // 任意、後述「アカウント分離」参照
+    },
+  },
+}
+
+// auth.type=file: 外部 rotator が認証情報を書き込む
+{
+  provider: {
+    name: 'anthropic',
+    auth: {
+      type: 'file',
+      path: '~/.config/my-broker/anthropic.json',
+      refresh_margin: '60s', // 任意、デフォルト 30s
+    },
   },
 }
 ```
 
 | field | 型 | デフォルト | 役割 |
 |---|---|---|---|
-| `provider.api_key_command` | string | `""` | `/bin/sh -c` で実行されるシェルコマンド。stdout が認証情報になる |
-| `provider.api_key_file` | string (絶対パス または `~/...`) | `""` | 認証情報が書かれたファイルを呼び出しごとに読む。キャッシュなし |
-| `provider.api_key_refresh_margin` | duration | `"30s"` | `now + margin >= expires_at` でキャッシュを stale 扱いにする。`>= 0` (`0s` で早期更新を無効化) |
-| `provider.api_key_command_timeout` | duration | `"5s"` | helper 1 回の hot-path 上限。`> 0` |
+| `auth.type` | `"exec"` / `"file"` | (`auth` を書くなら必須) | 識別子。どの他フィールドが有効になるかを決める |
+| `auth.command` | string | `""` | (`type=exec` 専用、必須) `/bin/sh -c` で実行されるシェルコマンド。stdout が認証情報になる |
+| `auth.path` | string (絶対パス または `~/...`) | `""` | (`type=file` 専用、必須) ローカル regular file。中身は exec と同じ JSON / plain string |
+| `auth.refresh_margin` | duration | `"30s"` | `now + margin >= expires_at` でキャッシュを stale 扱いに (`type=exec`)。新しく取れた認証情報の最低残 TTL ガード (両 type)。`>= 0` (`0s` でガード無効化) |
+| `auth.timeout` | duration | `"5s"` | (`type=exec` 専用) helper 1 回の hot-path 上限。`> 0` |
+| `auth.cache_key` | string | `""` | (`type=exec` 専用) cache fingerprint に加える secret-free な salt。`${VAR}` 形式の env 展開対応。後述「[アカウント分離](#キャッシュキーとアカウント分離)」参照 |
 
-`provider` ブロックは設定レイヤー間で **丸ごと置換** される設計のため、project-local 設定で `provider` を再掲する場合は global で書いた `api_key_command` / `api_key_file` も忘れずに書き写してください。書き漏らすと当該プロジェクトでだけ helper 設定が静かに消えます。
+`provider` ブロックは設定レイヤー間で **丸ごと置換** される設計のため、project-local 設定で `provider` を再掲する場合は global で書いた `auth` ブロックも忘れずに書き写してください。書き漏らすと当該プロジェクトでだけ helper 設定が静かに消えます。
+
+### `auth.type=file` はローカル FS 専用
+
+`auth.path` は **ローカル regular file 専用の best-effort 契約** です。ローカル POSIX ファイルシステム (XFS / ext4 / APFS / HFS+) はサポート対象。NFS / SMB / FUSE / keychain mount は **明示的に非対応** — Go の `os.File.SetDeadline` は regular file には適用されず、遅延の大きいリモート mount に hard read deadline をかける手段が無いためです。認証情報読み取りに hard timeout が必須なら `auth.type=exec` (`auth.timeout` が効く) に切り替えてください。
+
+ccgate はファイルを `O_NONBLOCK` で開くので、誤って FIFO / device を指してしまった場合は早期に return します。ただし NFS が応答を返してこない regular file を指した場合は、kernel I/O の完了まで hook が固まることがあります。
+
+### ファイルパーミッション
+
+ccgate は `auth.path` が次の場合に `slog.Warn` を出します (hard reject はしません):
+
+- `group` または `other` に read bit が立っている (`mode & 0o044`)
+- 現在の UID と異なるユーザー所有
+
+推奨は `chmod 0600 <path>` + 親ディレクトリ `chmod 0700` です。warning は情報提供のみ — 緩いパーミッションが意図通りなら無視して構いません。
 
 ## 解決順序とプラットフォーム対応
 
-`api_key_command` > `api_key_file` > `CCGATE_*_API_KEY` > `*_API_KEY`
+`provider.auth` (設定済み) > `CCGATE_*_API_KEY` > `*_API_KEY`
 
-`api_key_command` または `api_key_file` を設定している状態で解決に失敗しても、ccgate は env var 経路へ **暗黙に fallback しません**。silent fallback は helper のバグを隠してしまうためです。代わりに `kind=credential_unavailable` で fallthrough し、reason がどの段階で失敗したかを示します (reason の網羅は [docs/ja/configuration.md](configuration.md) を参照)。
+`auth` を設定している状態で解決に失敗しても、ccgate は env var 経路へ **暗黙に fallback しません**。silent fallback は helper のバグを隠してしまうためです。代わりに `kind=credential_unavailable` で fallthrough し、reason がどの段階で失敗したかを示します (reason の網羅は [docs/ja/configuration.md](configuration.md) を参照)。
 
-`api_key_command` / `api_key_file` は Unix のみ (Linux / macOS / *BSD) の対応です。Windows でこれらを設定すると `reason=unsupported_platform` で fallthrough します。どちらも設定していない Windows ユーザーは従来通り `*_API_KEY` の env var 経路で動きますが、設定済みの helper / file が unsupported だったときに ccgate が黙って env var に fallback することはありません。
+`auth` は Unix のみ (Linux / macOS / *BSD) の対応です。Windows でこれを設定すると `reason=unsupported_platform` で fallthrough します。`auth` を設定していない Windows ユーザーは従来通り `*_API_KEY` の env var 経路で動きますが、設定済みの `auth` が unsupported だったときに ccgate が黙って env var に fallback することはありません。
 
 ## キャッシュ
 
@@ -61,21 +97,22 @@ helper は次のいずれかの形を stdout (もしくは `api_key_file` の中
 
 ### キャッシュキーとアカウント分離
 
-キャッシュキーは `(target, provider.name, base_url, api_key_command)` のみから作られ、環境変数は **含まれません**。helper が `AWS_PROFILE` / `GCLOUD_ACCOUNT` / `OP_ACCOUNT` などに依存している場合、`api_key_command: 'aws sts ...'` のように literal に書くと、すべてのアカウントで同じキャッシュファイルを共有してしまいます。
+cache fingerprint は `(target, provider.name, base_url, auth.command, auth.cache_key)` のみから作られ、環境変数は **デフォルトでは含まれません**。helper が `$AWS_PROFILE` / `$GCLOUD_ACCOUNT` / `$OP_ACCOUNT` などに依存している場合、`auth.command: 'aws sts ...'` のように literal に書くと、すべてのアカウントで同じキャッシュファイルを共有してしまいます。
 
-アカウントごとに分離するには次のどちらか。
+アカウントごとに分離する 3 つの方法:
 
-- アカウントをコマンド文字列に直接埋め込む: `api_key_command: 'aws sts assume-role --profile prod ...'`。コマンド文字列が違えばハッシュも別になり、別プロジェクト・別アカウントは別キャッシュになります
-- `api_key_file` をアカウントごとに分け、各アカウントの rotator が専用パスに書き込む形にする
-
-コマンド文字列で表現しきれない事情がある場合の `api_key_cache_key` (ユーザー指定 salt) は、[#61](https://github.com/tak848/ccgate/issues/61) の follow-up として追跡しています。
+- **`auth.cache_key` に `${VAR}` env 展開を使う (推奨)**: `auth: { type: 'exec', command: 'aws sts ...', cache_key: '${AWS_PROFILE}' }`。ccgate は hook 起動時に `${VAR}` / `$VAR` を実行時 env から展開し、その値を cache fingerprint に加えます。未定義 env (`${AWS_PROFLIE}` typo / 未 export) を参照した場合、ccgate は空文字に潰さず `cache_key_invalid` で fallthrough します — 黙って空 salt にすると分離の目的そのものが失われるためです。リテラル `$` は `$$` で escape
+- **jsonnet の `std.native('env')` を使う**: `auth: { type: 'exec', command: 'aws sts ...', cache_key: std.native('env')('AWS_PROFILE') }`。config load 時に同じ効果が得られます。ccgate は `std.native('must_env')` も登録していて、こちらは未定義時に jsonnet 評価エラーになります — runtime fallthrough ではなく config load 時に確実に失敗させたい場合に
+- **アカウントをコマンド文字列に直接埋め込む**: `auth.command: 'aws sts assume-role --profile prod ...'`。コマンド文字列が違えばハッシュも別になり、別プロジェクト・別アカウントは別キャッシュになります。env 機構を使わずに済む単純な方法
+- **`auth.type=file` をアカウントごとに分ける**: 各アカウントの rotator が専用パスに書き込めば、パス自体で credential が分離します
 
 ## セキュリティ上の注意
 
-- `api_key_file`: ccgate は読むだけで mode の正規化はしません。ファイル本体は `chmod 0600`、親ディレクトリは `chmod 0700` を user 側で設定してください
-- `api_key_command`: コマンド文字列に literal な秘密情報を **直書きしない** こと。文字列は `/bin/sh -c` に渡されるため、`ps` / `/proc/<pid>/cmdline` / 監査ログ / シェル履歴に残ります。秘密情報はファイルや keychain に置き、helper の中で読む形にしてください
+- `auth.path`: ccgate は permission warning を出しますが mode の正規化はしません。ファイル本体は `chmod 0600`、親ディレクトリは `chmod 0700` を user 側で設定してください
+- `auth.command`: コマンド文字列に literal な秘密情報を **直書きしない** こと。文字列は `/bin/sh -c` に渡されるため、`ps` / `/proc/<pid>/cmdline` / 監査ログ / シェル履歴に残ります。秘密情報はファイルや keychain に置き、helper の中で読む形にしてください
 - helper の stderr 本文は `ccgate.log` には **書き出されません**。ccgate は stderr をメモリ上限のために内部 capture しますが、log には byte 数と exit error しか残しません。stderr の内容を見たい場合は ccgate のログを覗くのではなく、helper を `2>&1` 付きで手動実行してください
 - provider のエラーレスポンス本文は `ccgate.log` / `metrics.jsonl` に到達する前にマスクされます。`anthropic-sdk-go` と `openai-go` はどちらも `Error.Error()` にレスポンス本文を埋め込む実装なので、ccgate 側でこれを `<provider> API error (status N)` の短い要約に置き換えています。proxy がデバッグ用のレスポンス本文に認証情報を含めた場合でも、ログには漏れません
+- `auth.refresh_margin < provider.timeout_ms + 5s` のとき ccgate は `slog.Warn` を出します (`timeout_ms == 0` のときはスキップ — 「タイムアウト無し」では意味のある不等式にならないため)。マージンが小さすぎるとキャッシュした認証情報が API 呼び出しの最中に期限切れになり、紛らわしい 401 を引き起こします
 
 ## helper が満たすべき条件
 
@@ -85,7 +122,7 @@ helper は次の条件を満たす必要があります。
 - **デーモン化しない** こと: process group の外に fork するとタイムアウト時の kill が効きません
 - stdout には **認証情報のみ** を書く。診断出力は stderr に。ただし stderr にも秘密情報は書かないこと (運用者によっては stderr を取り込むため)
 - plain string モードでは、trim 後の stdout が単一行の非空文字列であること。複数行の出力は `invalid_plain_output` で拒否されます
-- 同じ `(api_key_command, provider.name, base_url)` の組み合わせに対しては **決定論的** であること: 同じ設定で動く 2 つの呼び出しは、認証情報が指す対象を一致させてください
+- 同じ `(auth.command, provider.name, base_url, auth.cache_key)` の組み合わせに対しては **決定論的** であること: 同じ設定で動く 2 つの呼び出しは、認証情報が指す対象を一致させてください
 
 ccgate は helper の環境変数に `CCGATE_API_KEY_RESOLUTION=1` を追加して起動します。helper が ccgate を再帰的に呼び出す構成のときに、再帰検知に使えます。それ以外の環境変数 (`*_API_KEY` を含む) は継承されるので、既存の認証情報を読み取って wrap するパターンの helper はそのまま動きます。
 
@@ -102,7 +139,7 @@ set -eu
 printf '%s' "${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is not set}"
 ```
 
-`chmod 700 ~/bin/ccgate-key-passthrough.sh` してから `api_key_command: '~/bin/ccgate-key-passthrough.sh'` を設定。ccgate は呼び出しごとにこれを実行し (キャッシュなし)、env の値を SDK に渡します。
+`chmod 700 ~/bin/ccgate-key-passthrough.sh` してから `auth: { type: 'exec', command: '~/bin/ccgate-key-passthrough.sh' }` を設定。ccgate は呼び出しごとにこれを実行し (plain string なのでキャッシュなし)、env の値を SDK に渡します。
 
 ### JSON + expiry: broker からキャッシュ
 
@@ -118,9 +155,28 @@ EXP=$(date -u -v+50M +%FT%TZ 2>/dev/null || date -u -d '+50 minutes' +%FT%TZ)
 jq -nc --arg key "$TOKEN" --arg expires_at "$EXP" '{key:$key, expires_at:$expires_at}'
 ```
 
-`api_key_command: '~/bin/ccgate-key-broker.sh'` で指す。先に単独で動作確認 (`~/bin/ccgate-key-broker.sh | jq .` で valid な JSON object が返る) を取ってから ccgate に渡します。
+`auth: { type: 'exec', command: '~/bin/ccgate-key-broker.sh' }` で指す。先に単独で動作確認 (`~/bin/ccgate-key-broker.sh | jq .` で valid な JSON object が返る) を取ってから ccgate に渡します。
 
-### `api_key_file` の rotator: hot-path 上で helper を呼ばない
+### `cache_key` で AWS profile を分離
+
+同じ broker コマンドが AWS profile ごとに別の認証情報を返す場合は、`cache_key` を使ってプロファイルごとに別キャッシュにします。
+
+```jsonnet
+{
+  provider: {
+    name: 'anthropic',
+    auth: {
+      type: 'exec',
+      command: 'aws-sts-broker --provider anthropic',
+      cache_key: '${AWS_PROFILE}',
+    },
+  },
+}
+```
+
+これで `AWS_PROFILE=prod` と `AWS_PROFILE=dev` を切り替えると、別々のキャッシュファイル (`api_key.<hash-prod>.json` と `api_key.<hash-dev>.json`) になり、上書きが起きません。`AWS_PROFILE` が未設定 / typo していた場合、ccgate は `reason=cache_key_invalid` で fallthrough して設定ミスを気付かせます — 黙って同じキャッシュを共有しません。
+
+### `auth.type=file` の rotator: hot-path 上で helper を呼ばない
 
 hook の hot path で helper exec を完全に避けたい場合、外部の rotator が同じ JSON 形を atomic rename でファイルに書き出します。
 
@@ -136,15 +192,22 @@ chmod 0600 "$TMP"
 mv "$TMP" ~/.config/my-broker/anthropic.json
 ```
 
-そして `api_key_file: '~/.config/my-broker/anthropic.json'` を指す。ccgate は呼び出しごとにファイルを読むだけで、内部キャッシュは持ちません — ローテーションの責務は rotator 側です。
+そして `auth: { type: 'file', path: '~/.config/my-broker/anthropic.json' }` を指す。ccgate は呼び出しごとにファイルを読むだけで、内部キャッシュは持ちません — ローテーションの責務は rotator 側です。
 
 ## provider が 401/403 を返したときの挙動
 
-ccgate がたった今使った認証情報を provider が拒否した場合の挙動は経路ごとに違います。
+ccgate がたった今使った認証情報を provider が拒否した場合、status と secret-free な error code (OpenAI: `Error.Code` / `Error.Type`、Anthropic: `RawJSON()` から `error.type` を抽出) を見て挙動を分けます。レスポンス本文は決して log には書きません。
 
-- `api_key_command` 経路: keystore のキャッシュファイルを unlink し、その呼び出しは fallthrough (exit 1 にはしない)。次の呼び出しで helper が再実行され、新鮮な認証情報が取り直されます
-- `api_key_file` 経路: 内部キャッシュがないので invalidate するものがありません。その呼び出しは fallthrough しますが、新しい認証情報をファイルに書き直すのは rotator の責務です
-- env var 経路は **意図的にこの分岐に乗せていません**。ccgate からは env を rotate できず、401/403 を黙って飲むと user 側の設定ミスを隠してしまうためです — env var の場合は通常の API エラー経路 (exit 1) のまま
+| status × code                                                                                                                | `auth.type=exec`                              | `auth.type=file`                  | env var                                    |
+|------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------|-----------------------------------|--------------------------------------------|
+| 401                                                                                                                          | `provider_auth`、**キャッシュ削除 + fallthrough** | `provider_auth`、fallthrough のみ | **exit 1**                                 |
+| 403 + 認証情報期限切れ系 code (AWS `ExpiredToken*` / OAuth `invalid_token` / Anthropic-OpenAI `authentication_error` / `invalid_api_key`) | `provider_auth`、**キャッシュ削除 + fallthrough** | `provider_auth`、fallthrough のみ | **exit 1**                                 |
+| 403 + その他 code (`permission_error` / `model_not_allowed` / AWS `AccessDenied` 等) もしくは未知 code                       | `provider_forbidden`、fallthrough のみ、**キャッシュ削除しない** | 同上                              | `provider_forbidden`、fallthrough のみ      |
+| 5xx / network / 429                                                                                                          | exit 1 (従来通り)                              | exit 1                            | exit 1                                     |
+
+env var 経路で 401 / 403 認証情報期限切れを exit 1 にする理由は、ccgate 側に env を rotate する手段がなく、黙って飲むと user 側の設定ミスを隠してしまうため。403 + 非認証情報系 code を exit 1 にしないのは、permission 不足や region 制限が原因のケースで exit 1 にすると hook が永続的に壊れた状態になり、provider の「あなたはそれをできません」という回答を hook 障害として扱うのは UX として悪いためです。
+
+認証情報期限切れ code の集合 (大文字小文字無視): `ExpiredToken` / `ExpiredTokenException` / `InvalidClientTokenId` / `UnrecognizedClientException` / `invalid_token` / `expired_token` / `authentication_error` / `invalid_api_key`。新しい code は別 issue で追加可能 (schema を変えずに済む)。
 
 ## AWS `credential_process` との差分
 
@@ -156,10 +219,11 @@ ccgate がたった今使った認証情報を provider が拒否した場合の
 
 何かおかしいときは:
 
-1. `ccgate.log` (`$XDG_STATE_HOME/ccgate/<target>/ccgate.log`) を tail して `kind=credential_unavailable` のエントリを探し、`reason` と `source` (`command` / `file` / `cache` / `lock`) attribute を確認。どの段階で失敗したかが分かります
-2. `ccgate <target> metrics` を実行し、**Credential failures** セクションで `(source, reason)` 別の集計を確認
-3. キャッシュ起因が疑わしい場合は `$XDG_CACHE_HOME/ccgate/<target>/api_key.*.json` を削除して再生成させます。隣接する `*.lock` は再利用されるので削除不要です
-4. `expired` が出続ける場合は helper の `expires_at` と `date -u` を比較してください。helper 内部の TTL ロジックや時計ズレが原因のことが多いです
-5. 単独再現は `/bin/sh -c "$your_command"` を実行して helper と同じ stdout が出るかを確認
+1. `ccgate.log` (`$XDG_STATE_HOME/ccgate/<target>/ccgate.log`) を tail して `kind=credential_unavailable` のエントリを探し、`reason` / `source` (`exec` / `file` / `cache` / `lock`) / `provider_error_code` attribute を確認。どの段階で失敗したかが分かります
+2. `ccgate <target> metrics` を実行し、**Credential failures** セクションで `(source, reason)` 別の集計を確認。`provider_forbidden` 行は `*` マークが付き、これは認証情報の問題ではなく権限・ポリシー問題であることを示します
+3. キャッシュ起因 (`cache_parse` / `cache_read` / `cache_write` の log warning) が疑わしい場合は `$XDG_CACHE_HOME/ccgate/<target>/api_key.*.json` を削除して再生成させます。隣接する `*.lock` は再利用されるので削除不要です
+4. `cache_key_invalid` が出続ける場合は、`auth.cache_key` で参照している env が hook の実行環境にセットされているか確認してください。hook は upstream tool (Claude Code / Codex CLI) の env を継承するため、shell の dotfiles が source されているとは限りません
+5. `expired` が出続ける場合は helper の `expires_at` と `date -u` を比較してください。helper 内部の TTL ロジックや時計ズレが原因のことが多いです。`refresh_margin` が helper の TTL より大きいときも同じ症状になります
+6. `provider_auth` がキャッシュ削除しても繰り返される場合、helper 自体が provider に拒否される認証情報を生成しています。`/bin/sh -c "$your_command"` を手で実行し、helper が出力する stdout が SDK に渡っているのと同じ内容かを確認してください
 
 reason の完全な分類 (metrics に乗るものと、log のみで出るキャッシュ層 warning の違い) は [docs/ja/configuration.md](configuration.md#credential_unavailable-の-reason-値) を参照してください。

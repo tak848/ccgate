@@ -26,7 +26,7 @@ ccgate evaluates three layers, in order, per target. Every layer composes with t
 | Lists: `allow`, `deny`, `environment` | A layer that sets the field **replaces** the carried-over list (even with `[]`). A layer that omits the field leaves the carried-over list untouched. | Embedded `allow: ["A","B"]` + global `allow: ["X"]` → final `allow: ["X"]`. |
 | Lists: `append_allow`, `append_deny`, `append_environment` | A layer that sets the field **appends** its entries to whatever the previous layers produced. | Embedded `deny: ["A"]` + project `append_deny: ["P"]` → final `deny: ["A","P"]`. |
 | Scalars: `log_*`, `metrics_*`, `fallthrough_strategy` | A layer **overwrites** the value per-field when it sets it; layers that omit a field leave the previous value untouched. | Embedded `log_max_size: 5MB` + global `log_max_size: 10MB` → final `log_max_size: 10MB`. |
-| Block: `provider` (every `provider.*` field, including `name` / `model` / `base_url` / `api_key_command` / `api_key_file` / `api_key_refresh_margin` / `api_key_command_timeout` / `timeout_ms`) | A layer that writes `provider` **replaces the entire block**; layers that omit `provider` leave it untouched. Per-field merge would let stale fields from a lower layer (e.g. a proxy `base_url`, or a helper `api_key_command`) leak into a different provider when a higher layer switches `name`. | Embedded `provider: {name: anthropic, model: haiku}` + global `provider: {name: openai, model: gpt-5.4-nano-2026-03-17}` → final `provider: {name: openai, model: gpt-5.4-nano-2026-03-17}`. To bump only the model, restate the whole block: `provider: {name: anthropic, model: claude-sonnet-4-6}`. When a global layer sets `api_key_command`, any project-local `provider` override must repeat it or the helper is silently dropped on that project. |
+| Block: `provider` (every `provider.*` field, including `name` / `model` / `base_url` / `auth` / `timeout_ms`) | A layer that writes `provider` **replaces the entire block**; layers that omit `provider` leave it untouched. Per-field merge would let stale fields from a lower layer (e.g. a proxy `base_url`, or a helper `auth.command`) leak into a different provider when a higher layer switches `name`. | Embedded `provider: {name: anthropic, model: haiku}` + global `provider: {name: openai, model: gpt-5.4-nano-2026-03-17}` → final `provider: {name: openai, model: gpt-5.4-nano-2026-03-17}`. To bump only the model, restate the whole block: `provider: {name: anthropic, model: claude-sonnet-4-6}`. When a global layer sets `auth`, any project-local `provider` override must repeat the whole `auth` block or the helper is silently dropped on that project. |
 
 `allow` and `append_allow` (same for the other lists) can coexist in the same layer: the replace runs first, then the append stacks onto the result. Use the pattern when you want to **swap** the embedded list for a curated one and **also** add a couple of project-specific extras: `{ allow: ['only this base'], append_allow: ['plus this project rule'] }`.
 
@@ -135,20 +135,25 @@ The `reason` field meaning depends on `ft_kind`:
 
 | Reason                  | Meaning                                                                                                |
 |-------------------------|--------------------------------------------------------------------------------------------------------|
-| `command_exit`          | `api_key_command` exited non-zero.                                                                     |
+| `command_exit`          | `auth.command` exited non-zero.                                                                        |
 | `json_parse`            | Helper / file produced JSON that failed strict parsing or had no `key`.                                |
 | `invalid_expiration`    | Helper / file JSON parsed but `expires_at` was not RFC3339.                                            |
 | `empty_output`          | Plain-string output was empty after trim.                                                              |
 | `invalid_plain_output`  | Plain-string output had internal newlines (multi-line is rejected).                                    |
-| `expired`               | `expires_at` was already in the past at read time.                                                     |
-| `file_missing`          | `api_key_file` did not exist.                                                                          |
-| `file_read`             | `api_key_file` exists but failed to read (permissions, FS error).                                      |
-| `unsupported_platform`  | Build is non-Unix (Windows). Helper / file paths are stub'd.                                           |
-| `timeout`               | `api_key_command` exceeded `api_key_command_timeout`.                                                  |
+| `expired`               | `expires_at` was already in the past, or remaining TTL was below `auth.refresh_margin`, at read time.  |
+| `file_missing`          | `auth.path` did not exist.                                                                             |
+| `file_read`             | `auth.path` exists but failed to read (permissions, FS error).                                         |
+| `unsupported_platform`  | Build is non-Unix (Windows). `auth` paths are stub'd.                                                  |
+| `timeout`               | `auth.command` exceeded `auth.timeout`.                                                                |
 | `output_too_large`      | Helper stdout exceeded the 64 KiB limit.                                                               |
 | `lock_timeout`          | flock retry budget exhausted while peers were refreshing.                                              |
 | `lock_error`            | flock syscall returned a non-EWOULDBLOCK error (broken lock subsystem; helper exec is skipped).        |
-| `provider_auth`         | Provider API rejected the credential with 401/403. For `api_key_command` the keystore cache file is unlinked so the next fire re-runs the helper; for `api_key_file` there is no internal cache, so recovery is the external rotator's job; env-var keys are intentionally **not** routed here at all (ccgate cannot rotate them, swallowing the 401/403 would mask user-side misconfiguration). |
+| `cache_unavailable`     | Cache directory cannot be created / `chmod`'d. Treated as fail-fast (helper exec is skipped) because without the sibling lock file we cannot prevent concurrent helpers from racing the broker. |
+| `cache_key_invalid`     | `auth.cache_key` references an undefined env var. Surfacing as a fallthrough rather than silently using an empty salt prevents typo-induced cache sharing across profiles. |
+| `provider_auth`         | Provider rejected the credential with **401**, or **403 with a credential-expired error code** (AWS `ExpiredToken*`, OAuth `invalid_token`, Anthropic / OpenAI `authentication_error` / `invalid_api_key`, ...). `auth.type=exec` invalidates the cache so the next fire re-runs the helper; `auth.type=file` falls through (no cache to clear); env-var keys are **not** routed here on 401 / credential-expired 403 because ccgate cannot rotate env vars and swallowing those would hide user-side misconfiguration. |
+| `provider_forbidden`    | Provider rejected the request with **403 + non-credential code** (`permission_error`, `model_not_allowed`, AWS `AccessDenied`, ...) or an unknown 403 code. Falls through on every path including env, with **no cache invalidation** — these are permission / policy / region issues and rotating credentials would not help. |
+
+`credential_unavailable` is therefore wider than just "credential resolution failed": it also covers "provider received and rejected the credential" (401 / 403). The split between `provider_auth` and `provider_forbidden` lets you distinguish "rotate the credential and try again" from "your config asks for something this credential is not allowed to do" without having to read the response body.
 
 #### Log-only credential warnings (not in metrics)
 
@@ -157,7 +162,6 @@ The cache layer recovers from these without falling through, so they are emitted
 - `cache_parse` — corrupt cache JSON; unlinked, helper re-runs.
 - `cache_read` — cache read error; unlinked, helper re-runs.
 - `cache_write` — cache write / atomic-rename failed; fresh key returned uncached.
-- `cache_unavailable` — cache directory cannot be created / `chmod`'d; helper still runs without caching.
 
 ### Drill-down sections
 

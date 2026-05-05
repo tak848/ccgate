@@ -238,7 +238,7 @@ All three layers compose with the same rules:
 
 - **Lists** — `allow` / `deny` / `environment` **replace** the value carried over from earlier layers when the layer sets them (even to `[]`). The `append_*` siblings (`append_allow`, `append_deny`, `append_environment`) **add** entries on top of whatever the earlier layers produced.
 - **Scalars** — `log_*`, `metrics_*`, `fallthrough_strategy` are overwritten per-field when the layer sets them, otherwise the earlier value survives.
-- **`provider` block** — a layer that writes `provider` **replaces the entire block** (`name` + `model` + `base_url` + `api_key_command` + `api_key_file` + `api_key_refresh_margin` + `api_key_command_timeout` + `timeout_ms`, i.e. every `provider.*` field). Layers that omit `provider` inherit the earlier block unchanged. The block is replaced as a unit because the fields are tightly coupled (different `name` typically means a different `model` namespace and `base_url`); per-field merge would let stale settings from a lower layer leak through. Important: when a project-local config restates `provider`, it must repeat any `api_key_command` / `api_key_file` from the global layer too — otherwise the helper config is silently dropped on that project.
+- **`provider` block** — a layer that writes `provider` **replaces the entire block** (`name` + `model` + `base_url` + `auth` + `timeout_ms`, i.e. every `provider.*` field). Layers that omit `provider` inherit the earlier block unchanged. The block is replaced as a unit because the fields are tightly coupled (different `name` typically means a different `model` namespace and `base_url`); per-field merge would let stale settings from a lower layer leak through. Important: when a project-local config restates `provider`, it must repeat any `auth` block from the global layer too — otherwise the helper config is silently dropped on that project.
 
 So `~/.<target>/ccgate.jsonnet` that wants to bump just the model still has to restate the whole `provider` block (e.g. `provider: {name: 'anthropic', model: 'claude-sonnet-4-6'}`). A `~/.<target>/ccgate.jsonnet` that writes `allow: [...]` swaps the embedded allow list for its own (this is what most pre-v0.6 global configs already did, so it stays idempotent). Project-local configs typically use `append_deny: [...]` / `append_environment: [...]` to add restrictions on top of the inherited base.
 
@@ -252,10 +252,7 @@ Project-local configs are loaded only when **not tracked by Git**.
 | `provider.name`          | string                            | `"anthropic"`                                                                 | Provider name. One of `"anthropic"`, `"openai"`, `"gemini"`.                                            |
 | `provider.model`         | string                            | `"claude-haiku-4-5"`                                                          | Model name. Examples: `claude-haiku-4-5` / `claude-sonnet-4-6` (anthropic), `gpt-5.4-nano-2026-03-17` (openai), `gemini-3-flash-preview` (gemini). When routing through a compatible proxy, use whatever model name the proxy exposes (e.g. `anthropic/claude-haiku-4-5`). |
 | `provider.base_url`      | string                            | `""`                                                                          | Override the provider's API base URL. Empty = use the SDK default. Use this to route through an OpenAI- / Anthropic-compatible proxy (LiteLLM proxy, Azure OpenAI, on-prem gateway, regional endpoint, ...). |
-| `provider.api_key_command` | string                          | `""`                                                                          | Unix only. Shell command (`/bin/sh -c`) whose stdout is the API key. JSON `{key, expires_at}` is cached + refreshed early; plain stdout is uncached. See [docs/api-key-helper.md](docs/api-key-helper.md). |
-| `provider.api_key_file`  | string                            | `""`                                                                          | Unix only. Absolute or `~/`-prefixed file path read every fire. Same shape as `api_key_command` output. Used when `api_key_command` is empty.                                                              |
-| `provider.api_key_refresh_margin` | duration                 | `"30s"`                                                                       | Cache is stale once `now + margin >= expires_at`. `>= 0` (`0s` disables early refresh).                |
-| `provider.api_key_command_timeout` | duration                | `"5s"`                                                                        | Hot-path upper bound for one helper invocation (lock retries + exec). `> 0` (`0s` rejected).            |
+| `provider.auth`          | object (`{type, ...}`)            | (omit = env var)                                                              | Unix only. Discriminated union for short-lived / rotating credentials. `type=exec` (run a shell command), `type=file` (read a rotator-managed file). See [docs/api-key-helper.md](docs/api-key-helper.md) for full reference. |
 | `provider.timeout_ms`    | int                               | `20000`                                                                       | API timeout (ms). `0` = no timeout.                                                                    |
 | `log_path`               | string                            | `$XDG_STATE_HOME/ccgate/<target>/ccgate.log`                                  | Log file path. Supports `~` for home directory.                                                        |
 | `log_disabled`           | bool                              | `false`                                                                       | Disable logging entirely                                                                               |
@@ -332,26 +329,42 @@ Export the proxy's API key as `CCGATE_ANTHROPIC_API_KEY`. The Anthropic SDK appe
 
 ### Short-lived / rotating API keys
 
-When the credential rotates faster than a static env var can keep up (AWS STS, Vertex ADC, OpenAI-compatible gateways with virtual keys, internal key brokers), point `provider.api_key_command` at a helper script or `provider.api_key_file` at a path the rotator updates:
+When the credential rotates faster than a static env var can keep up (AWS STS, Vertex ADC, OpenAI-compatible gateways with virtual keys, internal key brokers), use `provider.auth`. It's a discriminated union over two shapes — pick the one that matches your setup:
 
 ```jsonnet
+// Run a shell helper to mint a credential on demand
 {
   provider: {
     name: 'anthropic',
-    model: 'claude-haiku-4-5',
-    api_key_command: '/usr/local/bin/my-key-broker --provider anthropic',
+    auth: {
+      type: 'exec',
+      command: '/usr/local/bin/my-key-broker --provider anthropic',
+    },
+  },
+}
+
+// Or have an external rotator write the credential to a file
+{
+  provider: {
+    name: 'anthropic',
+    auth: {
+      type: 'file',
+      path: '~/.config/my-broker/anthropic.json',
+    },
   },
 }
 ```
 
-The helper writes one of:
+The helper / file content is one of:
 
-- **JSON** `{"key":"sk-...","expires_at":"<RFC3339>"}` — memoized in `$XDG_CACHE_HOME/ccgate/<target>/` and refreshed early.
+- **JSON** `{"key":"sk-...","expires_at":"<RFC3339>"}` — for `auth.type=exec`, memoized in `$XDG_CACHE_HOME/ccgate/<target>/` and refreshed early.
 - **Plain string** — a single non-empty line, not cached.
 
-Resolution order: `api_key_command` > `api_key_file` > `CCGATE_*_API_KEY` > `*_API_KEY`. When a helper is configured ccgate **does not silently fall back to env vars on failure** — the hook falls through with `kind=credential_unavailable` instead. Unix only.
+Resolution order: `provider.auth` (when configured) > `CCGATE_*_API_KEY` > `*_API_KEY`. When `auth` is configured ccgate **does not silently fall back to env vars on failure** — the hook falls through with `kind=credential_unavailable` instead. Unix only.
 
-See [docs/api-key-helper.md](docs/api-key-helper.md) for the full helper contract, runnable examples, account-aware caching, security guidance, and the operational recovery checklist.
+ccgate also registers `std.native('env')(name)` (returns empty string for undefined) and `std.native('must_env')(name)` (raises a config-load error) as Jsonnet helpers, following the ecspresso v2.4+ pattern, so any string field can read from the environment without ccgate-specific syntax.
+
+See [docs/api-key-helper.md](docs/api-key-helper.md) for the full helper contract, runnable examples, account-aware caching via `auth.cache_key`, security guidance, the 401/403 behaviour matrix, and the operational recovery checklist.
 ## Default Rules
 
 ccgate ships built-in default rules per target. They are always applied as the base; your global / project-local configs layer on top.
@@ -427,7 +440,7 @@ The daily table shows per-day counts (Allow, Deny, Fall, F.Allow, F.Deny, Err), 
 - [docs/claude.md](docs/claude.md) — Claude Code specifics
 - [docs/codex.md](docs/codex.md) — Codex CLI specifics
 - [docs/configuration.md](docs/configuration.md) — config layering, fallthrough_strategy, metrics, known limits
-- [docs/api-key-helper.md](docs/api-key-helper.md) — `api_key_command` / `api_key_file` reference (helper contract, caching, security guidance, recovery checklist)
+- [docs/api-key-helper.md](docs/api-key-helper.md) — `provider.auth` reference (helper contract, caching, security guidance, 401/403 behaviour, recovery checklist)
 - [日本語ドキュメント (docs/ja/)](docs/ja/README.md)
 
 ## Development

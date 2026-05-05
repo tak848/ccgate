@@ -2,54 +2,90 @@
 
 [日本語版 (docs/ja/api-key-helper.md)](ja/api-key-helper.md)
 
-When the credential the provider needs rotates faster than a static env var can keep up — AWS STS sessions, Vertex ADC, OpenAI-compatible gateway virtual keys, internal key brokers — ccgate can resolve it through a helper process or a file instead of `*_API_KEY`.
+When the credential the provider needs rotates faster than a static env var can keep up — AWS STS sessions, Vertex ADC, OpenAI-compatible gateway virtual keys, internal key brokers — ccgate can resolve it through `provider.auth` instead of `*_API_KEY`.
 
 This document is the full reference. The README has the minimum config snippet and a single example; everything else (helper contract, caching semantics, account isolation, security guidance, recovery checklist) lives here.
 
 ## Output formats
 
-The helper writes one of two shapes on stdout (or, for `api_key_file`, into the file):
+The helper writes one of two shapes on stdout (or, for `auth.type=file`, into the file):
 
 - **JSON**: `{"key":"sk-...","expires_at":"2026-05-04T01:23:45Z"}`. Parsed strictly. `key` is required; `expires_at` is optional. Unknown top-level fields (e.g. broker metadata) are accepted but dropped — only the canonical `{key, expires_at}` reaches the cache or the SDK.
 - **Plain string**: a single non-empty line. Returned verbatim.
 
-`expires_at` is RFC3339. Helper output exceeding 64 KiB is rejected as `output_too_large`. The same 64 KiB cap applies to `api_key_file` content.
+`expires_at` is RFC3339. Helper output exceeding 64 KiB is rejected as `output_too_large`. The same 64 KiB cap applies to file content.
 
 How caching applies depends on the source:
 
-- For `api_key_command`: JSON with a future `expires_at` is memoized to a per-target cache file (see [Caching](#caching)) and refreshed early via `api_key_refresh_margin`. JSON without `expires_at` and plain string output are accepted but **not cached** — the helper re-runs on every hook invocation.
-- For `api_key_file`: ccgate reads the file on every hook invocation and does not maintain an internal cache. The external rotator owns when the credential is refreshed.
+- For `auth.type=exec`: JSON with a future `expires_at` is memoized to a per-target cache file (see [Caching](#caching)) and refreshed early via `auth.refresh_margin`. JSON without `expires_at` and plain string output are accepted but **not cached** — the helper re-runs on every hook invocation.
+- For `auth.type=file`: ccgate reads the file on every hook invocation and does not maintain an internal cache. The external rotator owns when the credential is refreshed.
+
+`auth.refresh_margin` is also enforced as a *minimum-remaining-TTL* guard on freshly produced credentials (helper exec output and file contents alike). A credential that would expire inside the margin window surfaces as `expired` instead of being handed to the SDK to race the next API call.
 
 ## Config
 
 ```jsonnet
+// auth.type=exec: ccgate runs the command and reads stdout
 {
   provider: {
     name: 'anthropic',
     model: 'claude-haiku-4-5',
-    api_key_command: '/usr/local/bin/my-key-broker --provider anthropic',
-    api_key_refresh_margin: '60s', // optional, default 30s
-    api_key_command_timeout: '5s', // optional, default 5s
+    auth: {
+      type: 'exec',
+      command: '/usr/local/bin/my-key-broker --provider anthropic',
+      refresh_margin: '60s', // optional, default 30s
+      timeout: '5s',         // optional, default 5s
+      cache_key: '${AWS_PROFILE}', // optional; see Account isolation
+    },
+  },
+}
+
+// auth.type=file: an external rotator writes the credential
+{
+  provider: {
+    name: 'anthropic',
+    auth: {
+      type: 'file',
+      path: '~/.config/my-broker/anthropic.json',
+      refresh_margin: '60s', // optional, default 30s
+    },
   },
 }
 ```
 
 | Field | Type | Default | What it does |
 |---|---|---|---|
-| `provider.api_key_command` | string | `""` | Shell command run via `/bin/sh -c` whose stdout is the credential. |
-| `provider.api_key_file` | string (abs or `~/`) | `""` | File whose contents are the credential. Read on every hook invocation; no internal caching. |
-| `provider.api_key_refresh_margin` | duration | `"30s"` | Cache is stale once `now + margin >= expires_at`. `>= 0` (`0s` disables early refresh). |
-| `provider.api_key_command_timeout` | duration | `"5s"` | Hot-path upper bound for one helper invocation. `> 0`. |
+| `auth.type` | `"exec"` / `"file"` | (required when `auth` is set) | Discriminator. Selects which other fields are valid. |
+| `auth.command` | string | `""` | (`type=exec` only, required) Shell command run via `/bin/sh -c` whose stdout is the credential. |
+| `auth.path` | string (abs or `~/`) | `""` | (`type=file` only, required) Local regular file whose contents follow the same JSON / plain-string shape. |
+| `auth.refresh_margin` | duration | `"30s"` | Cache is stale once `now + margin >= expires_at` (`type=exec`); minimum-remaining-TTL guard on freshly produced credentials (both branches). `>= 0` (`0s` disables the guard). |
+| `auth.timeout` | duration | `"5s"` | (`type=exec` only) Hot-path upper bound for one helper invocation. `> 0`. |
+| `auth.cache_key` | string | `""` | (`type=exec` only) Secret-free salt added to the cache fingerprint; supports `${VAR}` env expansion. See [Account isolation](#cache-key-and-account-isolation). |
 
-The `provider` block is replaced atomically across config layers, so a project-local config that restates `provider` must repeat any global `api_key_command` / `api_key_file` — otherwise the helper config is silently dropped on that project.
+The `provider` block is replaced atomically across config layers, so a project-local config that restates `provider` must repeat the `auth` block — otherwise the helper config is silently dropped on that project.
+
+### `auth.type=file` is local-FS only
+
+`auth.path` is a **best-effort, local regular file** contract. Local POSIX filesystems (XFS, ext4, APFS, HFS+) are supported; NFS / SMB / FUSE / keychain mounts are explicitly **unsupported** because Go's `os.File.SetDeadline` does not apply to regular files, and we cannot impose a hard read deadline on a slow remote mount without leaking goroutines. If you need a hard timeout on credential reads, switch to `auth.type=exec` (the helper runs under `auth.timeout`).
+
+ccgate opens the file with `O_NONBLOCK` so a misconfigured FIFO / device returns immediately instead of wedging the hook, but a slow regular file on a stalled NFS mount can still hang for the duration of the kernel I/O.
+
+### File permissions
+
+ccgate emits a `slog.Warn` (no hard reject) when `auth.path`:
+
+- has any `group` or `other` read bit set (`mode & 0o044`), or
+- is owned by a UID different from the current user.
+
+The recommendation is `chmod 0600 <path>` inside a `chmod 0700` parent directory. The warning is informational — if you have a deliberate reason for looser permissions, ignore it.
 
 ## Resolution order and platform support
 
-`api_key_command` > `api_key_file` > `CCGATE_*_API_KEY` > `*_API_KEY`.
+`provider.auth` (configured) > `CCGATE_*_API_KEY` > `*_API_KEY`.
 
-When a helper or file is configured ccgate will **not** silently fall back to env vars on failure: that would mask the helper bug. Instead the hook falls through with `kind=credential_unavailable` and a reason that pinpoints which step failed (see [docs/configuration.md](configuration.md) for the full reason taxonomy).
+When `auth` is configured ccgate will **not** silently fall back to env vars on failure: that would mask the helper bug. Instead the hook falls through with `kind=credential_unavailable` and a reason that pinpoints which step failed (see [docs/configuration.md](configuration.md) for the full reason taxonomy).
 
-`api_key_command` and `api_key_file` are Unix only (Linux, macOS, *BSD). On Windows configuring either field falls through with `reason=unsupported_platform`; users who do not configure either keep using the regular `*_API_KEY` env-var path unchanged. ccgate does **not** silently re-route a configured-but-unsupported helper to env vars.
+`auth` is Unix only (Linux, macOS, *BSD). On Windows configuring it falls through with `reason=unsupported_platform`; users who do not configure `auth` keep using the regular `*_API_KEY` env-var path unchanged. ccgate does **not** silently re-route a configured-but-unsupported `auth` block to env vars.
 
 ## Caching
 
@@ -61,21 +97,22 @@ When a helper or file is configured ccgate will **not** silently fall back to en
 
 ### Cache key and account isolation
 
-The cache key is built from `(target, provider.name, base_url, api_key_command)` only — environment variables are **not** part of the hash. If your helper depends on `AWS_PROFILE`, `GCLOUD_ACCOUNT`, `OP_ACCOUNT`, etc., a literal `api_key_command: 'aws sts ...'` will share the same cache file across every account.
+The cache fingerprint is built from `(target, provider.name, base_url, auth.command, auth.cache_key)` only — environment variables are **not** part of the hash by default. If your helper depends on `$AWS_PROFILE`, `$GCLOUD_ACCOUNT`, `$OP_ACCOUNT`, etc., a literal `auth.command: 'aws sts ...'` would otherwise share the same cache file across every account.
 
-Two ways to isolate accounts:
+Three ways to isolate accounts:
 
-- Bake the account into the command string: `api_key_command: 'aws sts assume-role --profile prod ...'`. Different command strings hash to different cache files, so two project-local configs aimed at different accounts stay isolated.
-- Use `api_key_file` per account; each account's rotator writes to its own path.
-
-A user-supplied `api_key_cache_key` salt for cases the command-string approach cannot express cleanly is tracked under follow-ups to [#61](https://github.com/tak848/ccgate/issues/61).
+- **Use `auth.cache_key` with `${VAR}` env expansion** (recommended): `auth: { type: 'exec', command: 'aws sts ...', cache_key: '${AWS_PROFILE}' }`. ccgate expands `${VAR}` / `$VAR` against the live env at hook fire and adds the value to the cache fingerprint. Undefined references (`${AWS_PROFLIE}` typo, env unset) make ccgate fall through with `cache_key_invalid` instead of collapsing to an empty salt — silent collapse would defeat the whole point. Escape literal `$` as `$$`.
+- **Use the jsonnet `std.native('env')` helper**: `auth: { type: 'exec', command: 'aws sts ...', cache_key: std.native('env')('AWS_PROFILE') }`. Same effect at config-load time. ccgate also registers `std.native('must_env')` which raises a jsonnet evaluation error for undefined variables, useful when you want config-load failures rather than runtime fallthroughs.
+- **Bake the account into the command string**: `auth.command: 'aws sts assume-role --profile prod ...'`. Different command strings hash to different cache files, so two project-local configs aimed at different accounts stay isolated. Works without any env machinery.
+- **Use `auth.type=file` per account**: each account's rotator writes to its own path; the path itself separates the credentials.
 
 ## Security guidance
 
-- `api_key_file`: ccgate reads it but does not normalise the mode. Set `chmod 0600 <file>` and put the file under a `chmod 0700` directory yourself.
-- `api_key_command`: do **not** put a literal secret into the command string. The string is passed to `/bin/sh -c`, so it appears in `ps`, `/proc/<pid>/cmdline`, audit logs, and shell history. Wrap secret material in a file or keychain that the helper reads internally.
+- `auth.path`: ccgate emits a permission warning but does not normalise the mode. Set `chmod 0600 <path>` and put the file under a `chmod 0700` directory yourself.
+- `auth.command`: do **not** put a literal secret into the command string. The string is passed to `/bin/sh -c`, so it appears in `ps`, `/proc/<pid>/cmdline`, audit logs, and shell history. Wrap secret material in a file or keychain that the helper reads internally.
 - Helper stderr body is **never** written to `ccgate.log`. ccgate captures stderr internally to bound memory but logs only the byte count and exit error on failure. Re-run the helper manually with `2>&1` if you need to inspect its diagnostic output.
 - Provider error response bodies are redacted before they reach `ccgate.log` and `metrics.jsonl`. Both `anthropic-sdk-go` and `openai-go` embed the response body in `Error.Error()`; ccgate replaces that with a short `<provider> API error (status N)` summary so a misbehaving proxy cannot leak credentials through the log.
+- ccgate emits a `slog.Warn` when `auth.refresh_margin < provider.timeout_ms + 5s` (skipped when `timeout_ms == 0`, since "no timeout" has no meaningful inequality). Smaller margins risk a cached credential expiring mid-API-call and surfacing as a confusing 401.
 
 ## Helper contract
 
@@ -85,7 +122,7 @@ The helper must:
 - **Not daemonize**: forking past the process group escapes the timeout-kill.
 - Write **only the credential** on stdout. Diagnostics belong on stderr — and even there, never put secrets, since some operators capture stderr.
 - For plain-string mode: the trimmed stdout must be a single non-empty line. Multi-line output is rejected as `invalid_plain_output`.
-- Be **deterministic** for the same `(api_key_command, provider.name, base_url)` triple: two callers with the same config must agree on what the credential is for.
+- Be **deterministic** for the same `(auth.command, provider.name, base_url, auth.cache_key)` tuple: two callers with the same config must agree on what the credential is for.
 
 ccgate exports `CCGATE_API_KEY_RESOLUTION=1` into the helper environment so a helper that wraps ccgate can detect recursive invocation. All other environment variables (including `*_API_KEY`) are inherited so wrappers that read existing credentials keep working.
 
@@ -102,7 +139,7 @@ set -eu
 printf '%s' "${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is not set}"
 ```
 
-Then `chmod 700 ~/bin/ccgate-key-passthrough.sh` and `api_key_command: '~/bin/ccgate-key-passthrough.sh'`. ccgate runs this on every hook invocation (no caching) and forwards the env value to the SDK.
+Then `chmod 700 ~/bin/ccgate-key-passthrough.sh` and `auth: { type: 'exec', command: '~/bin/ccgate-key-passthrough.sh' }`. ccgate runs this on every hook invocation (no caching, since plain string has no `expires_at`) and forwards the env value to the SDK.
 
 ### JSON with expiry: cache through a broker
 
@@ -119,9 +156,28 @@ EXP=$(date -u -v+50M +%FT%TZ 2>/dev/null || date -u -d '+50 minutes' +%FT%TZ)
 jq -nc --arg key "$TOKEN" --arg expires_at "$EXP" '{key:$key, expires_at:$expires_at}'
 ```
 
-`api_key_command: '~/bin/ccgate-key-broker.sh'`. Test the script standalone first (`~/bin/ccgate-key-broker.sh | jq .` should print a JSON object) before handing it to ccgate.
+`auth: { type: 'exec', command: '~/bin/ccgate-key-broker.sh' }`. Test the script standalone first (`~/bin/ccgate-key-broker.sh | jq .` should print a JSON object) before handing it to ccgate.
 
-### `api_key_file` rotator: hot-path-free
+### AWS profile separation via `cache_key`
+
+When the same broker command returns a different credential per AWS profile, add `cache_key` so each profile gets its own cache file:
+
+```jsonnet
+{
+  provider: {
+    name: 'anthropic',
+    auth: {
+      type: 'exec',
+      command: 'aws-sts-broker --provider anthropic',
+      cache_key: '${AWS_PROFILE}',
+    },
+  },
+}
+```
+
+Switching `AWS_PROFILE=prod` and `AWS_PROFILE=dev` between hook fires now produces two separate cache files (`api_key.<hash-prod>.json` and `api_key.<hash-dev>.json`) instead of overwriting one another. If `AWS_PROFILE` is unset / typoed, ccgate falls through with `reason=cache_key_invalid` so you notice the misconfiguration instead of sharing a credential across profiles.
+
+### `auth.type=file` rotator: hot-path-free
 
 When you want zero exec cost on the hook, schedule an external rotator to write the same JSON shape to a file, atomically:
 
@@ -137,15 +193,22 @@ chmod 0600 "$TMP"
 mv "$TMP" ~/.config/my-broker/anthropic.json
 ```
 
-Then `api_key_file: '~/.config/my-broker/anthropic.json'`. ccgate just reads the file on every hook invocation — there is no internal cache to refresh, the rotator owns rotation.
+Then `auth: { type: 'file', path: '~/.config/my-broker/anthropic.json' }`. ccgate just reads the file on every hook invocation — there is no internal cache to refresh, the rotator owns rotation.
 
 ## Provider 401/403 behaviour
 
-When the provider rejects the credential ccgate just used:
+When the provider rejects the credential ccgate just used, the response shape determines how ccgate reacts. ccgate extracts a secret-free error code from the SDK's structured fields (OpenAI: `Error.Code` / `Error.Type`; Anthropic: parses `RawJSON()` for `error.type`) and never logs the raw response body.
 
-- `api_key_command` path: the keystore cache file is unlinked, the hook still falls through on this invocation (no exit 1), and the next invocation re-runs the helper with a fresh credential.
-- `api_key_file` path: there is no internal cache to invalidate. The fire falls through, but recovery (writing a fresh credential to the file) is the rotator's job.
-- Env-var keys are intentionally **not** routed through this branch. ccgate cannot rotate env vars, so silently swallowing 401/403 would mask user-side configuration errors — they keep going through the regular API-error exit path.
+| Status × code                                                                                  | `auth.type=exec`                          | `auth.type=file`               | env var                       |
+|------------------------------------------------------------------------------------------------|-------------------------------------------|--------------------------------|-------------------------------|
+| 401                                                                                            | `provider_auth`, **invalidate cache + fallthrough** | `provider_auth`, fallthrough only (no cache) | **exit 1**                    |
+| 403 with credential-expired code (AWS `ExpiredToken*`, OAuth `invalid_token`, Anthropic / OpenAI `authentication_error` / `invalid_api_key`) | `provider_auth`, **invalidate cache + fallthrough** | `provider_auth`, fallthrough only | **exit 1**                    |
+| 403 with non-credential code (`permission_error`, `model_not_allowed`, AWS `AccessDenied`, ...) or unknown code | `provider_forbidden`, fallthrough only, **no invalidate** | same                           | `provider_forbidden`, fallthrough only |
+| 5xx / network / 429                                                                            | exit 1 (existing behaviour)               | exit 1                         | exit 1                        |
+
+The env-var path keeps the existing exit-1 behaviour on 401 and 403-credential-expired because ccgate cannot rotate env vars; swallowing those would hide a real user-side configuration error. On 403-non-credential, exiting 1 would leave the user with a permanently broken hook for what is the provider's "no, you can't do that" answer — so we fall through.
+
+The credential-expired error code list (case-insensitive): `ExpiredToken`, `ExpiredTokenException`, `InvalidClientTokenId`, `UnrecognizedClientException`, `invalid_token`, `expired_token`, `authentication_error`, `invalid_api_key`. New codes can be added in a follow-up issue without changing the schema.
 
 ## Differences from AWS `credential_process`
 
@@ -157,10 +220,11 @@ If your broker does not want callers to memoize, return JSON without `expires_at
 
 When something looks wrong:
 
-1. `tail` `ccgate.log` (`$XDG_STATE_HOME/ccgate/<target>/ccgate.log`) and look for entries with `kind=credential_unavailable`. Read the `reason` and `source` (`command` / `file` / `cache` / `lock`) attributes — they pinpoint which step failed.
-2. Run `ccgate <target> metrics` and inspect the **Credential failures** section. It groups failures by `(source, reason)`.
-3. If the failure looks cache-related, remove `$XDG_CACHE_HOME/ccgate/<target>/api_key.*.json` to force a refresh. The sibling `*.lock` files are reused — leave them alone.
-4. If `expired` keeps appearing, compare the helper's `expires_at` with `date -u`. Clock skew or a broken TTL inside the helper is the usual cause.
-5. To reproduce in isolation: `/bin/sh -c "$your_command"` should print exactly the same stdout the helper writes.
+1. `tail` `ccgate.log` (`$XDG_STATE_HOME/ccgate/<target>/ccgate.log`) and look for entries with `kind=credential_unavailable`. Read the `reason`, `source` (`exec` / `file` / `cache` / `lock`), and `provider_error_code` attributes — they pinpoint which step failed.
+2. Run `ccgate <target> metrics` and inspect the **Credential failures** section. It groups failures by `(source, reason)` and tags `provider_forbidden` rows with `*` (those are permission / policy issues, not credential problems).
+3. If the failure looks cache-related (`cache_parse` / `cache_read` / `cache_write` log warnings), remove `$XDG_CACHE_HOME/ccgate/<target>/api_key.*.json` to force a refresh. The sibling `*.lock` files are reused — leave them alone.
+4. If `cache_key_invalid` keeps firing, check that the env var your `auth.cache_key` references is set in the hook's environment (not just in your shell). Hooks inherit the environment of the upstream tool — Claude Code / Codex CLI — which may not source the same dotfiles.
+5. If `expired` keeps appearing, compare the helper's `expires_at` with `date -u`. Clock skew or a broken TTL inside the helper is the usual cause; a margin smaller than the helper's TTL would also produce this.
+6. If `provider_auth` keeps coming back even with cache invalidation, the helper itself is producing a credential the provider rejects. Re-run `/bin/sh -c "$your_command"` manually and verify the output — the same stdout the helper writes is what reached the SDK.
 
 The full reason taxonomy (with the difference between metrics fallthrough reasons and log-only cache warnings) is in [docs/configuration.md](configuration.md#reason-values-for-credential_unavailable).
