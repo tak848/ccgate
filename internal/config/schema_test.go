@@ -57,6 +57,122 @@ func TestRootSchemaTopLevelDrift(t *testing.T) {
 	}
 }
 
+// TestProviderAuthOneOfShape pins the discriminator-union shape of
+// `provider.auth` in both the hand-edited root schema and the
+// generator-driven per-target schemas. The motivation for nesting
+// auth into a oneOf was so editors could surface the
+// "type=exec means command is required, type=file means path is
+// required, both branches forbid the other's fields" rule. If a
+// future change collapses auth back to a permissive `object`
+// schema (e.g. dropping the JSONSchema() override on AuthConfig),
+// editors silently lose that feedback. This guard fails CI before
+// that drift ships.
+func TestProviderAuthOneOfShape(t *testing.T) {
+	t.Parallel()
+
+	root := repoRoot(t)
+	for _, path := range []string{
+		filepath.Join(root, "ccgate.schema.json"),
+		filepath.Join(root, "schemas", "claude.schema.json"),
+		filepath.Join(root, "schemas", "codex.schema.json"),
+	} {
+		t.Run(filepath.Base(path), func(t *testing.T) {
+			t.Parallel()
+			assertAuthOneOf(t, path)
+		})
+	}
+}
+
+// assertAuthOneOf checks that `provider.auth.oneOf` has exactly two
+// branches whose `type.const` values are "exec" and "file" (in any
+// order), each marked `additionalProperties: false`, with the
+// expected `required` field set. We do NOT pin every property
+// description here — those are allowed to differ between the
+// richer hand-edited root and the sparser generator output.
+func assertAuthOneOf(t *testing.T, path string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	var doc struct {
+		Properties struct {
+			Provider struct {
+				Properties struct {
+					Auth json.RawMessage `json:"auth"`
+				} `json:"properties"`
+			} `json:"provider"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+	if len(doc.Properties.Provider.Properties.Auth) == 0 {
+		t.Fatalf("%s: provider.auth missing", path)
+	}
+	var auth struct {
+		OneOf []json.RawMessage `json:"oneOf"`
+	}
+	if err := json.Unmarshal(doc.Properties.Provider.Properties.Auth, &auth); err != nil {
+		t.Fatalf("%s: parse provider.auth: %v", path, err)
+	}
+	if len(auth.OneOf) != 2 {
+		t.Fatalf("%s: provider.auth.oneOf must have 2 branches, got %d", path, len(auth.OneOf))
+	}
+
+	seen := map[string]bool{}
+	for i, raw := range auth.OneOf {
+		var branch struct {
+			Type                 string                     `json:"type"`
+			AdditionalProperties any                        `json:"additionalProperties"`
+			Required             []string                   `json:"required"`
+			Properties           map[string]json.RawMessage `json:"properties"`
+		}
+		if err := json.Unmarshal(raw, &branch); err != nil {
+			t.Fatalf("%s: parse branch %d: %v", path, i, err)
+		}
+		if branch.Type != "object" {
+			t.Fatalf("%s branch %d: type = %q, want object", path, i, branch.Type)
+		}
+		if branch.AdditionalProperties != false {
+			t.Fatalf("%s branch %d: additionalProperties must be false to enforce mutually exclusive fields, got %v", path, i, branch.AdditionalProperties)
+		}
+		var typeProp struct {
+			Const string `json:"const"`
+		}
+		if raw, ok := branch.Properties["type"]; ok {
+			_ = json.Unmarshal(raw, &typeProp)
+		}
+		if typeProp.Const != "exec" && typeProp.Const != "file" {
+			t.Fatalf("%s branch %d: type.const must be \"exec\" or \"file\", got %q", path, i, typeProp.Const)
+		}
+		if seen[typeProp.Const] {
+			t.Fatalf("%s: duplicate branch for type=%q", path, typeProp.Const)
+		}
+		seen[typeProp.Const] = true
+
+		// Each branch must mark its discriminator and the type-specific
+		// required field. exec → command, file → path.
+		gotRequired := map[string]bool{}
+		for _, r := range branch.Required {
+			gotRequired[r] = true
+		}
+		var wantField string
+		if typeProp.Const == "exec" {
+			wantField = "command"
+		} else {
+			wantField = "path"
+		}
+		if !gotRequired["type"] || !gotRequired[wantField] {
+			t.Fatalf("%s branch type=%q: required must include type and %q, got %v",
+				path, typeProp.Const, wantField, branch.Required)
+		}
+	}
+	if !seen["exec"] || !seen["file"] {
+		t.Fatalf("%s: provider.auth.oneOf must cover both exec and file, got %v", path, seen)
+	}
+}
+
 // readProviderKeys returns the sorted top-level field names under
 // `properties.provider.properties`. We intentionally compare keys
 // only — descriptions / formats are allowed to differ between the

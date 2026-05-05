@@ -13,17 +13,67 @@
         "base_url": {
           "type": "string"
         },
-        "api_key_command": {
-          "type": "string"
-        },
-        "api_key_file": {
-          "type": "string"
-        },
-        "api_key_refresh_margin": {
-          "type": "string"
-        },
-        "api_key_command_timeout": {
-          "type": "string"
+        "auth": {
+          "oneOf": [
+            {
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "exec"
+                },
+                "command": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Shell command run via `/bin/sh -c`. Stdout is the credential."
+                },
+                "refresh_margin": {
+                  "type": "string",
+                  "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$",
+                  "description": "Cache early-refresh threshold + minimum remaining TTL guard for fresh credentials. Parsed via time.ParseDuration (e.g. \"30s\", \"5m\")."
+                },
+                "timeout": {
+                  "type": "string",
+                  "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$",
+                  "description": "Hot-path upper bound for one helper invocation. Parsed via time.ParseDuration (e.g. \"30s\", \"5m\")."
+                },
+                "cache_key": {
+                  "type": "string",
+                  "description": "Secret-free salt for separating cache files across env / profile contexts. Supports ${VAR} env expansion."
+                }
+              },
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "type",
+                "command"
+              ]
+            },
+            {
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "file"
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Absolute or ~/-prefixed file path. Read every hook fire."
+                },
+                "refresh_margin": {
+                  "type": "string",
+                  "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$",
+                  "description": "Minimum remaining TTL guard for file output. Parsed via time.ParseDuration (e.g. \"30s\", \"5m\")."
+                }
+              },
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "type",
+                "path"
+              ]
+            }
+          ],
+          "title": "auth"
         },
         "timeout_ms": {
           "type": "integer"
