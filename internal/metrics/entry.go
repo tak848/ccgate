@@ -21,9 +21,12 @@ type ToolInputFields struct {
 //
 // CredentialSource is populated only when FallthroughKind is
 // "credential_unavailable" — it's the secret-free origin label
-// ("command"/"file"/"cache"/"lock") that the keystore returned, so
+// ("exec"/"file"/"cache"/"lock") that the keystore returned, so
 // the metrics report can group the same Reason by where it actually
 // failed without surfacing helper command strings or cache paths.
+// Values mirror keystore.Source* constants and the auth.type
+// discriminator: "exec" lines up with auth.type=exec and "file"
+// with auth.type=file.
 type Entry struct {
 	Timestamp        time.Time       `json:"ts"`
 	SessionID        string          `json:"sid,omitempty"`
