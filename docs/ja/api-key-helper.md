@@ -18,23 +18,26 @@ Linux / macOS / *BSD / Windows に対応します。helper コマンドを動か
 {
   provider: {
     name: 'anthropic',
+    model: 'claude-haiku-4-5',
     auth: {
       type: 'exec',
       command: '/usr/local/bin/my-key-broker --provider anthropic',
-      refresh_margin_ms: 60000,  // 任意
-      timeout_ms: 5000,          // 任意
+      refresh_margin_ms: 60000,  // 任意、default 60000
+      timeout_ms: 30000,         // 任意、default 30000
     },
   },
 }
 
-// 外部ローテーターがファイルに書き込む
+// 外部ローテーターがファイルに書き込む (path 省略時は
+// $XDG_STATE_HOME/ccgate/<target>/auth_key.json)
 {
   provider: {
     name: 'anthropic',
+    model: 'claude-haiku-4-5',
     auth: {
       type: 'file',
       path: '~/.config/my-broker/anthropic.json',
-      refresh_margin_ms: 60000,  // 任意
+      refresh_margin_ms: 60000,  // 任意、default 60000
     },
   },
 }
@@ -152,6 +155,7 @@ cache fingerprint には `auth.cache_key` も含まれるので、同じ `auth.c
 {
   provider: {
     name: 'anthropic',
+    model: 'claude-haiku-4-5',
     auth: {
       type: 'exec',
       command: 'aws-sts-broker --provider anthropic',
@@ -168,7 +172,13 @@ ccgate は config 評価時に env を読む jsonnet ヘルパーを 2 つ regis
 
 または、コマンド文字列にアカウントを直接埋め込む (`aws sts ... --profile prod`) と、コマンド文字列違いで自動的に別キャッシュになります。`auth.type=file` でアカウントごとに別パスを使うのも同じ効果です。
 
-cache fingerprint には **カレントディレクトリは含まれません**。同じ repo の checkout が 2 つあって、両方が `command: './scripts/get-key'` のような相対 helper を実行する場合、デフォルトでは 1 つのキャッシュを共有します。checkout ごとに分けたいときは `cache_key` (例: `cache_key: std.native('env')('PWD')`) で明示的に salt を入れてください。共有したいなら `cache_key` を空のままにします。
+cache fingerprint には **カレントディレクトリもホスト名も含まれません**。具体的には、**同じ repo の別 checkout、別 repo であっても `(provider.name, base_url, shell, command, cache_key)` が一致する設定はすべて 1 つのキャッシュファイルを共有**します。`$XDG_CACHE_HOME` が同期ディレクトリを指していれば別マシン間でも同じです。普段はこれが望ましい (checkout ごとに毎回再取得するのは無駄) ので default で共有しています。分離したいときに `cache_key` で分けてください。
+
+- checkout ごと: `cache_key: std.native('env')('PWD')`
+- ホストごと: `cache_key: std.native('env')('HOSTNAME')`
+- env 経由でアカウント別: `cache_key: std.native('must_env')('AWS_PROFILE')`
+
+`cache_key` を空のままにするのは「同じ helper コマンドを使うすべての checkout / repo / host で credential を共有する」を **明示的に選択した** 状態です。
 
 ## ファイル経路の注意点
 

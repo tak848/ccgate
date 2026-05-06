@@ -336,6 +336,7 @@ When the credential rotates faster than a static env var can keep up (AWS STS, V
 {
   provider: {
     name: 'anthropic',
+    model: 'claude-haiku-4-5',
     auth: {
       type: 'exec',
       command: '/usr/local/bin/my-key-broker --provider anthropic',
@@ -344,9 +345,11 @@ When the credential rotates faster than a static env var can keep up (AWS STS, V
 }
 
 // Or have an external rotator write the credential to a file
+// (path optional; defaults to $XDG_STATE_HOME/ccgate/<target>/auth_key.json)
 {
   provider: {
     name: 'anthropic',
+    model: 'claude-haiku-4-5',
     auth: {
       type: 'file',
       path: '~/.config/my-broker/anthropic.json',

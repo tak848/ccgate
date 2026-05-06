@@ -18,23 +18,26 @@ Linux, macOS, *BSD, and Windows are supported. The shell that runs the helper co
 {
   provider: {
     name: 'anthropic',
+    model: 'claude-haiku-4-5',
     auth: {
       type: 'exec',
       command: '/usr/local/bin/my-key-broker --provider anthropic',
-      refresh_margin_ms: 60000,  // optional
-      timeout_ms: 5000,          // optional
+      refresh_margin_ms: 60000,  // optional, default 60000
+      timeout_ms: 30000,         // optional, default 30000
     },
   },
 }
 
-// External rotator writes a file
+// External rotator writes a file (path optional; defaults to
+// $XDG_STATE_HOME/ccgate/<target>/auth_key.json)
 {
   provider: {
     name: 'anthropic',
+    model: 'claude-haiku-4-5',
     auth: {
       type: 'file',
       path: '~/.config/my-broker/anthropic.json',
-      refresh_margin_ms: 60000,  // optional
+      refresh_margin_ms: 60000,  // optional, default 60000
     },
   },
 }
@@ -152,6 +155,7 @@ The cache fingerprint includes `auth.cache_key`, so two configs with the same `a
 {
   provider: {
     name: 'anthropic',
+    model: 'claude-haiku-4-5',
     auth: {
       type: 'exec',
       command: 'aws-sts-broker --provider anthropic',
@@ -168,7 +172,13 @@ ccgate registers two jsonnet helpers for reading env vars at config-load time:
 
 Alternatively, bake the account into the command string (`aws sts ... --profile prod`) — different command strings hash to different cache files automatically — or use `auth.type=file` with one path per account.
 
-The cache fingerprint does **not** include the working directory. Two checkouts of the same repo running the same relative `command: './scripts/get-key'` share a cache file by default; use `cache_key` (e.g. `cache_key: std.native('env')('PWD')`) to opt into per-checkout separation, or leave it empty to share intentionally.
+The cache fingerprint does **not** include the hook's working directory or the host. Concretely: **all checkouts of the same repo, all repos with the same `(provider.name, base_url, shell, command, cache_key)` tuple, share one cache file** — even on different machines if `$XDG_CACHE_HOME` happens to point at a synced directory. That is usually what you want (re-fetching the same credential per checkout is wasteful), but when you actively want separation set `cache_key` to whatever you want to scope by:
+
+- per-checkout: `cache_key: std.native('env')('PWD')`
+- per-host: `cache_key: std.native('env')('HOSTNAME')`
+- per-account-via-env: `cache_key: std.native('must_env')('AWS_PROFILE')`
+
+Leaving `cache_key` empty is the explicit "share with anything that has the same helper command" choice.
 
 ## File mode notes
 

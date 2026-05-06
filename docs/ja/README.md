@@ -334,6 +334,7 @@ proxy の API キーを `CCGATE_ANTHROPIC_API_KEY` で export。Anthropic SDK �
 {
   provider: {
     name: 'anthropic',
+    model: 'claude-haiku-4-5',
     auth: {
       type: 'exec',
       command: '/usr/local/bin/my-key-broker --provider anthropic',
@@ -342,9 +343,11 @@ proxy の API キーを `CCGATE_ANTHROPIC_API_KEY` で export。Anthropic SDK �
 }
 
 // 外部 rotator が認証情報をファイルに書き込む
+// (path 省略時は $XDG_STATE_HOME/ccgate/<target>/auth_key.json)
 {
   provider: {
     name: 'anthropic',
+    model: 'claude-haiku-4-5',
     auth: {
       type: 'file',
       path: '~/.config/my-broker/anthropic.json',
