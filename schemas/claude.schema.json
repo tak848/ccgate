@@ -76,6 +76,11 @@
                   "type": "integer",
                   "minimum": 0,
                   "description": "Minimum remaining TTL guard for file output, in milliseconds. Default: 60000."
+                },
+                "timeout_ms": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Hard cap on the file read so a stalled mount surfaces as reason=timeout. Default: 5000."
                 }
               },
               "additionalProperties": false,

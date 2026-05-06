@@ -76,6 +76,11 @@
                   "type": "integer",
                   "minimum": 0,
                   "description": "Minimum remaining TTL guard for the file's `expires_at`, in milliseconds: a credential about to expire surfaces as `expired` instead of being handed to the SDK. `>= 0`; default 60000."
+                },
+                "timeout_ms": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Hard cap on the file read so a stalled mount surfaces as reason=timeout, in milliseconds. `> 0`; default 5000."
                 }
               }
             }

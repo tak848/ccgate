@@ -136,7 +136,7 @@ func validateAuthPath(path string) error {
 	if v == "" {
 		return fmt.Errorf("provider.auth.path must not be empty when type=%q", AuthTypeFile)
 	}
-	if v == "~" {
+	if v == "~" || v == "~/" {
 		return fmt.Errorf("provider.auth.path must point at a file, got bare %q", v)
 	}
 	if strings.HasPrefix(v, "~/") || filepath.IsAbs(v) {

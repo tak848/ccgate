@@ -98,6 +98,18 @@ func TestValidateAuthFields(t *testing.T) {
 		}}
 	}
 
+	// Build OS-absolute paths so the file-branch cases pass on
+	// Windows too (filepath.IsAbs rejects bare `/k` on Windows; it
+	// wants a drive letter or UNC).
+	abs := func(rel string) string {
+		p, err := filepath.Abs(rel)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	absKey := abs("k")
+
 	cases := map[string]struct {
 		auth    *AuthConfig
 		wantErr bool
@@ -125,17 +137,17 @@ func TestValidateAuthFields(t *testing.T) {
 
 		// type=file: path required (absolute or ~/), command/timeout_ms/cache_key forbidden,
 		// refresh_margin_ms allowed (minimum-remaining-TTL guard).
-		"file abs":               {auth: &AuthConfig{Type: "file", Path: "/etc/ccgate/key"}, wantErr: false},
+		"file abs":               {auth: &AuthConfig{Type: "file", Path: absKey}, wantErr: false},
 		"file home":              {auth: &AuthConfig{Type: "file", Path: "~/.ccgate/key"}, wantErr: false},
 		"file bare ~":            {auth: &AuthConfig{Type: "file", Path: "~"}, wantErr: true},
 		"file relative":          {auth: &AuthConfig{Type: "file", Path: "./key"}, wantErr: true},
 		"file bare":              {auth: &AuthConfig{Type: "file", Path: "key"}, wantErr: true},
 		"file missing path":      {auth: &AuthConfig{Type: "file"}, wantErr: true},
-		"file with command":      {auth: &AuthConfig{Type: "file", Path: "/k", Command: "x"}, wantErr: true},
-		"file with timeout":      {auth: &AuthConfig{Type: "file", Path: "/k", TimeoutMS: intPtr(5000)}, wantErr: false},
-		"file with zero timeout": {auth: &AuthConfig{Type: "file", Path: "/k", TimeoutMS: intPtr(0)}, wantErr: true},
-		"file with cache_key":    {auth: &AuthConfig{Type: "file", Path: "/k", CacheKey: "x"}, wantErr: true},
-		"file refresh_margin":    {auth: &AuthConfig{Type: "file", Path: "/k", RefreshMarginMS: intPtr(60000)}, wantErr: false},
+		"file with command":      {auth: &AuthConfig{Type: "file", Path: absKey, Command: "x"}, wantErr: true},
+		"file with timeout":      {auth: &AuthConfig{Type: "file", Path: absKey, TimeoutMS: intPtr(5000)}, wantErr: false},
+		"file with zero timeout": {auth: &AuthConfig{Type: "file", Path: absKey, TimeoutMS: intPtr(0)}, wantErr: true},
+		"file with cache_key":    {auth: &AuthConfig{Type: "file", Path: absKey, CacheKey: "x"}, wantErr: true},
+		"file refresh_margin":    {auth: &AuthConfig{Type: "file", Path: absKey, RefreshMarginMS: intPtr(60000)}, wantErr: false},
 
 		// Unknown type values are rejected — keeps the discriminator
 		// closed so editors and validate agree on what's accepted.

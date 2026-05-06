@@ -232,6 +232,7 @@ func authFileBranchSchema() *jsonschema.Schema {
 	props.Set("type", &jsonschema.Schema{Type: "string", Const: AuthTypeFile})
 	props.Set("path", &jsonschema.Schema{Type: "string", MinLength: ptr(uint64(1)), Description: "Absolute or ~/-prefixed file path. Read every hook fire."})
 	props.Set("refresh_margin_ms", &jsonschema.Schema{Type: "integer", Minimum: json.Number("0"), Description: "Minimum remaining TTL guard for file output, in milliseconds. Default: 60000."})
+	props.Set("timeout_ms", &jsonschema.Schema{Type: "integer", Minimum: json.Number("1"), Description: "Hard cap on the file read so a stalled mount surfaces as reason=timeout. Default: 5000."})
 	return &jsonschema.Schema{
 		Type:                 "object",
 		Required:             []string{"type", "path"},
