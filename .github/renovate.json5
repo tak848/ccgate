@@ -9,6 +9,7 @@
     ":prHourlyLimitNone",
   ],
   rangeStrategy: "bump",
+  postUpdateOptions: ["gomodTidy"],
   labels: ["renovate"],
   prConcurrentLimit: 0,
   prHourlyLimit: 0,
