@@ -680,7 +680,7 @@ func TestWarnLoosePermissions(t *testing.T) {
 	// and slog state in tests is global), but we exercise both
 	// branches to guard against panics. The mode 0o600 path returns
 	// without warning; mode 0o644 produces a warn.
-	warnLoosePermissions(path, info)
+	warnLoosePermissions(path, info, SourceFile)
 
 	if err := os.Chmod(path, 0o600); err != nil {
 		t.Fatal(err)
@@ -689,10 +689,10 @@ func TestWarnLoosePermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	warnLoosePermissions(path, info2)
+	warnLoosePermissions(path, info2, SourceFile)
 
 	// nil info must not panic.
-	warnLoosePermissions(path, nil)
+	warnLoosePermissions(path, nil, SourceFile)
 }
 
 func TestExpandHomePath(t *testing.T) {

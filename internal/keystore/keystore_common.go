@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gofrs/flock"
 )
@@ -47,24 +48,35 @@ const (
 	lockBackoff = 50 * time.Millisecond
 )
 
-// shellCommand maps the validated auth.shell value to the binary +
-// flag pair that runs Command. Defaults to bash for an unset value
+// shellInvocation maps the validated auth.shell value to the
+// argv that runs Command. Defaults to bash for an unset value
 // (validation should have rejected anything else).
 //
 // For powershell we prefer pwsh (PowerShell 7+, cross-platform) and
 // fall back to powershell.exe (Windows PowerShell 5.1, the version
-// shipped with Windows by default) when pwsh is not on PATH. That
+// shipped with Windows by default) when pwsh is not on PATH, which
 // keeps `auth.shell: 'powershell'` working on stock Windows where
-// PowerShell 7 is not pre-installed. Both binaries accept
-// `-Command <cmd>` for inline execution.
-func shellCommand(shell string) (string, string) {
+// PowerShell 7 is not pre-installed. Both invocations pass
+// `-NoProfile -NonInteractive`: profile scripts can write extra
+// output that contaminates the credential, and an interactive
+// prompt would wedge the hot path.
+func shellInvocation(shell string) (binary string, args []string) {
 	if shell == "powershell" {
+		bin := "powershell"
 		if _, err := exec.LookPath("pwsh"); err == nil {
-			return "pwsh", "-Command"
+			bin = "pwsh"
 		}
-		return "powershell", "-Command"
+		return bin, []string{"-NoProfile", "-NonInteractive", "-Command"}
 	}
-	return "bash", "-c"
+	return "bash", []string{"-c"}
+}
+
+// shellCommand returns the (binary, flag) pair that runs Command,
+// kept for tests that pin the shell-name -> binary mapping
+// without caring about the additional argv elements.
+func shellCommand(shell string) (string, string) {
+	bin, args := shellInvocation(shell)
+	return bin, args[len(args)-1]
 }
 
 // Resolve dispatches to the exec or file implementation based on
@@ -221,7 +233,7 @@ func resolveFile(opts Options) (Result, error) {
 		}
 		return Result{Reason: ReasonFileRead, Source: SourceFile}, err
 	}
-	warnLoosePermissions(path, info)
+	warnLoosePermissions(path, info, SourceFile)
 	payload, reason, err := parseHelperOutput(data)
 	if err != nil {
 		return Result{Reason: reason, Source: SourceFile}, err
@@ -256,10 +268,14 @@ func resolveFile(opts Options) (Result, error) {
 //     the user's hook)
 //   - stale expiry (refresh)
 //
+// We also re-check the cache file's permissions on every read so
+// a cache that was loosened after creation (e.g. by a `chmod`
+// outside ccgate) gets surfaced even on the fast path.
+//
 // Only a successful read with `now + RefreshMargin < expires_at`
 // returns ok=true.
 func readCacheValid(path string, opts Options) (string, bool) {
-	data, err := readBoundedRegularFile(path, stdoutLimit)
+	data, info, err := openBoundedRegularFile(path, stdoutLimit)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", false
@@ -297,6 +313,7 @@ func readCacheValid(path string, opts Options) (string, bool) {
 	if !time.Now().Add(opts.RefreshMargin).Before(exp) {
 		return "", false
 	}
+	warnLoosePermissions(path, info, SourceCache)
 	return payload.Key, true
 }
 
@@ -382,8 +399,8 @@ func releaseLock(lock *flock.Flock) {
 // helper that spawns `go run` / a browser process is taken down too
 // instead of leaking on timeout.
 func execHelper(ctx context.Context, opts Options) (helperPayload, Reason, error) {
-	bin, flag := shellCommand(opts.Shell)
-	cmd := exec.CommandContext(ctx, bin, flag, opts.Command)
+	bin, args := shellInvocation(opts.Shell)
+	cmd := exec.CommandContext(ctx, bin, append(args, opts.Command)...)
 	applyHelperProcessAttrs(cmd)
 	cmd.Cancel = func() error { return killHelperProcessTree(cmd) }
 	cmd.WaitDelay = waitDelayFor(opts.CommandTimeout)
@@ -441,7 +458,20 @@ func execHelper(ctx context.Context, opts Options) (helperPayload, Reason, error
 // accidental debug print, and silently passing that to the SDK
 // produced confusing 401s in the past — surface it as a helper
 // failure instead.
+//
+// We additionally reject non-UTF-8 / NUL bytes up front: a
+// credential travels through HTTP headers next, and a NUL or a
+// non-UTF-8 sequence will at best confuse the SDK and at worst
+// truncate the value silently.
 func parseHelperOutput(data []byte) (helperPayload, Reason, error) {
+	if !utf8.Valid(data) {
+		return helperPayload{}, ReasonInvalidPlainOutput,
+			errors.New("helper output must be valid UTF-8")
+	}
+	if bytes.IndexByte(data, 0) >= 0 {
+		return helperPayload{}, ReasonInvalidPlainOutput,
+			errors.New("helper output contains a NUL byte")
+	}
 	trimmed := strings.TrimSpace(string(data))
 	if trimmed == "" {
 		return helperPayload{}, ReasonEmptyOutput, errors.New("helper produced no output")
@@ -569,14 +599,9 @@ var (
 // helper-stdout reader has the same cap (stdoutLimit); applying it
 // uniformly across every file/stream credentials enter through
 // keeps the budget honest.
-func readBoundedRegularFile(path string, limit int) ([]byte, error) {
-	data, _, err := openBoundedRegularFile(path, limit)
-	return data, err
-}
-
-// openBoundedRegularFile is the same as readBoundedRegularFile but
-// also returns the os.FileInfo so callers can inspect mode/uid for
-// permission-warning purposes.
+//
+// The returned os.FileInfo lets callers inspect mode/uid for
+// permission warnings without re-stating the path.
 //
 // We Stat first and reject anything that isn't a regular file: this
 // catches a misconfigured `auth.path` pointing at a FIFO without

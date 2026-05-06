@@ -35,12 +35,14 @@ func killHelperProcessTree(cmd *exec.Cmd) error {
 	return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 }
 
-// warnLoosePermissions emits a slog.Warn when the on-disk
-// auth.path file has either a non-current owner or any
+// warnLoosePermissions emits a slog.Warn when an on-disk
+// credential file has either a non-current owner or any
 // group/other read bit set. It does NOT hard-reject — the user is
 // authoritative on filesystem layout — but it surfaces a security
-// nudge so a forgotten `chmod 0600` is obvious in the logs.
-func warnLoosePermissions(path string, info os.FileInfo) {
+// nudge so a forgotten `chmod 0600` is obvious in the logs. The
+// `source` label distinguishes the user-managed `auth.path` from
+// ccgate's own cache file.
+func warnLoosePermissions(path string, info os.FileInfo, source Source) {
 	if info == nil {
 		return
 	}
@@ -54,8 +56,8 @@ func warnLoosePermissions(path string, info os.FileInfo) {
 	if !groupOrOtherReadable && !wrongOwner {
 		return
 	}
-	slog.Warn("keystore: auth.path has loose permissions, recommend 0600",
-		"source", string(SourceFile),
+	slog.Warn("keystore: credential file has loose permissions, recommend 0600",
+		"source", string(source),
 		"path", path,
 		"mode", fmt.Sprintf("%#o", mode),
 		"uid", uid,

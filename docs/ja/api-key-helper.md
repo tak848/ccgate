@@ -173,9 +173,9 @@ ccgate は config 評価時に env を読む jsonnet ヘルパーを 2 つ regis
 
 ## ファイル経路の注意点
 
-`auth.path` はローカル通常ファイル限定です。NFS / SMB / FUSE / keychain mount は非対応 — これらに対しては ccgate 側で読み取りに hard timeout をかけられず、mount が応答しないと kernel I/O が完了するまで hook が固まります。読み取り上限が必要な場合は `auth.type=exec` (こちらは `auth.timeout_ms` が効きます) を使ってください。
+`auth.path` も on-disk cache (`$XDG_CACHE_HOME/ccgate/<target>/api_key.*.json` または `os.UserCacheDir()` の fallback) も、ローカル通常ファイルシステム上にある必要があります。NFS / SMB / FUSE / keychain mount / Windows UNC path は非対応 — `auth.timeout_ms` は helper 実行にしか効かないため、応答しない mount に当たると credential file / cache file のどちらかで kernel I/O が完了するまで hook が固まります。hard timeout が必要なら、ローカル設置の `auth.type=exec` を使ってください。
 
-`auth.path` のファイルが group/other に read 権を持っている、または現在のユーザーと UID が違う所有者になっている場合、ccgate は `slog.Warn` を出します (拒否はしません)。推奨は `chmod 0600` のファイルを `chmod 0700` の親ディレクトリに置くことです。
+`auth.path` か cache file が group/other に read 権を持っている / 現在の UID と所有者が違う (Unix)、または `Everyone` / `BuiltinUsers` SID に直接 read を許す ACE を持っている (Windows) 場合、ccgate は `slog.Warn` を出します (拒否はしません)。これらは security nudge であり policy enforcement ではありません: Windows DACL walk は当該 well-known SID への allow ACE のみを見ており、deny ACE・継承・effective access は評価しません。推奨は Unix で `chmod 0600` のファイルを `chmod 0700` の親ディレクトリに置く、Windows で当該 user のみ読める ACL に設定する、です。
 
 ## provider が 401/403 を返した場合の挙動
 

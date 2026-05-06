@@ -173,9 +173,9 @@ Alternatively, bake the account into the command string (`aws sts ... --profile 
 
 ## File mode notes
 
-`auth.path` must point at a local regular file. NFS, SMB, FUSE, and keychain mounts are unsupported: ccgate cannot enforce a hard read deadline on those, so a stalled mount can hang the hook for the duration of the kernel I/O. Use `auth.type=exec` (which honours `auth.timeout_ms`) when you need that bound.
+Both `auth.path` and the on-disk cache (`$XDG_CACHE_HOME/ccgate/<target>/api_key.*.json` or the `os.UserCacheDir()` fallback) must live on a local regular filesystem. NFS, SMB, FUSE, keychain mounts, and Windows UNC paths are unsupported: `auth.timeout_ms` only bounds the helper exec, so a stalled mount lets the hook hang for the duration of the kernel I/O on either the credential file or the cache file. Use a local `auth.type=exec` helper instead when you need a hard timeout.
 
-ccgate emits a `slog.Warn` when `auth.path` has any group/other read bit set, or is owned by a different UID than the current user. The warning is informational; the recommended setup is `chmod 0600` on the file inside a `chmod 0700` parent directory.
+ccgate emits a `slog.Warn` when `auth.path` *or* the cache file has any group/other read bit set, or is owned by a different UID than the current user (Unix), or grants direct read access to the `Everyone` / `BuiltinUsers` SIDs (Windows). Both checks are best-effort security nudges, not policy enforcement: the Windows DACL walk only inspects allow ACEs to those well-known SIDs and does not compute effective access, deny ACEs, or inheritance. The recommended setup is `chmod 0600` on Unix inside a `chmod 0700` parent, or a per-user-only ACL on Windows.
 
 ## Provider 401/403 behaviour
 

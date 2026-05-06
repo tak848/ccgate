@@ -87,8 +87,10 @@ func killTreeWindows(root uint32) error {
 // best-effort security nudge — equivalent in spirit to the POSIX
 // `chmod 0600` check on Unix — and never hard-rejects. ACL
 // inspection failures are silent (we don't want to warn falsely if
-// the kernel just returned an unexpected error code).
-func warnLoosePermissions(path string, _ os.FileInfo) {
+// the kernel just returned an unexpected error code). The check is
+// shallow: deny ACEs, inheritance, effective permissions, and SIDs
+// other than Everyone / BuiltinUsers are not evaluated.
+func warnLoosePermissions(path string, _ os.FileInfo, source Source) {
 	sd, err := windows.GetNamedSecurityInfo(
 		path,
 		windows.SE_FILE_OBJECT,
@@ -114,8 +116,8 @@ func warnLoosePermissions(path string, _ os.FileInfo) {
 	if !daclGrantsReadTo(dacl, world, users) {
 		return
 	}
-	slog.Warn("keystore: auth.path has loose ACL granting read to Everyone/Users, recommend restricting",
-		"source", string(SourceFile),
+	slog.Warn("keystore: credential file has loose ACL granting read to Everyone/Users, recommend restricting",
+		"source", string(source),
 		"path", path,
 	)
 }
