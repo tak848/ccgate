@@ -144,10 +144,8 @@ type AuthConfig struct {
 	Shell string `json:"shell,omitempty"`
 	// Command is the shell command for type=exec.
 	Command string `json:"command,omitempty"`
-	// Path is the file path for type=file. nil means "field omitted":
-	// the runner falls back to config.DefaultAuthPath. An explicit
-	// empty string is rejected by validate (configs use omit, not
-	// empty, to ask for the default).
+	// Path is the file path for type=file. nil = use the per-target
+	// default; an empty pointer is rejected.
 	Path *string `json:"path,omitempty"`
 	// RefreshMarginMS is the early-refresh slack in milliseconds
 	// (default 60 000). >= 0; 0 disables the guard.

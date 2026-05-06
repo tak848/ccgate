@@ -45,15 +45,17 @@ Linux / macOS / *BSD / Windows に対応します。helper コマンドを動か
 
 | 項目 | 型 | 既定値 | 説明 |
 |---|---|---|---|
-| `auth.type` | `"exec"` / `"file"` | (`auth` を書くなら必須) | 取得モードを選びます。 |
-| `auth.command` | string | `""` | (`exec` 専用、必須) シェルコマンド。stdout が認証情報になります。コマンド内の相対パス (`./bin/helper.sh`、`bin/helper` 等) は **hook 起動時のカレントディレクトリ** から解決されます。**設定ファイルのあるディレクトリではない** 点に注意してください。 |
-| `auth.shell` | `"bash"` / `"powershell"` | `"bash"` | (`exec` 専用) シェルを選択。`bash` は `bash -c <command>` を実行します。`powershell` は `pwsh` (PowerShell 7+、クロスプラットフォーム) を優先解決し、PATH に無ければ stock Windows 同梱の `powershell` (Windows PowerShell 5.1) に fallback します。どちらも `-Command <command>` で起動します。 |
-| `auth.path` | string | `$XDG_STATE_HOME/ccgate/<target>/auth_key.json` | (`file` 専用) ローカル通常ファイルのパス。絶対パス・`~/...`・相対パスのいずれも受け付けます。相対パスは **hook 起動時のカレントディレクトリ** から解決され、**設定ファイルのあるディレクトリではない** 点に注意してください (`~/.claude/ccgate.jsonnet` に `path: 'key.json'` と書いた場合、`<project_root>/key.json` を読みます。`~/.claude/key.json` ではありません)。デフォルトを使いたい場合は field 自体を **省略** してください。**空文字を渡してはいけません** (jsonnet で `std.native('env')` 等が空文字を返したケースは config 側で `if ... then ...` で field 自体を出さないように書いてください)。 |
-| `auth.refresh_margin_ms` | int (ms) | `60000` | `expires_at` のこの ms 前から認証情報を期限切れ扱いにします。`0` で早期更新ガードを無効化。 |
-| `auth.timeout_ms` | int (ms) | `30000` | Resolve 1 回の上限。`exec` では lock 取得 + helper 実行、`file` ではファイル読み取りの上限になり、応答しない mount は `reason=timeout` で fallthrough します。`> 0`。`exec` で初回ブラウザが開く helper を使う場合は `120000` 程度まで上げてください ([初回ブラウザ認証](#初回ブラウザ認証) 参照)。 |
-| `auth.cache_key` | string | `""` | (`exec` 専用) cache fingerprint に加えるサルト。[アカウント分離](#アカウント分離) 参照。 |
+| `auth.type` | `"exec"` / `"file"` | (`auth` を書くなら必須) | 取得モード |
+| `auth.command` | string | `""` | (`exec` 専用、必須) シェルコマンド。stdout が認証情報 |
+| `auth.shell` | `"bash"` / `"powershell"` | `"bash"` | (`exec` 専用) `powershell` は `pwsh` を優先解決、無ければ `powershell` に fallback |
+| `auth.path` | string | `$XDG_STATE_HOME/ccgate/<target>/auth_key.json` | (`file` 専用) 認証情報ファイルのパス。省略でデフォルトを使用 |
+| `auth.refresh_margin_ms` | int (ms) | `60000` | `expires_at` の何 ms 前で期限切れ扱いにするか。`0` で無効 |
+| `auth.timeout_ms` | int (ms) | `30000` | Resolve 1 回の上限。`> 0` |
+| `auth.cache_key` | string | `""` | (`exec` 専用) cache fingerprint に加える salt。[アカウント分離](#アカウント分離) 参照 |
 
-認証情報の解決順は `provider.auth` (設定済みのとき) > `CCGATE_*_API_KEY` > `*_API_KEY` です。`auth` を設定している状態で解決に失敗しても env var には fallback しません。`kind=credential_unavailable` で fallthrough して問題が表に出るようにしています。
+`auth.command` / `auth.path` の相対パスは hook 起動時のカレントディレクトリから解決します (設定ファイルのあるディレクトリではありません)。
+
+認証情報の解決順は `provider.auth` (設定済みのとき) > `CCGATE_*_API_KEY` > `*_API_KEY` です。`auth` を設定している状態で解決に失敗しても env var には fallback しません。`kind=credential_unavailable` で fallthrough します。
 
 ## helper の出力
 

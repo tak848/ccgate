@@ -45,15 +45,19 @@ Linux, macOS, *BSD, and Windows are supported. The shell that runs the helper co
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `auth.type` | `"exec"` / `"file"` | (required when `auth` is set) | Selects the resolution mode. |
-| `auth.command` | string | `""` | (`exec` only, required) Shell command. Stdout is the credential. Relative paths inside the command (`./bin/helper.sh`, `bin/helper`, etc.) resolve from the hook's working directory at fire time, **not** the directory of the config file. |
-| `auth.shell` | `"bash"` / `"powershell"` | `"bash"` | (`exec` only) Selects the shell. `bash` runs `bash -c <command>`. `powershell` resolves `pwsh` first (PowerShell 7+, cross-platform) and falls back to `powershell` (Windows PowerShell 5.1, shipped with stock Windows) when `pwsh` is not on PATH; both are invoked with `-Command <command>`. |
-| `auth.path` | string | `$XDG_STATE_HOME/ccgate/<target>/auth_key.json` | (`file` only) Path to a local regular file. Absolute, `~/`-prefixed, and relative paths are all accepted; relative paths resolve from the hook's *working directory at fire time*, **not** the directory of the config file (so `path: 'key.json'` written in `~/.claude/ccgate.jsonnet` resolves to `<project_root>/key.json`, not `~/.claude/key.json`). Omit the field to use the default; do **not** set it to an empty string. |
-| `auth.refresh_margin_ms` | int (ms) | `60000` | Treat a credential as expired this many milliseconds before its `expires_at`. `0` disables the early-refresh guard. |
-| `auth.timeout_ms` | int (ms) | `30000` | Hard cap on one Resolve call. For `exec` it bounds lock acquisition + helper exec; for `file` it bounds the file read so a stalled mount surfaces as `reason=timeout`. `> 0`. Raise it (e.g. `120000`) for `exec` helpers that open a browser on first run; see [Browser-based first-run auth](#browser-based-first-run-auth). |
-| `auth.cache_key` | string | `""` | (`exec` only) Extra salt for the cache fingerprint. See [Account isolation](#account-isolation). |
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `auth.type` | `"exec"` / `"file"` | (required when `auth` is set) | Resolution mode. |
+| `auth.command` | string | `""` | (`exec` only, required) Shell command; stdout is the credential. |
+| `auth.shell` | `"bash"` / `"powershell"` | `"bash"` | (`exec` only) Shell. `powershell` tries `pwsh` first, falls back to `powershell`. |
+| `auth.path` | string | `$XDG_STATE_HOME/ccgate/<target>/auth_key.json` | (`file` only) Credential file path. Omit to use the default. |
+| `auth.refresh_margin_ms` | int (ms) | `60000` | Treat credentials as expired this many ms before `expires_at`. `0` disables. |
+| `auth.timeout_ms` | int (ms) | `30000` | Hard cap on one Resolve call. `> 0`. |
+| `auth.cache_key` | string | `""` | (`exec` only) Salt added to the cache fingerprint. See [Account isolation](#account-isolation). |
 
-Credential resolution order: `provider.auth` (when configured) > `CCGATE_*_API_KEY` > `*_API_KEY`. A configured `auth` block does not fall back to env vars on failure — the hook falls through with `kind=credential_unavailable` so the issue surfaces instead of being papered over.
+Relative paths in `auth.command` and `auth.path` resolve from the hook's working directory at fire time, not from the config file's directory.
+
+Credential resolution order: `provider.auth` (when configured) > `CCGATE_*_API_KEY` > `*_API_KEY`. A configured `auth` block does not fall back to env vars on failure; the hook falls through with `kind=credential_unavailable` so the issue surfaces.
 
 ## Helper output
 
