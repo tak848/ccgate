@@ -499,10 +499,10 @@ func TestResolveFileFifoDoesNotBlock(t *testing.T) {
 	}
 }
 
-// TestResolveCommandTightensExistingCacheDirPerm guards Medium #1
-// from the holistic review: an existing 0755 ccgate cache dir
-// (e.g. left behind by an older release) must be chmod'd back to
-// 0700 before we drop a credential file in there.
+// TestResolveCommandTightensExistingCacheDirPerm pins that an
+// existing 0755 ccgate cache dir (e.g. one created by an older
+// release) is chmod'd back to 0700 before we drop a credential
+// file in there.
 func TestResolveCommandTightensExistingCacheDirPerm(t *testing.T) {
 	root := withCacheRoot(t)
 

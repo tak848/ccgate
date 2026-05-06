@@ -45,9 +45,7 @@ const (
 	// file path relies on a local-FS best-effort contract instead.
 	DefaultAuthTimeoutMS = 5_000
 
-	// AuthTypeExec / AuthTypeFile are the only AuthConfig.Type values
-	// accepted in v0.x. Future siblings (e.g. Workload Identity
-	// Federation) extend this list in their own PRs.
+	// AuthTypeExec / AuthTypeFile are the AuthConfig.Type values.
 	AuthTypeExec = "exec"
 	AuthTypeFile = "file"
 

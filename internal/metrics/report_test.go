@@ -176,13 +176,13 @@ func TestBuildReportCredentialFailures(t *testing.T) {
 	writeEntries(t, path, []Entry{
 		{Timestamp: now, ToolName: "Bash", Decision: "fallthrough",
 			FallthroughKind: "credential_unavailable", Reason: "expired",
-			CredentialSource: "command", ElapsedMS: 5},
+			CredentialSource: "exec", ElapsedMS: 5},
 		{Timestamp: now, ToolName: "Read", Decision: "fallthrough",
 			FallthroughKind: "credential_unavailable", Reason: "expired",
-			CredentialSource: "command", ElapsedMS: 5},
+			CredentialSource: "exec", ElapsedMS: 5},
 		{Timestamp: now, ToolName: "Write", Decision: "fallthrough",
 			FallthroughKind: "credential_unavailable", Reason: "provider_auth",
-			CredentialSource: "command", ElapsedMS: 5},
+			CredentialSource: "exec", ElapsedMS: 5},
 		{Timestamp: now, ToolName: "Read", Decision: "fallthrough",
 			FallthroughKind: "credential_unavailable", Reason: "file_missing",
 			CredentialSource: "file", ElapsedMS: 5},
@@ -200,11 +200,11 @@ func TestBuildReportCredentialFailures(t *testing.T) {
 	if len(report.CredentialFailures) != 4 {
 		t.Fatalf("got %d credential failures, want 4: %+v", len(report.CredentialFailures), report.CredentialFailures)
 	}
-	// Sorted descending by Count, so the (command, expired) pair
+	// Sorted descending by Count, so the (exec, expired) pair
 	// (count=2) must come first.
 	first := report.CredentialFailures[0]
-	if first.Source != "command" || first.Reason != "expired" || first.Count != 2 {
-		t.Fatalf("first row = %+v, want {command, expired, 2}", first)
+	if first.Source != "exec" || first.Reason != "expired" || first.Count != 2 {
+		t.Fatalf("first row = %+v, want {exec, expired, 2}", first)
 	}
 	// Older entry without CredentialSource appears under
 	// "(unknown)" so it doesn't get silently swallowed.

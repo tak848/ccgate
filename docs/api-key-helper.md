@@ -47,7 +47,7 @@ Linux, macOS, *BSD, and Windows are supported. The shell that runs the helper co
 | `auth.shell` | `"bash"` / `"powershell"` | `"bash"` | (`exec` only) Selects the shell binary. `bash` runs `bash -c <command>`; `powershell` runs `pwsh -Command <command>`. |
 | `auth.path` | string (abs or `~/`) | `""` | (`file` only, required) Local regular file. |
 | `auth.refresh_margin_ms` | int (ms) | `60000` | Treat a credential as expired this many milliseconds before its `expires_at`. `0` disables the early-refresh guard. |
-| `auth.timeout_ms` | int (ms) | `5000` | (`exec` only) Hard cap on a single helper invocation. `> 0`. Raise it (e.g. `60000`) for helpers that open a browser on first run; see [Browser-based first-run auth](#browser-based-first-run-auth). |
+| `auth.timeout_ms` | int (ms) | `5000` | (`exec` only) Hard cap on one Resolve call (lock acquisition + helper exec). `> 0`. Raise it (e.g. `60000`) for helpers that open a browser on first run; see [Browser-based first-run auth](#browser-based-first-run-auth). |
 | `auth.cache_key` | string | `""` | (`exec` only) Extra salt for the cache fingerprint. See [Account isolation](#account-isolation). |
 
 Credential resolution order: `provider.auth` (when configured) > `CCGATE_*_API_KEY` > `*_API_KEY`. A configured `auth` block does not fall back to env vars on failure — the hook falls through with `kind=credential_unavailable` so the issue surfaces instead of being papered over.
@@ -69,7 +69,7 @@ A helper must:
 - Be **deterministic** for the same `(command, provider.name, base_url, cache_key)` tuple. Two callers with the same config must agree on what the credential is.
 - **Not daemonize**. Forking past the process group escapes the timeout-kill.
 - Finish within `auth.timeout_ms`.
-- Avoid literal secrets in `auth.command`. The string is passed to `/bin/sh -c` and shows up in `ps`, `/proc/<pid>/cmdline`, and shell history. Read secrets from a file or keychain inside the helper instead.
+- Avoid literal secrets in `auth.command`. The string is passed to the configured shell (`bash -c <command>` or `pwsh -Command <command>`) and shows up in `ps`, `/proc/<pid>/cmdline`, and shell history. Read secrets from a file or keychain inside the helper instead.
 
 ccgate exports `CCGATE_API_KEY_RESOLUTION=1` into the helper environment so a wrapper helper can detect recursive invocation. All other environment variables (including `*_API_KEY`) are inherited. Stdin is closed; the helper cannot read from the parent terminal.
 
@@ -188,9 +188,14 @@ When the provider rejects the credential ccgate just used, the HTTP status alone
 
 The env-var path keeps the existing exit-1 behaviour on 401/403 because ccgate cannot rotate env vars; swallowing the rejection would hide a user-side configuration error.
 
-## Differences from AWS `credential_process`
+## Relationship to AWS `credential_process` and kubectl exec credential plugins
 
-The output shape is intentionally close to AWS `credential_process`, but ccgate memoizes the helper output to disk while the AWS CLI re-execs on every call. To opt out, return JSON without `expires_at` and the helper will re-run every time.
+`provider.auth` is shaped after the same family of credential helpers, but it is not a drop-in for any of them:
+
+- **AWS `credential_process`** prints `{"Version":1, "AccessKeyId", "SecretAccessKey", "SessionToken", "Expiration"}` for SigV4 callers, and the AWS CLI re-execs the helper every call. ccgate prints `{"key", "expires_at"}` for an Authorization-header bearer, and memoizes to disk. An AWS-style helper needs a thin adapter that picks the right field and reshapes the JSON.
+- **kubectl exec credential plugin** uses a separate `command` + `args` pair and prints an `ExecCredential` shape. ccgate uses a single shell-form `command` (matching the Claude Code / Codex hook conventions ccgate plugs into) and the JSON shape above.
+
+To opt out of caching, return JSON without `expires_at` (or plain string) and the helper re-runs every fire.
 
 ## Recovery checklist
 
@@ -198,6 +203,7 @@ The output shape is intentionally close to AWS `credential_process`, but ccgate 
 2. Run `ccgate <target> metrics` and check the **Credential failures** section, which groups failures by `(source, reason)`.
 3. For `cache_parse` / `cache_read` / `cache_write` (log-only warnings), remove `$XDG_CACHE_HOME/ccgate/<target>/api_key.*.json` to force a refresh. Leave the sibling `*.lock` files alone.
 4. For `expired`, compare the helper's `expires_at` with `date -u`. Clock skew or a broken TTL inside the helper is the usual cause.
-5. For repeated `provider_auth` even after cache invalidation, the helper itself is producing a credential the provider rejects. Re-run `/bin/sh -c "$your_command"` manually and inspect the stdout that reached the SDK.
+5. For `command_exit` on a fresh setup, check first whether the configured `auth.shell` binary is on `$PATH`. `bash` is universal on Linux / macOS; `powershell` resolves `pwsh` first and falls back to `powershell.exe`, both of which need to be installed. A missing shell currently surfaces as `command_exit` with exit-status 127 (Unix) or `127`-equivalent (Windows).
+6. For repeated `provider_auth` even after cache invalidation, the helper itself is producing a credential the provider rejects. Re-run the helper manually with the same shell ccgate uses (`bash -c "$your_command"` or `pwsh -Command "$your_command"`) and inspect the stdout that reached the SDK.
 
 The full reason list is in [docs/configuration.md](configuration.md#reason-values-for-credential_unavailable).

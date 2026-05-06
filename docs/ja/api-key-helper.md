@@ -47,7 +47,7 @@ Linux / macOS / *BSD / Windows に対応します。helper コマンドを動か
 | `auth.shell` | `"bash"` / `"powershell"` | `"bash"` | (`exec` 専用) シェルを選択。`bash` は `bash -c <command>`、`powershell` は `pwsh -Command <command>` で実行します。 |
 | `auth.path` | string (絶対パス または `~/` 始まり) | `""` | (`file` 専用、必須) ローカル通常ファイル。 |
 | `auth.refresh_margin_ms` | int (ms) | `60000` | `expires_at` のこの ms 前から認証情報を期限切れ扱いにします。`0` で早期更新ガードを無効化。 |
-| `auth.timeout_ms` | int (ms) | `5000` | (`exec` 専用) helper 1 回あたりの実行上限。`> 0`。初回にブラウザが開く helper を使う場合は `60000` 程度まで上げてください ([初回ブラウザ認証](#初回ブラウザ認証) 参照)。 |
+| `auth.timeout_ms` | int (ms) | `5000` | (`exec` 専用) Resolve 1 回の上限 (lock 取得 + helper 実行)。`> 0`。初回にブラウザが開く helper を使う場合は `60000` 程度まで上げてください ([初回ブラウザ認証](#初回ブラウザ認証) 参照)。 |
 | `auth.cache_key` | string | `""` | (`exec` 専用) cache fingerprint に加えるサルト。[アカウント分離](#アカウント分離) 参照。 |
 
 認証情報の解決順は `provider.auth` (設定済みのとき) > `CCGATE_*_API_KEY` > `*_API_KEY` です。`auth` を設定している状態で解決に失敗しても env var には fallback しません。`kind=credential_unavailable` で fallthrough して問題が表に出るようにしています。
@@ -69,7 +69,7 @@ helper は次を満たす必要があります。
 - 同じ `(command, provider.name, base_url, cache_key)` の組に対して **決定論的** に振る舞う。同じ設定で 2 回呼んだら同じ意味の認証情報を返すこと。
 - **デーモン化しない**。process group の外に fork するとタイムアウト時の kill が効きません。
 - `auth.timeout_ms` 以内に終了する。
-- `auth.command` 文字列に **literal な秘密情報を直接書かない**。文字列は `/bin/sh -c` に渡されるため、`ps` / `/proc/<pid>/cmdline` / シェル履歴に残ります。秘密情報はファイルや keychain に置き、helper の中で読み出してください。
+- `auth.command` 文字列に **literal な秘密情報を直接書かない**。文字列は設定したシェル (`bash -c <command>` または `pwsh -Command <command>`) に渡されるため、`ps` / `/proc/<pid>/cmdline` / シェル履歴に残ります。秘密情報はファイルや keychain に置き、helper の中で読み出してください。
 
 ccgate は helper の env に `CCGATE_API_KEY_RESOLUTION=1` を入れるので、helper が ccgate を再帰起動していないかを自分で検知できます。それ以外の環境変数 (`*_API_KEY` 含む) はそのまま継承します。stdin は閉じています (helper から親ターミナルの入力は読めません)。
 
@@ -188,9 +188,14 @@ provider が認証情報を拒否した場合、HTTP status のみで挙動が�
 
 env 経路で 401 / 403 を exit 1 にしているのは、ccgate 側で env を rotate する手段がないためです。黙って飲み込むとユーザー側の設定ミスを隠してしまいます。
 
-## AWS `credential_process` との差分
+## AWS `credential_process` / kubectl exec plugin との関係
 
-出力形式は AWS `credential_process` に意図的に近づけていますが、ccgate は helper の出力をディスクにキャッシュします (AWS CLI は呼び出しのたびに helper を再実行します)。キャッシュさせたくない場合は `expires_at` を含めない JSON を返してください。helper が毎回再実行されます。
+`provider.auth` は同じ系列の credential helper を意識した形ですが、どれも drop-in 互換ではありません。
+
+- **AWS `credential_process`** は `{"Version":1, "AccessKeyId", "SecretAccessKey", "SessionToken", "Expiration"}` を SigV4 用に出力し、AWS CLI は呼び出しのたびに helper を再実行します。ccgate は Authorization header (Bearer) に乗せる用の `{"key", "expires_at"}` を出力し、ディスクにキャッシュします。AWS 形式の helper を流用する場合は、フィールドを抜き出して JSON を整える薄いラッパーが必要です。
+- **kubectl exec credential plugin** は `command` と `args` を分けて指定し、`ExecCredential` 形式を出力します。ccgate は ccgate が plug-in する Claude Code / Codex hook の慣習に揃えて、shell-form の `command` 1 本と上記 JSON 形式を採用しています。
+
+キャッシュさせたくない場合は `expires_at` を含めない JSON (または plain string) を返せば、helper は毎 fire 再実行されます。
 
 ## 障害時の復旧チェックリスト
 
@@ -198,6 +203,7 @@ env 経路で 401 / 403 を exit 1 にしているのは、ccgate 側で env を
 2. `ccgate <target> metrics` を実行し、**Credential failures** セクションで `(source, reason)` 別の集計を確認します。
 3. キャッシュ起因 (`cache_parse` / `cache_read` / `cache_write` の log warning) が疑わしい場合は `$XDG_CACHE_HOME/ccgate/<target>/api_key.*.json` を削除して再生成させます。隣接する `*.lock` は再利用するので残しておいてください。
 4. `expired` が出続ける場合は helper の `expires_at` と `date -u` を比較してください。helper 側の TTL ロジックや時計ズレが原因のことが多いです。
-5. キャッシュを削除しても `provider_auth` が繰り返される場合は、helper 自体が provider に拒否される認証情報を生成しています。`/bin/sh -c "$your_command"` を手で実行して、SDK に渡された stdout の中身を確認してください。
+5. 新しい環境で `command_exit` が出る場合は、まず `auth.shell` で指定したシェルが `$PATH` にあるかを確認してください。Linux / macOS の `bash` は標準で入りますが、`powershell` は `pwsh` を優先解決して `powershell.exe` に fallback します — どちらかが install されている必要があります。シェル不在は現状 `command_exit` (Unix の exit 127、Windows でも同等) として現れます。
+6. キャッシュを削除しても `provider_auth` が繰り返される場合は、helper 自体が provider に拒否される認証情報を生成しています。ccgate と同じシェル (`bash -c "$your_command"` または `pwsh -Command "$your_command"`) で手動実行して、SDK に渡された stdout の中身を確認してください。
 
 reason の網羅は [configuration.md](configuration.md#credential_unavailable-の-reason-値) にあります。

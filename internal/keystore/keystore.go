@@ -57,8 +57,7 @@ import (
 //	cache_parse, cache_read, cache_write.
 type Reason string
 
-// Reason values. Keep these aligned with docs/configuration.md and
-// the reason taxonomy in the issue #61 plan.
+// Reason values. Keep these aligned with docs/configuration.md.
 const (
 	ReasonOK                 Reason = ""
 	ReasonCommandExit        Reason = "command_exit"
@@ -160,7 +159,7 @@ type Result struct {
 // CacheFingerprint is the deterministic per-cache-entry identifier.
 // The same Options that should share a cache file produce the same
 // fingerprint; differences in TargetName / ProviderName / BaseURL /
-// Command / CacheKey always produce a fresh path.
+// Shell / Command / CacheKey always produce a fresh path.
 //
 // Inputs are fed length-prefixed (`uint32 BE len || raw bytes`) so
 // any byte (including NUL) inside any field stays inside its own
@@ -176,6 +175,7 @@ func CacheFingerprint(opts Options) string {
 	writeLP(h, opts.TargetName)
 	writeLP(h, opts.ProviderName)
 	writeLP(h, opts.BaseURL)
+	writeLP(h, opts.Shell)
 	writeLP(h, opts.Command)
 	writeLP(h, opts.CacheKey)
 	sum := h.Sum(nil)

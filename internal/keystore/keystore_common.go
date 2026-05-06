@@ -50,9 +50,19 @@ const (
 // shellCommand maps the validated auth.shell value to the binary +
 // flag pair that runs Command. Defaults to bash for an unset value
 // (validation should have rejected anything else).
+//
+// For powershell we prefer pwsh (PowerShell 7+, cross-platform) and
+// fall back to powershell.exe (Windows PowerShell 5.1, the version
+// shipped with Windows by default) when pwsh is not on PATH. That
+// keeps `auth.shell: 'powershell'` working on stock Windows where
+// PowerShell 7 is not pre-installed. Both binaries accept
+// `-Command <cmd>` for inline execution.
 func shellCommand(shell string) (string, string) {
 	if shell == "powershell" {
-		return "pwsh", "-Command"
+		if _, err := exec.LookPath("pwsh"); err == nil {
+			return "pwsh", "-Command"
+		}
+		return "powershell", "-Command"
 	}
 	return "bash", "-c"
 }
@@ -366,10 +376,11 @@ func releaseLock(lock *flock.Flock) {
 //
 // applyHelperProcessAttrs and killHelperProcessTree are defined per
 // platform so the shell child is placed in its own process group
-// (Setpgid on Unix, CREATE_NEW_PROCESS_GROUP + Job Object on
-// Windows). Cancelling the context kills the whole pipeline, not
-// just the shell, so a helper that spawns `go run` / a browser
-// process doesn't leak it on timeout.
+// (Setpgid on Unix, CREATE_NEW_PROCESS_GROUP on Windows) and the
+// whole tree is taken down on cancel (kill(-pid) on Unix,
+// Toolhelp32Snapshot tree-walk + TerminateProcess on Windows). A
+// helper that spawns `go run` / a browser process is taken down too
+// instead of leaking on timeout.
 func execHelper(ctx context.Context, opts Options) (helperPayload, Reason, error) {
 	bin, flag := shellCommand(opts.Shell)
 	cmd := exec.CommandContext(ctx, bin, flag, opts.Command)
@@ -467,8 +478,16 @@ func parseHelperJSON(trimmed string) (helperPayload, Reason, error) {
 	if err := dec.Decode(&trailing); !errors.Is(err, io.EOF) {
 		return helperPayload{}, ReasonJSONParse, errors.New("trailing data after helper json")
 	}
+	// `key` must be a non-empty single-line string. Plain-string
+	// helper output already enforces this; apply the same shape on
+	// the JSON branch so a stray CR/LF inside the JSON `key` field
+	// (e.g. a helper that pastes a token followed by a newline)
+	// surfaces here rather than as a confusing 401 from the SDK.
 	if strings.TrimSpace(payload.Key) == "" {
 		return helperPayload{}, ReasonJSONParse, errors.New("helper json missing key")
+	}
+	if strings.ContainsAny(payload.Key, "\r\n") {
+		return helperPayload{}, ReasonJSONParse, errors.New("helper json key must be a single line")
 	}
 	if payload.ExpiresAt != "" {
 		if _, err := time.Parse(time.RFC3339, payload.ExpiresAt); err != nil {
