@@ -89,6 +89,14 @@ go install github.com/tak848/ccgate@latest
 
 Download a binary from [Releases](https://github.com/tak848/ccgate/releases) and place it on your `PATH`.
 
+### Homebrew
+
+```bash
+brew install tak848/tap/ccgate
+```
+
+macOS and Linux.
+
 ## Setup — Claude Code
 
 ### 1. Create a config file (optional)
