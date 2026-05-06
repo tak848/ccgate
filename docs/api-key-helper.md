@@ -168,9 +168,11 @@ ccgate registers two jsonnet helpers for reading env vars at config-load time:
 
 Alternatively, bake the account into the command string (`aws sts ... --profile prod`) — different command strings hash to different cache files automatically — or use `auth.type=file` with one path per account.
 
+The cache fingerprint does **not** include the working directory. Two checkouts of the same repo running the same relative `command: './scripts/get-key'` share a cache file by default; use `cache_key` (e.g. `cache_key: std.native('env')('PWD')`) to opt into per-checkout separation, or leave it empty to share intentionally.
+
 ## File mode notes
 
-`auth.path` reads are bounded by `auth.timeout_ms` (default 5000) just like the exec branch — a stalled mount surfaces as `reason=timeout` instead of blocking the hook. Local regular files are still strongly recommended (NFS / SMB / FUSE / keychain mounts will time out reliably but each fire pays a `timeout_ms` wait); a per-user local path is the cheapest path.
+`auth.path` reads are bounded by `auth.timeout_ms` (default 30000) just like the exec branch — a stalled mount surfaces as `reason=timeout` instead of blocking the hook. Local regular files are still strongly recommended (NFS / SMB / FUSE / keychain mounts will time out reliably but each fire pays a `timeout_ms` wait); a per-user local path is the cheapest path.
 
 ccgate emits a `slog.Warn` when `auth.path` *or* the cache file has any group/other read bit set, or is owned by a different UID than the current user (Unix), or grants direct read access to the `Everyone` / `BuiltinUsers` SIDs (Windows). Both checks are best-effort security nudges, not policy enforcement: the Windows DACL walk only inspects allow ACEs to those well-known SIDs and does not compute effective access, deny ACEs, or inheritance. The recommended setup is `chmod 0600` on Unix inside a `chmod 0700` parent, or a per-user-only ACL on Windows.
 

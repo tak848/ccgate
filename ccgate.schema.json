@@ -50,7 +50,7 @@
                 "timeout_ms": {
                   "type": "integer",
                   "minimum": 1,
-                  "description": "Hot-path upper bound for one helper invocation (lock retries + exec), in milliseconds. Must be `> 0` (`0` is rejected to avoid wedging every hook fire). Default: 5000."
+                  "description": "Hard cap on one Resolve call (lock retries + helper exec), in milliseconds. Must be `> 0`. Default: 30000."
                 },
                 "cache_key": {
                   "type": "string",
@@ -80,7 +80,7 @@
                 "timeout_ms": {
                   "type": "integer",
                   "minimum": 1,
-                  "description": "Hard cap on the file read so a stalled mount surfaces as reason=timeout, in milliseconds. `> 0`; default 5000."
+                  "description": "Hard cap on the file read so a stalled mount surfaces as reason=timeout, in milliseconds. `> 0`; default 30000."
                 }
               }
             }

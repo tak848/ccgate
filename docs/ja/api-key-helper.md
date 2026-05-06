@@ -168,9 +168,11 @@ ccgate は config 評価時に env を読む jsonnet ヘルパーを 2 つ regis
 
 または、コマンド文字列にアカウントを直接埋め込む (`aws sts ... --profile prod`) と、コマンド文字列違いで自動的に別キャッシュになります。`auth.type=file` でアカウントごとに別パスを使うのも同じ効果です。
 
+cache fingerprint には **カレントディレクトリは含まれません**。同じ repo の checkout が 2 つあって、両方が `command: './scripts/get-key'` のような相対 helper を実行する場合、デフォルトでは 1 つのキャッシュを共有します。checkout ごとに分けたいときは `cache_key` (例: `cache_key: std.native('env')('PWD')`) で明示的に salt を入れてください。共有したいなら `cache_key` を空のままにします。
+
 ## ファイル経路の注意点
 
-`auth.path` の読み取りも exec 経路と同じく `auth.timeout_ms` (default 5000) で上限が決まります — 応答しない mount では `reason=timeout` で fallthrough します (hook はブロックしません)。とはいえ NFS / SMB / FUSE / keychain mount に置くと毎 fire `timeout_ms` 分待つコストが発生するので、user 専用のローカル path を強く推奨します。
+`auth.path` の読み取りも exec 経路と同じく `auth.timeout_ms` (default 30000) で上限が決まります — 応答しない mount では `reason=timeout` で fallthrough します (hook はブロックしません)。とはいえ NFS / SMB / FUSE / keychain mount に置くと毎 fire `timeout_ms` 分待つコストが発生するので、user 専用のローカル path を強く推奨します。
 
 `auth.path` か cache file が group/other に read 権を持っている / 現在の UID と所有者が違う (Unix)、または `Everyone` / `BuiltinUsers` SID に直接 read を許す ACE を持っている (Windows) 場合、ccgate は `slog.Warn` を出します (拒否はしません)。これらは security nudge であり policy enforcement ではありません: Windows DACL walk は当該 well-known SID への allow ACE のみを見ており、deny ACE・継承・effective access は評価しません。推奨は Unix で `chmod 0600` のファイルを `chmod 0700` の親ディレクトリに置く、Windows で当該 user のみ読める ACL に設定する、です。
 

@@ -47,7 +47,7 @@
                 "timeout_ms": {
                   "type": "integer",
                   "minimum": 1,
-                  "description": "Hot-path upper bound for one helper invocation, in milliseconds. Default: 5000."
+                  "description": "Hard cap on one Resolve call (lock + helper exec), in milliseconds. Default: 30000."
                 },
                 "cache_key": {
                   "type": "string",

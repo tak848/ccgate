@@ -23,9 +23,12 @@ func TestValidateAuthPathWindowsAbsolute(t *testing.T) {
 		"relative":                 {path: `key.json`},
 		"relative with slash":      {path: `subdir\key.json`},
 		"relative dot prefix":      {path: `.\key.json`},
-		"empty":                    {path: ``, wantErr: true},
-		"bare tilde":               {path: `~`, wantErr: true},
-		"bare tilde slash":         {path: `~/`, wantErr: true},
+		// Empty is gated at validateAuthFile (it falls back to the
+		// per-target default), not at validateAuthPath, so the
+		// helper itself treats "" as a pass-through.
+		"empty":            {path: ``},
+		"bare tilde":       {path: `~`, wantErr: true},
+		"bare tilde slash": {path: `~/`, wantErr: true},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

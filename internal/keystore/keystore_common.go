@@ -432,6 +432,13 @@ func parseHelperJSON(trimmed string) (helperPayload, Reason, error) {
 	if strings.ContainsAny(payload.Key, "\r\n") {
 		return helperPayload{}, ReasonJSONParse, errors.New("helper json key must be a single line")
 	}
+	// JSON-escaped NUL (the six-character sequence backslash-u-0-0-0-0)
+	// passes the raw-byte scan in parseHelperOutput but ends up as
+	// a literal NUL inside payload.Key, which would mangle
+	// Authorization header transport.
+	if strings.ContainsRune(payload.Key, 0) {
+		return helperPayload{}, ReasonJSONParse, errors.New("helper json key contains a NUL byte")
+	}
 	if payload.ExpiresAt != "" {
 		if _, err := time.Parse(time.RFC3339, payload.ExpiresAt); err != nil {
 			return helperPayload{}, ReasonInvalidExpiration,

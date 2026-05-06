@@ -82,6 +82,7 @@ func TestParseHelperJSONKeyShape(t *testing.T) {
 		"whitespace key":                     {input: `{"key":"   "}`, wantOK: false, wantSub: "missing key"},
 		"embedded newline":                   {input: `{"key":"sk\nx"}`, wantOK: false, wantSub: "single line"},
 		"embedded carriage":                  {input: `{"key":"sk\rx"}`, wantOK: false, wantSub: "single line"},
+		"embedded escaped NUL":               {input: `{"key":"sk\u0000x"}`, wantOK: false, wantSub: "NUL"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
