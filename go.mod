@@ -11,6 +11,7 @@ require (
 	github.com/google/go-jsonnet v0.22.0
 	github.com/invopop/jsonschema v0.13.0
 	github.com/openai/openai-go v1.12.0
+	github.com/openai/openai-go/v2 v2.7.1
 	github.com/wk8/go-ordered-map/v2 v2.1.8
 	golang.org/x/sys v0.43.0
 	golang.org/x/term v0.42.0
