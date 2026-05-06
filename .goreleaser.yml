@@ -64,3 +64,21 @@ changelog:
       # land on docs / chore commits, and dropping them silently from
       # release notes hides them from users. Maintainers should still
       # cross-check release notes against CHANGELOG.md before tagging.
+brews:
+  - name: ccgate
+    repository:
+      owner: tak848
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+      pull_request:
+        enabled: true
+        base:
+          owner: tak848
+          name: homebrew-tap
+          branch: main
+    directory: Formula
+    homepage: "https://github.com/tak848/ccgate"
+    description: "LLM-powered PermissionRequest hook for coding agents (e.g. Claude Code)"
+    license: "MIT"
+    test: |
+      assert_match version.to_s, shell_output("#{bin}/ccgate --version")
