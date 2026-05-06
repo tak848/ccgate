@@ -40,7 +40,7 @@
                 "shell": {
                   "type": "string",
                   "enum": ["bash", "powershell"],
-                  "description": "Shell binary that runs `command`. `bash` runs `bash -c <command>`; `powershell` runs `pwsh -Command <command>`. Default: bash."
+                  "description": "Shell that runs `command`. `bash` runs `bash -c <command>`. `powershell` runs `pwsh -Command <command>` when pwsh is on PATH (PowerShell 7+, cross-platform) and falls back to `powershell -Command <command>` (Windows PowerShell 5.1) otherwise. Default: bash."
                 },
                 "refresh_margin_ms": {
                   "type": "integer",

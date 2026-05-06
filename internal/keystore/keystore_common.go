@@ -479,11 +479,14 @@ func parseHelperJSON(trimmed string) (helperPayload, Reason, error) {
 		return helperPayload{}, ReasonJSONParse, errors.New("trailing data after helper json")
 	}
 	// `key` must be a non-empty single-line string. Plain-string
-	// helper output already enforces this; apply the same shape on
-	// the JSON branch so a stray CR/LF inside the JSON `key` field
-	// (e.g. a helper that pastes a token followed by a newline)
-	// surfaces here rather than as a confusing 401 from the SDK.
-	if strings.TrimSpace(payload.Key) == "" {
+	// helper output already trims surrounding whitespace and rejects
+	// internal CR/LF; apply the same shape on the JSON branch so a
+	// stray newline or accidental indentation inside the JSON `key`
+	// field surfaces here rather than as a confusing 401 from the
+	// SDK. Surrounding whitespace is trimmed before forwarding so
+	// the JSON and plain-string paths behave identically.
+	payload.Key = strings.TrimSpace(payload.Key)
+	if payload.Key == "" {
 		return helperPayload{}, ReasonJSONParse, errors.New("helper json missing key")
 	}
 	if strings.ContainsAny(payload.Key, "\r\n") {

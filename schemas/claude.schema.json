@@ -37,7 +37,7 @@
                     "bash",
                     "powershell"
                   ],
-                  "description": "Shell binary that runs `command`. \"bash\" runs `bash -c \u003ccommand\u003e`; \"powershell\" runs `pwsh -Command \u003ccommand\u003e`. Default: bash."
+                  "description": "Shell that runs `command`. \"bash\" runs `bash -c \u003ccommand\u003e`. \"powershell\" runs `pwsh -Command \u003ccommand\u003e` when pwsh is on PATH (PowerShell 7+, cross-platform) and falls back to `powershell -Command \u003ccommand\u003e` (Windows PowerShell 5.1) otherwise. Default: bash."
                 },
                 "refresh_margin_ms": {
                   "type": "integer",

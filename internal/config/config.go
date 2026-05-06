@@ -179,9 +179,12 @@ type AuthConfig struct {
 	// AuthShellPowerShell ("powershell"). Validate rejects unknown
 	// values and rejects this field for type=file.
 	//
-	// Mirrors Claude Code hook conventions: `bash` runs `bash -c
-	// <command>`, `powershell` runs `pwsh -Command <command>`. Pick
-	// the one that exists on the host the hook fires on.
+	// `bash` runs `bash -c <command>`. `powershell` runs
+	// `pwsh -Command <command>` when `pwsh` is on PATH (PowerShell
+	// 7+, cross-platform) and falls back to `powershell -Command
+	// <command>` (Windows PowerShell 5.1, the version stock Windows
+	// ships) otherwise. Pick the value matching the host that
+	// fires the hook.
 	Shell string `json:"shell,omitempty"`
 	// Command is the shell command (run via the configured Shell)
 	// for type=exec. Required when type=exec, forbidden otherwise.
@@ -279,7 +282,7 @@ func authExecBranchSchema() *jsonschema.Schema {
 	props := orderedmap.New[string, *jsonschema.Schema]()
 	props.Set("type", &jsonschema.Schema{Type: "string", Const: AuthTypeExec})
 	props.Set("command", &jsonschema.Schema{Type: "string", MinLength: ptr(uint64(1)), Description: "Shell command. Stdout is the credential. Run via the configured shell (default bash)."})
-	props.Set("shell", &jsonschema.Schema{Type: "string", Enum: []any{AuthShellBash, AuthShellPowerShell}, Description: "Shell binary that runs `command`. \"bash\" runs `bash -c <command>`; \"powershell\" runs `pwsh -Command <command>`. Default: bash."})
+	props.Set("shell", &jsonschema.Schema{Type: "string", Enum: []any{AuthShellBash, AuthShellPowerShell}, Description: "Shell that runs `command`. \"bash\" runs `bash -c <command>`. \"powershell\" runs `pwsh -Command <command>` when pwsh is on PATH (PowerShell 7+, cross-platform) and falls back to `powershell -Command <command>` (Windows PowerShell 5.1) otherwise. Default: bash."})
 	props.Set("refresh_margin_ms", &jsonschema.Schema{Type: "integer", Minimum: json.Number("0"), Description: "Cache early-refresh threshold + minimum remaining TTL guard for fresh credentials, in milliseconds. Default: 60000."})
 	props.Set("timeout_ms", &jsonschema.Schema{Type: "integer", Minimum: json.Number("1"), Description: "Hot-path upper bound for one helper invocation, in milliseconds. Default: 5000."})
 	props.Set("cache_key", &jsonschema.Schema{Type: "string", Description: "Secret-free salt added to the cache fingerprint so a single command string can produce per-account cache entries (used as-is; pull env values via jsonnet std.native('env') / std.native('must_env'))."})

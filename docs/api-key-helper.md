@@ -44,7 +44,7 @@ Linux, macOS, *BSD, and Windows are supported. The shell that runs the helper co
 |---|---|---|---|
 | `auth.type` | `"exec"` / `"file"` | (required when `auth` is set) | Selects the resolution mode. |
 | `auth.command` | string | `""` | (`exec` only, required) Shell command. Stdout is the credential. |
-| `auth.shell` | `"bash"` / `"powershell"` | `"bash"` | (`exec` only) Selects the shell binary. `bash` runs `bash -c <command>`; `powershell` runs `pwsh -Command <command>`. |
+| `auth.shell` | `"bash"` / `"powershell"` | `"bash"` | (`exec` only) Selects the shell. `bash` runs `bash -c <command>`. `powershell` resolves `pwsh` first (PowerShell 7+, cross-platform) and falls back to `powershell` (Windows PowerShell 5.1, shipped with stock Windows) when `pwsh` is not on PATH; both are invoked with `-Command <command>`. |
 | `auth.path` | string (abs or `~/`) | `""` | (`file` only, required) Local regular file. |
 | `auth.refresh_margin_ms` | int (ms) | `60000` | Treat a credential as expired this many milliseconds before its `expires_at`. `0` disables the early-refresh guard. |
 | `auth.timeout_ms` | int (ms) | `5000` | (`exec` only) Hard cap on one Resolve call (lock acquisition + helper exec). `> 0`. Raise it (e.g. `60000`) for helpers that open a browser on first run; see [Browser-based first-run auth](#browser-based-first-run-auth). |
@@ -66,7 +66,7 @@ Output larger than 64 KiB is rejected; the same cap applies to file content.
 A helper must:
 
 - Write **only the credential** on stdout. Diagnostics belong on stderr, and never put secrets there either.
-- Be **deterministic** for the same `(command, provider.name, base_url, cache_key)` tuple. Two callers with the same config must agree on what the credential is.
+- Be **deterministic** for the same `(shell, command, provider.name, base_url, cache_key)` tuple. Two callers with the same config must agree on what the credential is.
 - **Not daemonize**. Forking past the process group escapes the timeout-kill.
 - Finish within `auth.timeout_ms`.
 - Avoid literal secrets in `auth.command`. The string is passed to the configured shell (`bash -c <command>` or `pwsh -Command <command>`) and shows up in `ps`, `/proc/<pid>/cmdline`, and shell history. Read secrets from a file or keychain inside the helper instead.
@@ -203,7 +203,7 @@ To opt out of caching, return JSON without `expires_at` (or plain string) and th
 2. Run `ccgate <target> metrics` and check the **Credential failures** section, which groups failures by `(source, reason)`.
 3. For `cache_parse` / `cache_read` / `cache_write` (log-only warnings), remove `$XDG_CACHE_HOME/ccgate/<target>/api_key.*.json` to force a refresh. Leave the sibling `*.lock` files alone.
 4. For `expired`, compare the helper's `expires_at` with `date -u`. Clock skew or a broken TTL inside the helper is the usual cause.
-5. For `command_exit` on a fresh setup, check first whether the configured `auth.shell` binary is on `$PATH`. `bash` is universal on Linux / macOS; `powershell` resolves `pwsh` first and falls back to `powershell.exe`, both of which need to be installed. A missing shell currently surfaces as `command_exit` with exit-status 127 (Unix) or `127`-equivalent (Windows).
+5. For `command_exit` on a fresh setup, check first whether the configured `auth.shell` binary is on `$PATH`. `bash` is universal on Linux / macOS; for `powershell`, at least one of `pwsh` (preferred) or `powershell` must resolve via `$PATH`. When ccgate cannot find the shell at all, the failure surfaces as `command_exit` from `os/exec`'s lookup error.
 6. For repeated `provider_auth` even after cache invalidation, the helper itself is producing a credential the provider rejects. Re-run the helper manually with the same shell ccgate uses (`bash -c "$your_command"` or `pwsh -Command "$your_command"`) and inspect the stdout that reached the SDK.
 
 The full reason list is in [docs/configuration.md](configuration.md#reason-values-for-credential_unavailable).

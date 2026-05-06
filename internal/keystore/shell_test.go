@@ -15,10 +15,9 @@ func TestShellCommand(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]struct {
-		shell      string
-		wantBin    []string // any of these is acceptable
-		wantFlag   string
-		wantSubstr string
+		shell    string
+		wantBin  []string // any of these is acceptable
+		wantFlag string
 	}{
 		"empty defaults to bash": {shell: "", wantBin: []string{"bash"}, wantFlag: "-c"},
 		"bash":                   {shell: "bash", wantBin: []string{"bash"}, wantFlag: "-c"},
@@ -38,6 +37,32 @@ func TestShellCommand(t *testing.T) {
 	}
 }
 
+// TestCacheFingerprintShellSeparation pins that two configs that
+// differ only by Shell (`bash` vs `powershell`) produce different
+// cache fingerprints. Without this property a user toggling
+// `auth.shell` while keeping `auth.command` identical would
+// silently share a cache file across two interpreters that may
+// well respond differently.
+func TestCacheFingerprintShellSeparation(t *testing.T) {
+	t.Parallel()
+
+	base := Options{
+		ProviderName: "anthropic",
+		BaseURL:      "https://api.anthropic.com",
+		TargetName:   "claude",
+		Command:      "my-helper",
+		CacheKey:     "salt",
+	}
+	bash := base
+	bash.Shell = "bash"
+	pwsh := base
+	pwsh.Shell = "powershell"
+
+	if CacheFingerprint(bash) == CacheFingerprint(pwsh) {
+		t.Fatalf("bash / powershell shells share a cache fingerprint (Shell field is not in the hash)")
+	}
+}
+
 // TestParseHelperJSONKeyShape pins both the new validation that the
 // JSON `key` field cannot contain CR/LF (which would have leaked
 // past the previous trim-only check and produced a confused 401)
@@ -50,13 +75,13 @@ func TestParseHelperJSONKeyShape(t *testing.T) {
 		wantOK  bool
 		wantSub string
 	}{
-		"clean":             {input: `{"key":"sk-x"}`, wantOK: true},
-		"missing key":       {input: `{}`, wantOK: false, wantSub: "missing key"},
-		"empty key":         {input: `{"key":""}`, wantOK: false, wantSub: "missing key"},
-		"whitespace key":    {input: `{"key":"   "}`, wantOK: false, wantSub: "missing key"},
-		"trailing newline":  {input: `{"key":"sk\n"}`, wantOK: false, wantSub: "single line"},
-		"embedded newline":  {input: `{"key":"sk\nx"}`, wantOK: false, wantSub: "single line"},
-		"embedded carriage": {input: `{"key":"sk\rx"}`, wantOK: false, wantSub: "single line"},
+		"clean":                              {input: `{"key":"sk-x"}`, wantOK: true},
+		"trailing whitespace trims to clean": {input: `{"key":"sk-x\n"}`, wantOK: true},
+		"missing key":                        {input: `{}`, wantOK: false, wantSub: "missing key"},
+		"empty key":                          {input: `{"key":""}`, wantOK: false, wantSub: "missing key"},
+		"whitespace key":                     {input: `{"key":"   "}`, wantOK: false, wantSub: "missing key"},
+		"embedded newline":                   {input: `{"key":"sk\nx"}`, wantOK: false, wantSub: "single line"},
+		"embedded carriage":                  {input: `{"key":"sk\rx"}`, wantOK: false, wantSub: "single line"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

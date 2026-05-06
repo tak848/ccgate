@@ -44,7 +44,7 @@ Linux / macOS / *BSD / Windows に対応します。helper コマンドを動か
 |---|---|---|---|
 | `auth.type` | `"exec"` / `"file"` | (`auth` を書くなら必須) | 取得モードを選びます。 |
 | `auth.command` | string | `""` | (`exec` 専用、必須) シェルコマンド。stdout が認証情報になります。 |
-| `auth.shell` | `"bash"` / `"powershell"` | `"bash"` | (`exec` 専用) シェルを選択。`bash` は `bash -c <command>`、`powershell` は `pwsh -Command <command>` で実行します。 |
+| `auth.shell` | `"bash"` / `"powershell"` | `"bash"` | (`exec` 専用) シェルを選択。`bash` は `bash -c <command>` を実行します。`powershell` は `pwsh` (PowerShell 7+、クロスプラットフォーム) を優先解決し、PATH に無ければ stock Windows 同梱の `powershell` (Windows PowerShell 5.1) に fallback します。どちらも `-Command <command>` で起動します。 |
 | `auth.path` | string (絶対パス または `~/` 始まり) | `""` | (`file` 専用、必須) ローカル通常ファイル。 |
 | `auth.refresh_margin_ms` | int (ms) | `60000` | `expires_at` のこの ms 前から認証情報を期限切れ扱いにします。`0` で早期更新ガードを無効化。 |
 | `auth.timeout_ms` | int (ms) | `5000` | (`exec` 専用) Resolve 1 回の上限 (lock 取得 + helper 実行)。`> 0`。初回にブラウザが開く helper を使う場合は `60000` 程度まで上げてください ([初回ブラウザ認証](#初回ブラウザ認証) 参照)。 |
@@ -66,7 +66,7 @@ helper は次のどちらかの形を stdout (もしくは `auth.type=file` な�
 helper は次を満たす必要があります。
 
 - stdout には **認証情報のみ** を書く。診断出力は stderr に書き、stderr にも秘密情報は出さないこと。
-- 同じ `(command, provider.name, base_url, cache_key)` の組に対して **決定論的** に振る舞う。同じ設定で 2 回呼んだら同じ意味の認証情報を返すこと。
+- 同じ `(shell, command, provider.name, base_url, cache_key)` の組に対して **決定論的** に振る舞う。同じ設定で 2 回呼んだら同じ意味の認証情報を返すこと。
 - **デーモン化しない**。process group の外に fork するとタイムアウト時の kill が効きません。
 - `auth.timeout_ms` 以内に終了する。
 - `auth.command` 文字列に **literal な秘密情報を直接書かない**。文字列は設定したシェル (`bash -c <command>` または `pwsh -Command <command>`) に渡されるため、`ps` / `/proc/<pid>/cmdline` / シェル履歴に残ります。秘密情報はファイルや keychain に置き、helper の中で読み出してください。
@@ -203,7 +203,7 @@ env 経路で 401 / 403 を exit 1 にしているのは、ccgate 側で env を
 2. `ccgate <target> metrics` を実行し、**Credential failures** セクションで `(source, reason)` 別の集計を確認します。
 3. キャッシュ起因 (`cache_parse` / `cache_read` / `cache_write` の log warning) が疑わしい場合は `$XDG_CACHE_HOME/ccgate/<target>/api_key.*.json` を削除して再生成させます。隣接する `*.lock` は再利用するので残しておいてください。
 4. `expired` が出続ける場合は helper の `expires_at` と `date -u` を比較してください。helper 側の TTL ロジックや時計ズレが原因のことが多いです。
-5. 新しい環境で `command_exit` が出る場合は、まず `auth.shell` で指定したシェルが `$PATH` にあるかを確認してください。Linux / macOS の `bash` は標準で入りますが、`powershell` は `pwsh` を優先解決して `powershell.exe` に fallback します — どちらかが install されている必要があります。シェル不在は現状 `command_exit` (Unix の exit 127、Windows でも同等) として現れます。
+5. 新しい環境で `command_exit` が出る場合は、まず `auth.shell` で指定したシェルが `$PATH` にあるかを確認してください。Linux / macOS の `bash` は標準で入ります。`powershell` は `pwsh` (優先) または `powershell` のどちらか一方が `$PATH` で解決できれば動きます。両方とも見つからない場合、`os/exec` の lookup エラーとして `command_exit` で現れます。
 6. キャッシュを削除しても `provider_auth` が繰り返される場合は、helper 自体が provider に拒否される認証情報を生成しています。ccgate と同じシェル (`bash -c "$your_command"` または `pwsh -Command "$your_command"`) で手動実行して、SDK に渡された stdout の中身を確認してください。
 
 reason の網羅は [configuration.md](configuration.md#credential_unavailable-の-reason-値) にあります。
