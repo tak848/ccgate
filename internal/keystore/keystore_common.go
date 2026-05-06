@@ -18,48 +18,25 @@ import (
 	"github.com/gofrs/flock"
 )
 
-// helperPayload is the canonical shape Resolve parses helper / file
-// JSON output into. Unknown fields are dropped on read so the cache
-// file we re-marshal carries only `{key, expires_at}` and never
-// echoes incidental secrets the helper happened to print (refresh
-// tokens, broker session IDs, etc.).
+// helperPayload is the canonical {key, expires_at} shape; unknown
+// fields are dropped so the cache file never persists extras the
+// helper happened to print.
 type helperPayload struct {
 	Key       string `json:"key"`
 	ExpiresAt string `json:"expires_at,omitempty"`
 }
 
 const (
-	// stdoutLimit caps how many bytes we read from a helper. AWS /
-	// kubectl-style credential payloads are kilobytes at most; an
-	// unbounded stream here would let a misbehaving helper exhaust
-	// memory and the user would be billed for our hot path.
 	stdoutLimit = 64 * 1024
-	// stderrLimit caps stderr capture so a chatty helper cannot blow
-	// up memory while we wait for it to finish. The body is never
-	// written to ccgate.log on failure (only the byte count + exit
-	// error are logged) by design, so a helper that accidentally
-	// echoed a token through `set -x` would not leak it through our
-	// logs.
 	stderrLimit = 8 * 1024
-	// lockBackoff is the polling interval used while waiting for the
-	// flock to become available. The deadline is set by ctx
-	// (CommandTimeout) so we don't need an exponential backoff: the
-	// upper bound on retries is bounded already.
 	lockBackoff = 50 * time.Millisecond
 )
 
-// shellInvocation maps the validated auth.shell value to the
-// argv that runs Command. Defaults to bash for an unset value
-// (validation should have rejected anything else).
-//
-// For powershell we prefer pwsh (PowerShell 7+, cross-platform) and
-// fall back to powershell.exe (Windows PowerShell 5.1, the version
-// shipped with Windows by default) when pwsh is not on PATH, which
-// keeps `auth.shell: 'powershell'` working on stock Windows where
-// PowerShell 7 is not pre-installed. Both invocations pass
-// `-NoProfile -NonInteractive`: profile scripts can write extra
-// output that contaminates the credential, and an interactive
-// prompt would wedge the hot path.
+// shellInvocation returns the argv prefix for `auth.shell`. The
+// powershell branch tries pwsh first (PowerShell 7+) and falls
+// back to powershell.exe (5.1, ships with stock Windows); both run
+// with -NoProfile -NonInteractive so a user profile cannot leak
+// into stdout and an interactive prompt cannot wedge us.
 func shellInvocation(shell string) (binary string, args []string) {
 	if shell == "powershell" {
 		bin := "powershell"
@@ -71,39 +48,31 @@ func shellInvocation(shell string) (binary string, args []string) {
 	return "bash", []string{"-c"}
 }
 
-// shellCommand returns the (binary, flag) pair that runs Command,
-// kept for tests that pin the shell-name -> binary mapping
-// without caring about the additional argv elements.
+// shellCommand returns just the (binary, last-flag) pair, used by
+// tests that pin the shell-name mapping without caring about the
+// hardening flags.
 func shellCommand(shell string) (string, string) {
 	bin, args := shellInvocation(shell)
 	return bin, args[len(args)-1]
 }
 
-// Resolve dispatches to the exec or file implementation based on
-// Options. The runner is responsible for picking exactly one of the
-// two; if both are empty we return a generic error rather than
-// silently succeeding (it would mean the runner forgot to short-
-// circuit to the env-var path).
+// Resolve dispatches to exec or file based on Options.
 func Resolve(ctx context.Context, opts Options) (Result, error) {
 	switch {
 	case opts.Command != "":
 		return resolveCommand(ctx, opts)
 	case opts.Path != "":
-		return resolveFile(opts)
+		return resolveFile(ctx, opts)
 	default:
 		return Result{Source: SourceExec}, errors.New("keystore: no auth.command or auth.path configured")
 	}
 }
 
-// Invalidate removes the on-disk cache file for the given Options
-// (best-effort: a missing file is fine). The runner calls this when
-// the provider returns 401/403 against a key that came out of
-// helper / file resolution, so the next hook fire forces a fresh
-// helper exec instead of replaying the bad credential.
+// Invalidate removes the cache file for opts so the next fire
+// re-runs the helper. Called on provider 401/403. No-op for the
+// file branch (no cache there) and missing files.
 func Invalidate(opts Options) error {
 	if opts.Command == "" {
-		// File mode does not write a cache file, and env-var
-		// callers never reach Invalidate.
 		return nil
 	}
 	path, err := cachePath(opts)
@@ -120,12 +89,6 @@ func resolveCommand(ctx context.Context, opts Options) (Result, error) {
 	ctx, cancel := context.WithTimeout(ctx, opts.CommandTimeout)
 	defer cancel()
 
-	// Fail fast if the cache subsystem is unavailable: without a
-	// sibling lock file every concurrent hook fire would hit the
-	// helper in parallel, which single-valid-key brokers handle by
-	// revoking the older credential. We'd rather surface
-	// cache_unavailable to the runner than silently degrade into a
-	// credential thrash.
 	cp, err := cachePath(opts)
 	if err != nil {
 		return Result{Reason: ReasonCacheUnavailable, Source: SourceCache},
@@ -137,33 +100,23 @@ func resolveCommand(ctx context.Context, opts Options) (Result, error) {
 		return Result{Key: key, Source: SourceCache}, nil
 	}
 
+	// Without a writable cache dir we cannot create the sibling
+	// lock file that serialises concurrent fires; fail fast rather
+	// than let parallel hooks all hit a single-valid-key broker.
 	cacheDir := filepath.Dir(cp)
 	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
 		return Result{Reason: ReasonCacheUnavailable, Source: SourceCache},
 			fmt.Errorf("cache dir mkdir %s: %w", cacheDir, err)
 	}
-	// MkdirAll does not normalise permissions on existing dirs, so a
-	// pre-existing 0755 cache dir from an older ccgate version (or
-	// from an unrelated tool that happens to share `ccgate/`) would
-	// leak the cache file into world-readable territory. Tighten it
-	// here. (No-op on Windows: NTFS does not honour POSIX mode bits;
-	// users rely on per-user `%LocalAppData%` ACL inheritance.)
+	// Tighten an inherited loose dir; no-op on Windows.
 	if err := os.Chmod(cacheDir, 0o700); err != nil {
 		return Result{Reason: ReasonCacheUnavailable, Source: SourceCache},
 			fmt.Errorf("cache dir chmod %s: %w", cacheDir, err)
 	}
 
-	// Refresh path: take an exclusive non-blocking flock on a
-	// sibling lock file. Retry with a small sleep until the ctx
-	// deadline so we never block uninterruptibly. If the lock
-	// subsystem is broken we fail fast — running the helper without
-	// the lock would defeat the whole "only one helper exec at a
-	// time" property that single-valid-key brokers rely on.
-	lockPath := cp + ".lock"
-	lock, lockReason, lockErr := acquireLock(ctx, lockPath)
+	lock, lockReason, lockErr := acquireLock(ctx, cp+".lock")
 	if lockErr != nil {
-		// Last-chance reread: a peer may have refreshed in the
-		// window we were retrying.
+		// Last-chance reread: a peer may have refreshed during retry.
 		if key, ok := readCacheValid(cp, opts); ok {
 			return Result{Key: key, Source: SourceCache}, nil
 		}
@@ -171,8 +124,7 @@ func resolveCommand(ctx context.Context, opts Options) (Result, error) {
 	}
 	defer releaseLock(lock)
 
-	// Double-check: a peer may have already refreshed while we
-	// waited for the lock.
+	// Double-check the cache after acquiring the lock.
 	if key, ok := readCacheValid(cp, opts); ok {
 		return Result{Key: key, Source: SourceCache}, nil
 	}
@@ -182,10 +134,6 @@ func resolveCommand(ctx context.Context, opts Options) (Result, error) {
 		return Result{Reason: reason, Source: SourceExec}, err
 	}
 
-	// Reject expired keys returned freshly: replaying a doomed
-	// credential just to re-exec the helper next fire would burn
-	// the broker's rate limit. Surface as `expired` so the user can
-	// notice their helper is producing invalid output.
 	if reason, err := checkFresh(payload, opts.RefreshMargin); err != nil {
 		slog.Warn("keystore: helper returned an already-expired credential",
 			"reason", string(reason),
@@ -195,10 +143,8 @@ func resolveCommand(ctx context.Context, opts Options) (Result, error) {
 		return Result{Reason: reason, Source: SourceExec}, err
 	}
 
+	// Cache only when expires_at lets us know when to refresh.
 	if payload.ExpiresAt != "" {
-		// Only credentials with a future expires_at are cacheable —
-		// otherwise we have no way to know when to refresh, so we
-		// re-exec on every fire.
 		if err := writeCache(cp, payload); err != nil {
 			slog.Warn("keystore: cache write failed, returning fresh key cacheless",
 				"reason", string(ReasonCacheWrite),
@@ -211,41 +157,52 @@ func resolveCommand(ctx context.Context, opts Options) (Result, error) {
 	return Result{Key: payload.Key, Source: SourceExec}, nil
 }
 
-func resolveFile(opts Options) (Result, error) {
-	// Validate trims whitespace before checking the path shape, so a
-	// config like `auth: { type: 'file', path: " ~/.ccgate/key " }`
-	// passes validation. Trim here too, otherwise the raw value would
-	// be sent to expandHomePath / os.Open and surface as a misleading
-	// file_missing.
+func resolveFile(ctx context.Context, opts Options) (Result, error) {
+	ctx, cancel := context.WithTimeout(ctx, opts.CommandTimeout)
+	defer cancel()
+
 	path, err := expandHomePath(strings.TrimSpace(opts.Path))
 	if err != nil {
 		return Result{Reason: ReasonFileRead, Source: SourceFile}, err
 	}
-	data, info, err := openBoundedRegularFile(path, stdoutLimit)
-	if err != nil {
-		switch {
-		case os.IsNotExist(err):
-			return Result{Reason: ReasonFileMissing, Source: SourceFile}, err
-		case errors.Is(err, errOutputTooLarge):
-			return Result{Reason: ReasonOutputTooLarge, Source: SourceFile}, err
-		case errors.Is(err, errNotRegularFile):
-			return Result{Reason: ReasonFileRead, Source: SourceFile}, err
-		}
-		return Result{Reason: ReasonFileRead, Source: SourceFile}, err
+
+	// Run the read on a goroutine and select on ctx so a stalled
+	// mount surfaces as `timeout` instead of wedging the hook. The
+	// goroutine itself stays blocked until the kernel completes the
+	// I/O, but the hot path returns within CommandTimeout.
+	type fileResult struct {
+		data []byte
+		info os.FileInfo
+		err  error
 	}
-	warnLoosePermissions(path, info, SourceFile)
-	payload, reason, err := parseHelperOutput(data)
+	ch := make(chan fileResult, 1)
+	go func() {
+		data, info, err := openBoundedRegularFile(path, stdoutLimit)
+		ch <- fileResult{data, info, err}
+	}()
+	var r fileResult
+	select {
+	case r = <-ch:
+	case <-ctx.Done():
+		return Result{Reason: ReasonTimeout, Source: SourceFile},
+			fmt.Errorf("file read timed out after %s: %w", opts.CommandTimeout, ctx.Err())
+	}
+	if r.err != nil {
+		switch {
+		case os.IsNotExist(r.err):
+			return Result{Reason: ReasonFileMissing, Source: SourceFile}, r.err
+		case errors.Is(r.err, errOutputTooLarge):
+			return Result{Reason: ReasonOutputTooLarge, Source: SourceFile}, r.err
+		case errors.Is(r.err, errNotRegularFile):
+			return Result{Reason: ReasonFileRead, Source: SourceFile}, r.err
+		}
+		return Result{Reason: ReasonFileRead, Source: SourceFile}, r.err
+	}
+	warnLoosePermissions(path, r.info, SourceFile)
+	payload, reason, err := parseHelperOutput(r.data)
 	if err != nil {
 		return Result{Reason: reason, Source: SourceFile}, err
 	}
-	// Files have no fresh-vs-cache distinction (we did not produce
-	// the file ourselves, the rotator did) so any past expires_at
-	// here is the rotator's bug, not ours. Surface it as expired so
-	// the user notices instead of letting the SDK 401. We also enforce
-	// the same minimum-remaining-TTL guard (RefreshMargin) the cache
-	// path uses, so a file containing a credential that's about to
-	// expire mid-API-call surfaces as expired here instead of being
-	// handed to the SDK and producing a confused 401.
 	if reason, err := checkFresh(payload, opts.RefreshMargin); err != nil {
 		slog.Warn("keystore: auth.path contains an expired or near-expiry credential",
 			"reason", string(reason),
@@ -258,22 +215,11 @@ func resolveFile(opts Options) (Result, error) {
 	return Result{Key: payload.Key, Source: SourceFile}, nil
 }
 
-// readCacheValid is the lock-free fast path. We accept any of:
-//
-//   - file missing (cold cache, normal first-fire case)
-//   - read error (treat as "cache unusable", continue to refresh
-//     after warning + best-effort unlink)
-//   - JSON parse error (treat as a corrupted cache file: unlink and
-//     refresh, so a one-time bit-flip / partial write doesn't wedge
-//     the user's hook)
-//   - stale expiry (refresh)
-//
-// We also re-check the cache file's permissions on every read so
-// a cache that was loosened after creation (e.g. by a `chmod`
-// outside ccgate) gets surfaced even on the fast path.
-//
-// Only a successful read with `now + RefreshMargin < expires_at`
-// returns ok=true.
+// readCacheValid is the lock-free fast path. Returns ok=true only
+// when the cache file is present, parses, has both fields, and
+// has at least RefreshMargin remaining; missing / corrupt / stale
+// entries unlink themselves so a transient bad write self-heals
+// on the next fire.
 func readCacheValid(path string, opts Options) (string, bool) {
 	data, info, err := openBoundedRegularFile(path, stdoutLimit)
 	if err != nil {
@@ -317,12 +263,9 @@ func readCacheValid(path string, opts Options) (string, bool) {
 	return payload.Key, true
 }
 
-// writeCache writes the canonical `{key, expires_at}` payload (no
-// extra fields the helper happened to print) to the cache file using
-// a tempfile + atomic rename in the same directory. We deliberately
-// discard everything except the canonical fields so a long-lived
-// `refresh_token` never makes it onto disk even if the helper hands
-// it back.
+// writeCache writes the canonical {key, expires_at} via tempfile
+// + atomic rename. Extra fields from the helper (refresh tokens,
+// session IDs) are dropped here so they never reach disk.
 func writeCache(path string, payload helperPayload) error {
 	canonical := helperPayload{
 		Key:       payload.Key,
@@ -359,10 +302,9 @@ func writeCache(path string, payload helperPayload) error {
 	return nil
 }
 
-// acquireLock loops until it gets an exclusive flock on path or the
-// ctx fires. gofrs/flock abstracts the OS-specific syscall (flock(2)
-// on Unix, LockFileEx on Windows) so the retry / cancellation
-// scaffolding lives here and is identical for both platforms.
+// acquireLock retries an exclusive non-blocking flock until ctx
+// fires. gofrs/flock abstracts flock(2) / LockFileEx so the same
+// loop runs on every OS.
 func acquireLock(ctx context.Context, path string) (*flock.Flock, Reason, error) {
 	lock := flock.New(path)
 	for {
@@ -391,13 +333,9 @@ func releaseLock(lock *flock.Flock) {
 // execHelper runs the configured shell command with the right
 // timeout / env / kill semantics and parses the output.
 //
-// applyHelperProcessAttrs and killHelperProcessTree are defined per
-// platform so the shell child is placed in its own process group
-// (Setpgid on Unix, CREATE_NEW_PROCESS_GROUP on Windows) and the
-// whole tree is taken down on cancel (kill(-pid) on Unix,
-// Toolhelp32Snapshot tree-walk + TerminateProcess on Windows). A
-// helper that spawns `go run` / a browser process is taken down too
-// instead of leaking on timeout.
+// Process group setup + tree kill are platform-specific
+// (applyHelperProcessAttrs / killHelperProcessTree) so a helper
+// that spawns children gets cleaned up too on cancel.
 func execHelper(ctx context.Context, opts Options) (helperPayload, Reason, error) {
 	bin, args := shellInvocation(opts.Shell)
 	cmd := exec.CommandContext(ctx, bin, append(args, opts.Command)...)
@@ -405,7 +343,7 @@ func execHelper(ctx context.Context, opts Options) (helperPayload, Reason, error
 	cmd.Cancel = func() error { return killHelperProcessTree(cmd) }
 	cmd.WaitDelay = waitDelayFor(opts.CommandTimeout)
 	cmd.Env = helperEnv(os.Environ())
-	cmd.Stdin = nil // no interactive input
+	cmd.Stdin = nil
 
 	stdout := &limitedBuffer{cap: stdoutLimit}
 	stderr := &limitedBuffer{cap: stderrLimit}
@@ -414,25 +352,17 @@ func execHelper(ctx context.Context, opts Options) (helperPayload, Reason, error
 
 	runErr := cmd.Run()
 	if stdout.over {
-		// Helper printed too much: don't trust any of it. (A
-		// well-behaved helper writes only the credential line.)
 		return helperPayload{}, ReasonOutputTooLarge,
 			fmt.Errorf("helper stdout exceeded %d bytes", stdoutLimit)
 	}
 	if runErr != nil {
-		// Distinguish ctx-deadline hits from non-zero exit so the
-		// user sees `timeout` vs `command_exit` in metrics.
 		if ctxErr := ctx.Err(); errors.Is(ctxErr, context.DeadlineExceeded) {
 			return helperPayload{}, ReasonTimeout,
 				fmt.Errorf("helper timed out after %s: %w", opts.CommandTimeout, ctxErr)
 		}
-		// Deliberately do NOT log the stderr body. A misbehaving
-		// helper that prints a token through `set -x` or similar
-		// debug paths would otherwise leak it into ccgate.log,
-		// which is a 0644 file shared across the whole ccgate
-		// session. The size + exit error are enough to triage; the
-		// user can re-run the helper manually with `2>&1` if they
-		// need the actual stderr contents.
+		// stderr body is intentionally not logged: a misbehaving
+		// helper using `set -x` could leak a token there, and the
+		// log file is not 0600.
 		slog.Warn("keystore: auth.command exited non-zero",
 			"reason", string(ReasonCommandExit),
 			"source", string(SourceExec),
@@ -448,21 +378,11 @@ func execHelper(ctx context.Context, opts Options) (helperPayload, Reason, error
 	return payload, ReasonOK, nil
 }
 
-// parseHelperOutput is shared by command and file paths: trim, look
-// for a leading `{` to dispatch to strict JSON parsing, otherwise
-// validate as a single-line plain string.
-//
-// Plain-string mode is an explicit *narrow* contract: trim must
-// leave exactly one non-empty line. Multi-line plain output is what
-// you'd get from `gcloud auth print-access-token` followed by an
-// accidental debug print, and silently passing that to the SDK
-// produced confusing 401s in the past — surface it as a helper
-// failure instead.
-//
-// We additionally reject non-UTF-8 / NUL bytes up front: a
-// credential travels through HTTP headers next, and a NUL or a
-// non-UTF-8 sequence will at best confuse the SDK and at worst
-// truncate the value silently.
+// parseHelperOutput is shared by exec and file paths. Output is
+// rejected up-front if it is not valid UTF-8 or contains a NUL
+// byte (both break HTTP header transport). A leading `{` dispatches
+// to strict JSON parsing; otherwise the trimmed output must be a
+// single non-empty line.
 func parseHelperOutput(data []byte) (helperPayload, Reason, error) {
 	if !utf8.Valid(data) {
 		return helperPayload{}, ReasonInvalidPlainOutput,
@@ -498,23 +418,13 @@ func parseHelperJSON(trimmed string) (helperPayload, Reason, error) {
 		return helperPayload{}, ReasonJSONParse, fmt.Errorf("decode helper json: %w", err)
 	}
 	// Trailing non-whitespace after the JSON value (`{...} garbage`,
-	// `{...}}`, `{...}{...}`) is a strong signal the helper printed
-	// both a credential and debug noise — refuse it. Decode again and
-	// require io.EOF; anything else means there's still data
-	// (Decoder.More returns false on the bare `}` / `]` cases that
-	// occur as accidental trailing characters, so it is not a
-	// reliable trailing-data check on its own).
+	// `{...}}`) signals helper noise; require EOF. Decoder.More is
+	// not enough — it returns false on bare `}` / `]`.
 	var trailing json.RawMessage
 	if err := dec.Decode(&trailing); !errors.Is(err, io.EOF) {
 		return helperPayload{}, ReasonJSONParse, errors.New("trailing data after helper json")
 	}
-	// `key` must be a non-empty single-line string. Plain-string
-	// helper output already trims surrounding whitespace and rejects
-	// internal CR/LF; apply the same shape on the JSON branch so a
-	// stray newline or accidental indentation inside the JSON `key`
-	// field surfaces here rather than as a confusing 401 from the
-	// SDK. Surrounding whitespace is trimmed before forwarding so
-	// the JSON and plain-string paths behave identically.
+	// Trim + single-line check, mirroring the plain-string branch.
 	payload.Key = strings.TrimSpace(payload.Key)
 	if payload.Key == "" {
 		return helperPayload{}, ReasonJSONParse, errors.New("helper json missing key")
@@ -531,17 +441,10 @@ func parseHelperJSON(trimmed string) (helperPayload, Reason, error) {
 	return payload, ReasonOK, nil
 }
 
-// checkFresh validates that a freshly-produced payload (helper or
-// file) has remaining TTL strictly greater than RefreshMargin. The
-// boundary is the same one the cache fast path uses
-// (now+margin < expires_at), so the equality case is treated as
-// stale. Without margin (margin == 0) this collapses to the
-// "already expired" check.
-//
-// The margin guard matters even for fresh credentials: if a helper
-// hands us a key with 1 second of TTL left, the next API call
-// (provider.timeout_ms = default 20s) would race the expiry and
-// surface as a confused 401. Surface it here as `expired` instead.
+// checkFresh requires `now + margin < expires_at`, matching the
+// cache fast-path boundary. A credential that would expire inside
+// the margin (including the margin == 0 boundary) is rejected
+// rather than handed to the SDK to race the next API call.
 func checkFresh(payload helperPayload, margin time.Duration) (Reason, error) {
 	if payload.ExpiresAt == "" {
 		return ReasonOK, nil
@@ -558,10 +461,8 @@ func checkFresh(payload helperPayload, margin time.Duration) (Reason, error) {
 	return ReasonOK, nil
 }
 
-// helperEnv builds the env we pass to the helper. We inherit the
-// caller's env (the helper might need `AWS_PROFILE`, `GH_TOKEN`,
-// ...) and add a sentinel so a helper that wraps ccgate can detect
-// recursive invocation.
+// helperEnv inherits the caller's env and adds a sentinel so a
+// helper that wraps ccgate can self-detect recursion.
 func helperEnv(parent []string) []string {
 	out := make([]string, 0, len(parent)+1)
 	out = append(out, parent...)
@@ -569,11 +470,8 @@ func helperEnv(parent []string) []string {
 	return out
 }
 
-// waitDelayFor caps the extra time `os/exec` keeps reading from the
-// helper after ctx fires. We pick the smaller of 500ms and 1/10 of
-// the timeout so a 5s timeout has a 500ms tail, a 1s timeout has a
-// 100ms tail. The point is to make CommandTimeout a near-real upper
-// bound on hot-path latency.
+// waitDelayFor caps the post-cancel reader tail so CommandTimeout
+// stays a near-real upper bound: min(500ms, timeout/10).
 func waitDelayFor(timeout time.Duration) time.Duration {
 	const cap = 500 * time.Millisecond
 	if timeout/10 < cap {
@@ -582,34 +480,15 @@ func waitDelayFor(timeout time.Duration) time.Duration {
 	return cap
 }
 
-// errOutputTooLarge / errNotRegularFile are sentinel errors used by
-// readBoundedRegularFile so callers can map them to the right
-// keystore Reason without parsing error strings.
 var (
 	errOutputTooLarge = errors.New("keystore: file exceeds size limit")
 	errNotRegularFile = errors.New("keystore: not a regular file")
 )
 
-// readBoundedRegularFile reads up to limit+1 bytes from path,
-// rejecting non-regular files (FIFO / device / socket / symlink to
-// device, ...) and anything larger than limit. We need the cap on
-// both `auth.path` and the cache file because a misconfigured
-// path like `/dev/zero` or a corrupt cache symlink would otherwise
-// let the hot path read unboundedly and either OOM or hang. The
-// helper-stdout reader has the same cap (stdoutLimit); applying it
-// uniformly across every file/stream credentials enter through
-// keeps the budget honest.
-//
-// The returned os.FileInfo lets callers inspect mode/uid for
-// permission warnings without re-stating the path.
-//
-// We Stat first and reject anything that isn't a regular file: this
-// catches a misconfigured `auth.path` pointing at a FIFO without
-// having to open it (which would otherwise block on Unix waiting
-// for a writer). The TOCTOU window between Stat and Open is
-// acceptable for a credential file under the user's own home
-// directory — an attacker with write access to that directory
-// already has a much bigger problem than ccgate's hook.
+// openBoundedRegularFile reads up to limit bytes from a regular
+// file. Stat-first rejects FIFOs / devices before Open could block;
+// the small TOCTOU window between Stat and Open is acceptable for
+// credential files under the user's own home directory.
 func openBoundedRegularFile(path string, limit int) ([]byte, os.FileInfo, error) {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -636,9 +515,7 @@ func openBoundedRegularFile(path string, limit int) ([]byte, os.FileInfo, error)
 	return data, info, nil
 }
 
-// expandHomePath turns `~` / `~/foo` into the absolute path. The
-// runner already rejected relative paths at validate time, so any
-// path that doesn't start with `~` is returned verbatim.
+// expandHomePath resolves `~` / `~/foo`. Other paths pass through.
 func expandHomePath(p string) (string, error) {
 	switch {
 	case p == "~":
@@ -658,11 +535,8 @@ func expandHomePath(p string) (string, error) {
 	}
 }
 
-// cachePath returns the per-target cache file location. We honour
-// `$XDG_CACHE_HOME` on every OS for users who explicitly opt in to
-// the XDG layout; otherwise we fall back to `os.UserCacheDir`, which
-// gives the platform-native location: Linux `~/.cache`, macOS
-// `~/Library/Caches`, Windows `%LocalAppData%`.
+// cachePath honours $XDG_CACHE_HOME if set, else os.UserCacheDir
+// (Linux ~/.cache, macOS ~/Library/Caches, Windows %LocalAppData%).
 func cachePath(opts Options) (string, error) {
 	var root string
 	if env := os.Getenv("XDG_CACHE_HOME"); env != "" && filepath.IsAbs(env) {
@@ -678,10 +552,8 @@ func cachePath(opts Options) (string, error) {
 	return filepath.Join(dir, "api_key."+CacheFingerprint(opts)+".json"), nil
 }
 
-// limitedBuffer is a bounded io.Writer used for stdout / stderr
-// capture. Once cap is reached the buffer flips `over` and discards
-// further writes; callers inspect `over` to surface
-// `output_too_large` when stdout is the offender.
+// limitedBuffer is a bounded io.Writer; `over` flips once the cap
+// is reached so callers can surface `output_too_large`.
 type limitedBuffer struct {
 	buf  bytes.Buffer
 	cap  int

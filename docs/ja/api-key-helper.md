@@ -47,7 +47,7 @@ Linux / macOS / *BSD / Windows に対応します。helper コマンドを動か
 | `auth.shell` | `"bash"` / `"powershell"` | `"bash"` | (`exec` 専用) シェルを選択。`bash` は `bash -c <command>` を実行します。`powershell` は `pwsh` (PowerShell 7+、クロスプラットフォーム) を優先解決し、PATH に無ければ stock Windows 同梱の `powershell` (Windows PowerShell 5.1) に fallback します。どちらも `-Command <command>` で起動します。 |
 | `auth.path` | string (絶対パス または `~/` 始まり) | `""` | (`file` 専用、必須) ローカル通常ファイル。 |
 | `auth.refresh_margin_ms` | int (ms) | `60000` | `expires_at` のこの ms 前から認証情報を期限切れ扱いにします。`0` で早期更新ガードを無効化。 |
-| `auth.timeout_ms` | int (ms) | `5000` | (`exec` 専用) Resolve 1 回の上限 (lock 取得 + helper 実行)。`> 0`。初回にブラウザが開く helper を使う場合は `60000` 程度まで上げてください ([初回ブラウザ認証](#初回ブラウザ認証) 参照)。 |
+| `auth.timeout_ms` | int (ms) | `5000` | Resolve 1 回の上限。`exec` では lock 取得 + helper 実行、`file` ではファイル読み取りの上限になり、応答しない mount は `reason=timeout` で fallthrough します。`> 0`。`exec` で初回ブラウザが開く helper を使う場合は `60000` 程度まで上げてください ([初回ブラウザ認証](#初回ブラウザ認証) 参照)。 |
 | `auth.cache_key` | string | `""` | (`exec` 専用) cache fingerprint に加えるサルト。[アカウント分離](#アカウント分離) 参照。 |
 
 認証情報の解決順は `provider.auth` (設定済みのとき) > `CCGATE_*_API_KEY` > `*_API_KEY` です。`auth` を設定している状態で解決に失敗しても env var には fallback しません。`kind=credential_unavailable` で fallthrough して問題が表に出るようにしています。
@@ -173,7 +173,7 @@ ccgate は config 評価時に env を読む jsonnet ヘルパーを 2 つ regis
 
 ## ファイル経路の注意点
 
-`auth.path` も on-disk cache (`$XDG_CACHE_HOME/ccgate/<target>/api_key.*.json` または `os.UserCacheDir()` の fallback) も、ローカル通常ファイルシステム上にある必要があります。NFS / SMB / FUSE / keychain mount / Windows UNC path は非対応 — `auth.timeout_ms` は helper 実行にしか効かないため、応答しない mount に当たると credential file / cache file のどちらかで kernel I/O が完了するまで hook が固まります。hard timeout が必要なら、ローカル設置の `auth.type=exec` を使ってください。
+`auth.path` の読み取りも exec 経路と同じく `auth.timeout_ms` (default 5000) で上限が決まります — 応答しない mount では `reason=timeout` で fallthrough します (hook はブロックしません)。とはいえ NFS / SMB / FUSE / keychain mount に置くと毎 fire `timeout_ms` 分待つコストが発生するので、user 専用のローカル path を強く推奨します。
 
 `auth.path` か cache file が group/other に read 権を持っている / 現在の UID と所有者が違う (Unix)、または `Everyone` / `BuiltinUsers` SID に直接 read を許す ACE を持っている (Windows) 場合、ccgate は `slog.Warn` を出します (拒否はしません)。これらは security nudge であり policy enforcement ではありません: Windows DACL walk は当該 well-known SID への allow ACE のみを見ており、deny ACE・継承・effective access は評価しません。推奨は Unix で `chmod 0600` のファイルを `chmod 0700` の親ディレクトリに置く、Windows で当該 user のみ読める ACL に設定する、です。
 

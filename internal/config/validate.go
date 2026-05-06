@@ -107,11 +107,11 @@ func validateAuthFile(a *AuthConfig) error {
 	if a.Shell != "" {
 		errs = append(errs, fmt.Errorf("provider.auth.shell is only allowed when type=%q", AuthTypeExec))
 	}
-	if a.TimeoutMS != nil {
-		errs = append(errs, fmt.Errorf("provider.auth.timeout_ms is only allowed when type=%q (Go cannot impose a hard read deadline on regular files)", AuthTypeExec))
+	if a.TimeoutMS != nil && *a.TimeoutMS <= 0 {
+		errs = append(errs, fmt.Errorf("provider.auth.timeout_ms must be positive, got %d", *a.TimeoutMS))
 	}
 	if a.CacheKey != "" {
-		errs = append(errs, fmt.Errorf("provider.auth.cache_key is only allowed when type=%q (file paths separate themselves)", AuthTypeExec))
+		errs = append(errs, fmt.Errorf("provider.auth.cache_key is only allowed when type=%q", AuthTypeExec))
 	}
 	if a.RefreshMarginMS != nil && *a.RefreshMarginMS < 0 {
 		errs = append(errs, fmt.Errorf("provider.auth.refresh_margin_ms must not be negative, got %d", *a.RefreshMarginMS))

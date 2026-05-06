@@ -135,96 +135,29 @@ type ProviderConfig struct {
 	TimeoutMS *int        `json:"timeout_ms,omitempty"`
 }
 
-// AuthConfig is the discriminated union that describes how to obtain
-// a short-lived / rotating credential without going through env vars.
-// `Type` selects the branch; the other fields are only meaningful for
-// the matching branch and validate() rejects fields set on the wrong
-// branch.
-//
-// JSON shape (jsonnet):
-//
-//	auth: {
-//	  type: 'exec',
-//	  command: '/usr/local/bin/my-broker --provider anthropic',
-//	  refresh_margin_ms: 60000,  // optional
-//	  timeout_ms: 5000,          // optional
-//	  cache_key: '${AWS_PROFILE}',  // optional
-//	}
-//
-//	auth: {
-//	  type: 'file',
-//	  path: '~/.config/my-broker/anthropic.json',
-//	  refresh_margin_ms: 60000,  // optional
-//	}
-//
-// Helper output is the same shape on both branches:
-//   - JSON `{"key":"...","expires_at":"<RFC3339>"}`. With a future
-//     `expires_at`, the result is memoized for `type=exec` to a
-//     per-target cache file under $XDG_CACHE_HOME/ccgate/<target>/
-//     and refreshed early via RefreshMargin. `type=file` does not
-//     cache (the rotator owns refresh).
-//   - Plain (non-JSON) stdout: trimmed single line, returned as-is
-//     with no caching. Intended for experimental / low-frequency
-//     setups; multi-line plain output is rejected.
-//
-// Works on both Unix and Windows. The shell that runs Command is
-// selected per-config via Shell (default "bash"); use
-// shell="powershell" on Windows where bash is not available.
+// AuthConfig is the discriminated union for short-lived / rotating
+// credentials. Type selects the branch; validate rejects fields set
+// on the wrong branch. See docs/api-key-helper.md for the full
+// reference (output formats, caching rules, examples).
 type AuthConfig struct {
-	// Type is the discriminator. Allowed values: AuthTypeExec ("exec")
-	// or AuthTypeFile ("file"). Validate rejects unknown values.
+	// Type discriminates: AuthTypeExec or AuthTypeFile.
 	Type string `json:"type"`
-	// Shell selects which shell binary runs Command for type=exec.
-	// Allowed values: AuthShellBash ("bash", default) and
-	// AuthShellPowerShell ("powershell"). Validate rejects unknown
-	// values and rejects this field for type=file.
-	//
-	// `bash` runs `bash -c <command>`. `powershell` runs
-	// `pwsh -Command <command>` when `pwsh` is on PATH (PowerShell
-	// 7+, cross-platform) and falls back to `powershell -Command
-	// <command>` (Windows PowerShell 5.1, the version stock Windows
-	// ships) otherwise. Pick the value matching the host that
-	// fires the hook.
+	// Shell selects bash (default) or powershell for type=exec; see
+	// keystore.shellInvocation for the launch details.
 	Shell string `json:"shell,omitempty"`
-	// Command is the shell command (run via the configured Shell)
-	// for type=exec. Required when type=exec, forbidden otherwise.
+	// Command is the shell command for type=exec.
 	Command string `json:"command,omitempty"`
-	// Path is the absolute (or `~/`-prefixed) file path for type=file.
-	// Required when type=file, forbidden otherwise. Local regular
-	// file only — NFS / FUSE / keychain mounts are unsupported by
-	// contract because Go's os.File.SetDeadline does not apply to
-	// regular files.
+	// Path is the absolute or `~/`-prefixed file path for type=file.
 	Path string `json:"path,omitempty"`
-	// RefreshMarginMS is the early-refresh slack in milliseconds.
-	// nil means DefaultAuthRefreshMarginMS (60 000 = 60s). Negative
-	// values are rejected at validate time; 0 disables the guard
-	// ("no early refresh" for type=exec, "no minimum-remaining-TTL
-	// check" for type=file).
-	//
-	// For type=exec, cache entries are considered stale once
-	// `now + margin >= expires_at`, forcing a refresh. For type=file,
-	// the same threshold is applied to file output as a minimum
-	// remaining TTL (cache-less, but still rejects credentials that
-	// would race the next API call).
-	//
-	// The unit matches `provider.timeout_ms` so the two interact in
-	// obvious arithmetic ("set refresh_margin_ms above timeout_ms").
+	// RefreshMarginMS is the early-refresh slack in milliseconds
+	// (default 60 000). >= 0; 0 disables the guard.
 	RefreshMarginMS *int `json:"refresh_margin_ms,omitempty"`
-	// TimeoutMS caps the hot-path cost of running Command (including
-	// any flock retry), in milliseconds. nil means
-	// DefaultAuthTimeoutMS (5 000 = 5s). Only valid for type=exec;
-	// rejected for type=file (Go cannot impose a hard read deadline
-	// on regular files). Non-positive values are rejected at
-	// validate time.
+	// TimeoutMS bounds one Resolve call: lock + helper exec for
+	// type=exec, file read for type=file (default 5 000). > 0.
 	TimeoutMS *int `json:"timeout_ms,omitempty"`
-	// CacheKey is a secret-free salt that contributes to the
-	// fingerprint of the on-disk cache file. Use it when a single
-	// `auth.command` string returns different credentials per
-	// $AWS_PROFILE / $GCLOUD_ACCOUNT / etc, so each profile gets its
-	// own cache entry. The value is used as-is; pull env values in
-	// via the jsonnet `std.native('env')` / `std.native('must_env')`
-	// helpers if needed. Only valid for type=exec; rejected for
-	// type=file (file paths separate themselves naturally).
+	// CacheKey is a secret-free salt for the cache fingerprint
+	// (type=exec only). Used as-is; pull env values via jsonnet
+	// std.native('env') / must_env when you need them.
 	CacheKey string `json:"cache_key,omitempty"`
 }
 

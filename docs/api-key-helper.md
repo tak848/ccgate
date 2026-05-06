@@ -47,7 +47,7 @@ Linux, macOS, *BSD, and Windows are supported. The shell that runs the helper co
 | `auth.shell` | `"bash"` / `"powershell"` | `"bash"` | (`exec` only) Selects the shell. `bash` runs `bash -c <command>`. `powershell` resolves `pwsh` first (PowerShell 7+, cross-platform) and falls back to `powershell` (Windows PowerShell 5.1, shipped with stock Windows) when `pwsh` is not on PATH; both are invoked with `-Command <command>`. |
 | `auth.path` | string (abs or `~/`) | `""` | (`file` only, required) Local regular file. |
 | `auth.refresh_margin_ms` | int (ms) | `60000` | Treat a credential as expired this many milliseconds before its `expires_at`. `0` disables the early-refresh guard. |
-| `auth.timeout_ms` | int (ms) | `5000` | (`exec` only) Hard cap on one Resolve call (lock acquisition + helper exec). `> 0`. Raise it (e.g. `60000`) for helpers that open a browser on first run; see [Browser-based first-run auth](#browser-based-first-run-auth). |
+| `auth.timeout_ms` | int (ms) | `5000` | Hard cap on one Resolve call. For `exec` it bounds lock acquisition + helper exec; for `file` it bounds the file read so a stalled mount surfaces as `reason=timeout`. `> 0`. Raise it (e.g. `60000`) for `exec` helpers that open a browser on first run; see [Browser-based first-run auth](#browser-based-first-run-auth). |
 | `auth.cache_key` | string | `""` | (`exec` only) Extra salt for the cache fingerprint. See [Account isolation](#account-isolation). |
 
 Credential resolution order: `provider.auth` (when configured) > `CCGATE_*_API_KEY` > `*_API_KEY`. A configured `auth` block does not fall back to env vars on failure — the hook falls through with `kind=credential_unavailable` so the issue surfaces instead of being papered over.
@@ -173,7 +173,7 @@ Alternatively, bake the account into the command string (`aws sts ... --profile 
 
 ## File mode notes
 
-Both `auth.path` and the on-disk cache (`$XDG_CACHE_HOME/ccgate/<target>/api_key.*.json` or the `os.UserCacheDir()` fallback) must live on a local regular filesystem. NFS, SMB, FUSE, keychain mounts, and Windows UNC paths are unsupported: `auth.timeout_ms` only bounds the helper exec, so a stalled mount lets the hook hang for the duration of the kernel I/O on either the credential file or the cache file. Use a local `auth.type=exec` helper instead when you need a hard timeout.
+`auth.path` reads are bounded by `auth.timeout_ms` (default 5000) just like the exec branch — a stalled mount surfaces as `reason=timeout` instead of blocking the hook. Local regular files are still strongly recommended (NFS / SMB / FUSE / keychain mounts will time out reliably but each fire pays a `timeout_ms` wait); a per-user local path is the cheapest path.
 
 ccgate emits a `slog.Warn` when `auth.path` *or* the cache file has any group/other read bit set, or is owned by a different UID than the current user (Unix), or grants direct read access to the `Everyone` / `BuiltinUsers` SIDs (Windows). Both checks are best-effort security nudges, not policy enforcement: the Windows DACL walk only inspects allow ACEs to those well-known SIDs and does not compute effective access, deny ACEs, or inheritance. The recommended setup is `chmod 0600` on Unix inside a `chmod 0700` parent, or a per-user-only ACL on Windows.
 
