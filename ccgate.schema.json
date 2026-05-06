@@ -69,8 +69,7 @@
                 },
                 "path": {
                   "type": "string",
-                  "minLength": 1,
-                  "description": "Path to a file whose contents follow the same JSON / plain-string shape as the exec branch. Absolute, `~/`-prefixed, and relative paths are all accepted; relative paths resolve from the hook's working directory at fire time (not the directory of the config file). Omit to use the default $XDG_STATE_HOME/ccgate/<target>/auth_key.json. Read every hook fire (no caching)."
+                  "description": "Path to a file whose contents follow the same JSON / plain-string shape as the exec branch. Absolute, `~/`-prefixed, and relative paths are all accepted; relative paths resolve from the hook's working directory at fire time (not the directory of the config file). Empty / omitted uses the default $XDG_STATE_HOME/ccgate/<target>/auth_key.json. Read every hook fire (no caching)."
                 },
                 "refresh_margin_ms": {
                   "type": "integer",
