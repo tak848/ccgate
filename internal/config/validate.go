@@ -97,8 +97,12 @@ func validateAuthExec(a *AuthConfig) error {
 
 func validateAuthFile(a *AuthConfig) error {
 	var errs []error
-	if err := validateAuthPath(a.Path); err != nil {
-		errs = append(errs, err)
+	// Empty path is allowed: the runner falls back to
+	// config.DefaultAuthPath for the configured target / provider.
+	if a.Path != "" {
+		if err := validateAuthPath(a.Path); err != nil {
+			errs = append(errs, err)
+		}
 	}
 	if a.Command != "" {
 		errs = append(errs, fmt.Errorf("provider.auth.command is only allowed when type=%q", AuthTypeExec))
@@ -126,9 +130,6 @@ func validateAuthFile(a *AuthConfig) error {
 // `command` paths in their own hook configs.
 func validateAuthPath(path string) error {
 	v := strings.TrimSpace(path)
-	if v == "" {
-		return fmt.Errorf("provider.auth.path must not be empty when type=%q", AuthTypeFile)
-	}
 	if v == "~" || v == "~/" {
 		return fmt.Errorf("provider.auth.path must point at a file, got bare %q", v)
 	}

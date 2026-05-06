@@ -151,21 +151,20 @@ func assertAuthOneOf(t *testing.T, path string) {
 		}
 		seen[typeProp.Const] = true
 
-		// Each branch must mark its discriminator and the type-specific
-		// required field. exec → command, file → path.
+		// Every branch must mark `type` required. exec additionally
+		// requires `command`; file leaves `path` optional (the runner
+		// falls back to a per-target default under StateDir).
 		gotRequired := map[string]bool{}
 		for _, r := range branch.Required {
 			gotRequired[r] = true
 		}
-		var wantField string
-		if typeProp.Const == "exec" {
-			wantField = "command"
-		} else {
-			wantField = "path"
+		if !gotRequired["type"] {
+			t.Fatalf("%s branch type=%q: required must include \"type\", got %v",
+				path, typeProp.Const, branch.Required)
 		}
-		if !gotRequired["type"] || !gotRequired[wantField] {
-			t.Fatalf("%s branch type=%q: required must include type and %q, got %v",
-				path, typeProp.Const, wantField, branch.Required)
+		if typeProp.Const == "exec" && !gotRequired["command"] {
+			t.Fatalf("%s exec branch: required must include \"command\", got %v",
+				path, branch.Required)
 		}
 	}
 	if !seen["exec"] || !seen["file"] {

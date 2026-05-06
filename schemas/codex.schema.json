@@ -70,7 +70,7 @@
                 "path": {
                   "type": "string",
                   "minLength": 1,
-                  "description": "Path to the credential file. Absolute, ~/-prefixed, or relative (relative paths resolve from the hook's working directory). Read every hook fire."
+                  "description": "Path to the credential file. Absolute, ~/-prefixed, or relative (relative paths resolve from the hook's working directory at fire time, not the config file's directory). Omit to use the default $XDG_STATE_HOME/ccgate/\u003ctarget\u003e/auth_key.\u003cprovider\u003e.json."
                 },
                 "refresh_margin_ms": {
                   "type": "integer",
@@ -80,14 +80,13 @@
                 "timeout_ms": {
                   "type": "integer",
                   "minimum": 1,
-                  "description": "Hard cap on the file read so a stalled mount surfaces as reason=timeout. Default: 5000."
+                  "description": "Hard cap on the file read so a stalled mount surfaces as reason=timeout. Default: 30000."
                 }
               },
               "additionalProperties": false,
               "type": "object",
               "required": [
-                "type",
-                "path"
+                "type"
               ]
             }
           ],
