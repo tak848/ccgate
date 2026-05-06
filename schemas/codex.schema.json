@@ -29,7 +29,15 @@
                 "command": {
                   "type": "string",
                   "minLength": 1,
-                  "description": "Shell command run via `/bin/sh -c`. Stdout is the credential."
+                  "description": "Shell command. Stdout is the credential. Run via the configured shell (default bash)."
+                },
+                "shell": {
+                  "type": "string",
+                  "enum": [
+                    "bash",
+                    "powershell"
+                  ],
+                  "description": "Shell binary that runs `command`. \"bash\" runs `bash -c \u003ccommand\u003e`; \"powershell\" runs `pwsh -Command \u003ccommand\u003e`. Default: bash."
                 },
                 "refresh_margin_ms": {
                   "type": "integer",
@@ -43,7 +51,7 @@
                 },
                 "cache_key": {
                   "type": "string",
-                  "description": "Secret-free salt for separating cache files across env / profile contexts. Supports ${VAR} env expansion."
+                  "description": "Secret-free salt added to the cache fingerprint so a single command string can produce per-account cache entries (used as-is; pull env values via jsonnet std.native('env') / std.native('must_env'))."
                 }
               },
               "additionalProperties": false,

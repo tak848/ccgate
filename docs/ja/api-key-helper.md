@@ -9,7 +9,7 @@ provider に渡す認証情報が静的な環境変数では追いつかない�
 - **`type: 'exec'`**: ccgate がシェルコマンドを実行し、その stdout を認証情報として使います。
 - **`type: 'file'`**: 外部のローテーター (cron / launchd など) が書いたファイルを ccgate が読みます。
 
-Unix のみ (Linux / macOS / *BSD) で動作します。それ以外のプラットフォームで `auth` を設定すると `reason=unsupported_platform` で fallthrough します (env への自動 fallback はしません)。`auth` を設定しない場合は従来どおり `*_API_KEY` の env 経路が動きます。
+Linux / macOS / *BSD / Windows に対応します。helper コマンドを動かすシェルは `auth.shell` で選択 (default `bash`)。bash が入っていない Windows では `shell: 'powershell'` を指定してください。
 
 ## 設定
 
@@ -43,7 +43,8 @@ Unix のみ (Linux / macOS / *BSD) で動作します。それ以外のプラッ
 | 項目 | 型 | 既定値 | 説明 |
 |---|---|---|---|
 | `auth.type` | `"exec"` / `"file"` | (`auth` を書くなら必須) | 取得モードを選びます。 |
-| `auth.command` | string | `""` | (`exec` 専用、必須) `/bin/sh -c` で実行するシェルコマンド。stdout が認証情報になります。 |
+| `auth.command` | string | `""` | (`exec` 専用、必須) シェルコマンド。stdout が認証情報になります。 |
+| `auth.shell` | `"bash"` / `"powershell"` | `"bash"` | (`exec` 専用) シェルを選択。`bash` は `bash -c <command>`、`powershell` は `pwsh -Command <command>` で実行します。 |
 | `auth.path` | string (絶対パス または `~/` 始まり) | `""` | (`file` 専用、必須) ローカル通常ファイル。 |
 | `auth.refresh_margin_ms` | int (ms) | `60000` | `expires_at` のこの ms 前から認証情報を期限切れ扱いにします。`0` で早期更新ガードを無効化。 |
 | `auth.timeout_ms` | int (ms) | `5000` | (`exec` 専用) helper 1 回あたりの実行上限。`> 0`。初回にブラウザが開く helper を使う場合は `60000` 程度まで上げてください ([初回ブラウザ認証](#初回ブラウザ認証) 参照)。 |

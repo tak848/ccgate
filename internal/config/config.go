@@ -50,6 +50,13 @@ const (
 	// Federation) extend this list in their own PRs.
 	AuthTypeExec = "exec"
 	AuthTypeFile = "file"
+
+	// AuthShellBash / AuthShellPowerShell are the accepted
+	// AuthConfig.Shell values, mirroring the Claude Code hook
+	// `shell` field. AuthShellBash is the default when Shell is
+	// empty (matching Claude Code's bash default).
+	AuthShellBash       = "bash"
+	AuthShellPowerShell = "powershell"
 )
 
 // FallthroughStrategy* aliases re-export the canonical values from
@@ -162,15 +169,24 @@ type ProviderConfig struct {
 //     with no caching. Intended for experimental / low-frequency
 //     setups; multi-line plain output is rejected.
 //
-// Unix only. On non-Unix builds the runner falls through with
-// `unsupported_platform`; users who do not configure `auth` keep
-// using the env-var path unchanged.
+// Works on both Unix and Windows. The shell that runs Command is
+// selected per-config via Shell (default "bash"); use
+// shell="powershell" on Windows where bash is not available.
 type AuthConfig struct {
 	// Type is the discriminator. Allowed values: AuthTypeExec ("exec")
 	// or AuthTypeFile ("file"). Validate rejects unknown values.
 	Type string `json:"type"`
-	// Command is the shell command (run via `/bin/sh -c`) for
-	// type=exec. Required when type=exec, forbidden otherwise.
+	// Shell selects which shell binary runs Command for type=exec.
+	// Allowed values: AuthShellBash ("bash", default) and
+	// AuthShellPowerShell ("powershell"). Validate rejects unknown
+	// values and rejects this field for type=file.
+	//
+	// Mirrors Claude Code hook conventions: `bash` runs `bash -c
+	// <command>`, `powershell` runs `pwsh -Command <command>`. Pick
+	// the one that exists on the host the hook fires on.
+	Shell string `json:"shell,omitempty"`
+	// Command is the shell command (run via the configured Shell)
+	// for type=exec. Required when type=exec, forbidden otherwise.
 	Command string `json:"command,omitempty"`
 	// Path is the absolute (or `~/`-prefixed) file path for type=file.
 	// Required when type=file, forbidden otherwise. Local regular
@@ -264,10 +280,11 @@ func (AuthConfig) JSONSchema() *jsonschema.Schema {
 func authExecBranchSchema() *jsonschema.Schema {
 	props := orderedmap.New[string, *jsonschema.Schema]()
 	props.Set("type", &jsonschema.Schema{Type: "string", Const: AuthTypeExec})
-	props.Set("command", &jsonschema.Schema{Type: "string", MinLength: ptr(uint64(1)), Description: "Shell command run via `/bin/sh -c`. Stdout is the credential."})
+	props.Set("command", &jsonschema.Schema{Type: "string", MinLength: ptr(uint64(1)), Description: "Shell command. Stdout is the credential. Run via the configured shell (default bash)."})
+	props.Set("shell", &jsonschema.Schema{Type: "string", Enum: []any{AuthShellBash, AuthShellPowerShell}, Description: "Shell binary that runs `command`. \"bash\" runs `bash -c <command>`; \"powershell\" runs `pwsh -Command <command>`. Default: bash."})
 	props.Set("refresh_margin_ms", &jsonschema.Schema{Type: "integer", Minimum: json.Number("0"), Description: "Cache early-refresh threshold + minimum remaining TTL guard for fresh credentials, in milliseconds. Default: 60000."})
 	props.Set("timeout_ms", &jsonschema.Schema{Type: "integer", Minimum: json.Number("1"), Description: "Hot-path upper bound for one helper invocation, in milliseconds. Default: 5000."})
-	props.Set("cache_key", &jsonschema.Schema{Type: "string", Description: "Secret-free salt for separating cache files across env / profile contexts. Supports ${VAR} env expansion."})
+	props.Set("cache_key", &jsonschema.Schema{Type: "string", Description: "Secret-free salt added to the cache fingerprint so a single command string can produce per-account cache entries (used as-is; pull env values via jsonnet std.native('env') / std.native('must_env'))."})
 	return &jsonschema.Schema{
 		Type:                 "object",
 		Required:             []string{"type", "command"},

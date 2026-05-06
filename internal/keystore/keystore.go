@@ -25,19 +25,19 @@
 //     `{`, otherwise plain string. Plain strings are not cached and
 //     must be a single non-empty line.
 //
-// The package is split by build tag: keystore_unix.go owns the live
-// implementation (flock, exec.Command with Setpgid for child kill,
-// bounded io, atomic rename of the cache file). keystore_other.go is
-// a stub that always returns Reason="unsupported_platform" so the
-// runner can fall through gracefully on platforms that lack the Unix
-// primitives this design depends on.
+// The package keeps platform-portable code in keystore_common.go and
+// uses gofrs/flock to abstract file locking. The two pieces that have
+// no portable Go API — process-tree kill on cancel, and the
+// permission-loose warning on a credential file — are split by build
+// tag (keystore_unix.go uses POSIX primitives, keystore_windows.go uses
+// Win32). Both implementations are real; there is no
+// "unsupported platform" stub.
 package keystore
 
 import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
-	"errors"
 	"time"
 )
 
@@ -49,8 +49,8 @@ import (
 //
 //	command_exit, json_parse, invalid_expiration, empty_output,
 //	invalid_plain_output, expired, file_missing, file_read,
-//	unsupported_platform, timeout, output_too_large, lock_timeout,
-//	lock_error, cache_unavailable, provider_auth.
+//	timeout, output_too_large, lock_timeout, lock_error,
+//	cache_unavailable, provider_auth.
 //
 // log-only credential warnings (degraded but successful resolution):
 //
@@ -60,22 +60,21 @@ type Reason string
 // Reason values. Keep these aligned with docs/configuration.md and
 // the reason taxonomy in the issue #61 plan.
 const (
-	ReasonOK                  Reason = ""
-	ReasonCommandExit         Reason = "command_exit"
-	ReasonJSONParse           Reason = "json_parse"
-	ReasonInvalidExpiration   Reason = "invalid_expiration"
-	ReasonEmptyOutput         Reason = "empty_output"
-	ReasonInvalidPlainOutput  Reason = "invalid_plain_output"
-	ReasonExpired             Reason = "expired"
-	ReasonFileMissing         Reason = "file_missing"
-	ReasonFileRead            Reason = "file_read"
-	ReasonUnsupportedPlatform Reason = "unsupported_platform"
-	ReasonTimeout             Reason = "timeout"
-	ReasonOutputTooLarge      Reason = "output_too_large"
-	ReasonLockTimeout         Reason = "lock_timeout"
-	ReasonLockError           Reason = "lock_error"
-	ReasonCacheUnavailable    Reason = "cache_unavailable"
-	ReasonProviderAuth        Reason = "provider_auth"
+	ReasonOK                 Reason = ""
+	ReasonCommandExit        Reason = "command_exit"
+	ReasonJSONParse          Reason = "json_parse"
+	ReasonInvalidExpiration  Reason = "invalid_expiration"
+	ReasonEmptyOutput        Reason = "empty_output"
+	ReasonInvalidPlainOutput Reason = "invalid_plain_output"
+	ReasonExpired            Reason = "expired"
+	ReasonFileMissing        Reason = "file_missing"
+	ReasonFileRead           Reason = "file_read"
+	ReasonTimeout            Reason = "timeout"
+	ReasonOutputTooLarge     Reason = "output_too_large"
+	ReasonLockTimeout        Reason = "lock_timeout"
+	ReasonLockError          Reason = "lock_error"
+	ReasonCacheUnavailable   Reason = "cache_unavailable"
+	ReasonProviderAuth       Reason = "provider_auth"
 
 	// Log-only (Resolve still succeeds; these never sit in metrics).
 	ReasonCacheParse Reason = "cache_parse"
@@ -106,8 +105,14 @@ const (
 // happens at config load, so resolving never re-parses or has to
 // fall back to defaults at hot-path time.
 type Options struct {
+	// Shell selects which shell binary runs Command. Allowed values
+	// are "bash" (default) and "powershell"; the runner is responsible
+	// for validating and defaulting before populating Options.
+	// "bash" runs `bash -c <Command>`; "powershell" runs
+	// `pwsh -Command <Command>`.
+	Shell string
 	// Command is the verbatim `provider.auth.command` shell command
-	// (passed to `/bin/sh -c`). Empty when only Path is set.
+	// (run by the configured Shell). Empty when only Path is set.
 	Command string
 	// Path is the verbatim `provider.auth.path` file path (absolute or
 	// `~/`-prefixed). Empty when only Command is set.
@@ -151,13 +156,6 @@ type Result struct {
 	Reason Reason
 	Source Source
 }
-
-// ErrUnsupported is returned by Resolve on platforms whose
-// keystore_other.go stub is built (everything that doesn't satisfy
-// the built-in `unix` build tag). Callers can errors.Is against it
-// to distinguish "the OS lacks our flock/exec primitives" from
-// other Resolve failures.
-var ErrUnsupported = errors.New("keystore: auth.type=exec / auth.type=file are not supported on this platform")
 
 // CacheFingerprint is the deterministic per-cache-entry identifier.
 // The same Options that should share a cache file produce the same

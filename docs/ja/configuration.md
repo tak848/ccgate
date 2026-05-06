@@ -143,7 +143,6 @@ ccgate codex  metrics --days 7         # codex 側も同 shape
 | `expired`               | 読み取り時点で `expires_at` が過去、または残り TTL が `auth.refresh_margin_ms` 未満                  |
 | `file_missing`          | `auth.path` が存在しない                                                                             |
 | `file_read`             | ファイルはあるが読み取り失敗 (権限・FS エラー等)                                                     |
-| `unsupported_platform`  | 非 Unix ビルド (Windows)。`auth` 経路は stub                                                          |
 | `timeout`               | `auth.command` が `auth.timeout_ms` を超過                                                           |
 | `output_too_large`      | helper の stdout が 64 KiB 上限超過                                                                  |
 | `lock_timeout`          | flock retry budget 切れ (peer が refresh 中)                                                         |

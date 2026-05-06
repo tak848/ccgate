@@ -143,7 +143,6 @@ The `reason` field meaning depends on `ft_kind`:
 | `expired`               | `expires_at` was already in the past, or remaining TTL was below `auth.refresh_margin_ms`, at read time.  |
 | `file_missing`          | `auth.path` did not exist.                                                                             |
 | `file_read`             | `auth.path` exists but failed to read (permissions, FS error).                                         |
-| `unsupported_platform`  | Build is non-Unix (Windows). `auth` paths are stub'd.                                                  |
 | `timeout`               | `auth.command` exceeded `auth.timeout_ms`.                                                              |
 | `output_too_large`      | Helper stdout exceeded the 64 KiB limit.                                                               |
 | `lock_timeout`          | flock retry budget exhausted while peers were refreshing.                                              |

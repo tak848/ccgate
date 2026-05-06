@@ -517,7 +517,12 @@ func invalidateAuthCache(p config.ProviderConfig, target, providerName, baseURL 
 	if p.Auth == nil || p.Auth.Type != config.AuthTypeExec {
 		return
 	}
+	shell := p.Auth.Shell
+	if shell == "" {
+		shell = config.AuthShellBash
+	}
 	opts := keystore.Options{
+		Shell:        shell,
 		Command:      p.Auth.Command,
 		ProviderName: providerName,
 		BaseURL:      baseURL,
@@ -673,6 +678,10 @@ func resolveAPIKey(ctx context.Context, p config.ProviderConfig, providerName, t
 		case config.AuthTypeExec:
 			opts.Command = p.Auth.Command
 			opts.CacheKey = p.Auth.CacheKey
+			opts.Shell = p.Auth.Shell
+			if opts.Shell == "" {
+				opts.Shell = config.AuthShellBash
+			}
 		case config.AuthTypeFile:
 			opts.Path = p.Auth.Path
 		}

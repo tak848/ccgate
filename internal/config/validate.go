@@ -79,6 +79,12 @@ func validateAuthExec(a *AuthConfig) error {
 	if a.Path != "" {
 		errs = append(errs, fmt.Errorf("provider.auth.path is only allowed when type=%q", AuthTypeFile))
 	}
+	switch a.Shell {
+	case "", AuthShellBash, AuthShellPowerShell:
+	default:
+		errs = append(errs, fmt.Errorf("provider.auth.shell must be %q or %q, got %q",
+			AuthShellBash, AuthShellPowerShell, a.Shell))
+	}
 	if a.RefreshMarginMS != nil && *a.RefreshMarginMS < 0 {
 		errs = append(errs, fmt.Errorf("provider.auth.refresh_margin_ms must not be negative, got %d", *a.RefreshMarginMS))
 	}
@@ -96,6 +102,9 @@ func validateAuthFile(a *AuthConfig) error {
 	}
 	if a.Command != "" {
 		errs = append(errs, fmt.Errorf("provider.auth.command is only allowed when type=%q", AuthTypeExec))
+	}
+	if a.Shell != "" {
+		errs = append(errs, fmt.Errorf("provider.auth.shell is only allowed when type=%q", AuthTypeExec))
 	}
 	if a.TimeoutMS != nil {
 		errs = append(errs, fmt.Errorf("provider.auth.timeout_ms is only allowed when type=%q (Go cannot impose a hard read deadline on regular files)", AuthTypeExec))

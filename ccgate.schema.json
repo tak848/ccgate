@@ -35,7 +35,12 @@
                 "command": {
                   "type": "string",
                   "minLength": 1,
-                  "description": "Shell command run via `/bin/sh -c` whose stdout is the API key. JSON `{\"key\":\"...\",\"expires_at\":\"<RFC3339>\"}` is parsed strictly and memoized to a per-target cache file (early-refreshed via `refresh_margin_ms`). Plain non-JSON stdout is returned uncached and must be a single non-empty line."
+                  "description": "Shell command whose stdout is the API key. Run via the configured `shell` (default bash). JSON `{\"key\":\"...\",\"expires_at\":\"<RFC3339>\"}` is parsed strictly and memoized to a per-target cache file (early-refreshed via `refresh_margin_ms`). Plain non-JSON stdout is returned uncached and must be a single non-empty line."
+                },
+                "shell": {
+                  "type": "string",
+                  "enum": ["bash", "powershell"],
+                  "description": "Shell binary that runs `command`. `bash` runs `bash -c <command>`; `powershell` runs `pwsh -Command <command>`. Default: bash."
                 },
                 "refresh_margin_ms": {
                   "type": "integer",

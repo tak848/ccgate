@@ -1,11 +1,10 @@
 //go:build unix
 
-// auth.type=exec / auth.type=file are Unix-only (the keystore stub
-// on non-Unix builds returns unsupported_platform before decide()
-// reaches the fake provider). Limit this end-to-end matrix to the
-// build tag the live keystore implementation uses, otherwise
-// Windows / wasi CI would assert against a code path that doesn't
-// run there.
+// The exec-helper script in this matrix is a `printf` one-liner
+// that depends on a POSIX shell. Limit the test to Unix builds so
+// the Windows runner does not try to run the same script through
+// pwsh and trip on POSIX-shell syntax. The keystore code itself
+// works on both platforms; only the test fixture is Unix-shaped.
 package runner
 
 import (

@@ -9,7 +9,7 @@ When the credential the provider needs rotates faster than a static env var can 
 - **`type: 'exec'`**: ccgate runs a shell command and uses its stdout as the credential.
 - **`type: 'file'`**: ccgate reads a file written by an external rotator.
 
-Unix only (Linux, macOS, *BSD). On other platforms, a configured `auth` block falls through with `reason=unsupported_platform` (it does **not** silently fall back to env vars). Setups that don't use `auth` continue to read `*_API_KEY` as before.
+Linux, macOS, *BSD, and Windows are supported. The shell that runs the helper command is selected per-config via `auth.shell` (default `bash`); set `shell: 'powershell'` on Windows boxes that don't have bash.
 
 ## Config
 
@@ -43,7 +43,8 @@ Unix only (Linux, macOS, *BSD). On other platforms, a configured `auth` block fa
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `auth.type` | `"exec"` / `"file"` | (required when `auth` is set) | Selects the resolution mode. |
-| `auth.command` | string | `""` | (`exec` only, required) Shell command run via `/bin/sh -c`. Stdout is the credential. |
+| `auth.command` | string | `""` | (`exec` only, required) Shell command. Stdout is the credential. |
+| `auth.shell` | `"bash"` / `"powershell"` | `"bash"` | (`exec` only) Selects the shell binary. `bash` runs `bash -c <command>`; `powershell` runs `pwsh -Command <command>`. |
 | `auth.path` | string (abs or `~/`) | `""` | (`file` only, required) Local regular file. |
 | `auth.refresh_margin_ms` | int (ms) | `60000` | Treat a credential as expired this many milliseconds before its `expires_at`. `0` disables the early-refresh guard. |
 | `auth.timeout_ms` | int (ms) | `5000` | (`exec` only) Hard cap on a single helper invocation. `> 0`. Raise it (e.g. `60000`) for helpers that open a browser on first run; see [Browser-based first-run auth](#browser-based-first-run-auth). |
