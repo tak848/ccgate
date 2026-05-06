@@ -70,7 +70,7 @@
                 "path": {
                   "type": "string",
                   "minLength": 1,
-                  "description": "Path to the credential file. Absolute, ~/-prefixed, or relative (relative paths resolve from the hook's working directory at fire time, not the config file's directory). Omit to use the default $XDG_STATE_HOME/ccgate/\u003ctarget\u003e/auth_key.\u003cprovider\u003e.json."
+                  "description": "Path to the credential file. Absolute, ~/-prefixed, or relative (relative paths resolve from the hook's working directory at fire time, not the config file's directory). Omit to use the default $XDG_STATE_HOME/ccgate/\u003ctarget\u003e/auth_key.json; set path explicitly on each entry when a multi-provider config has more than one type=file."
                 },
                 "refresh_margin_ms": {
                   "type": "integer",

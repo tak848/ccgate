@@ -227,7 +227,7 @@ func authExecBranchSchema() *jsonschema.Schema {
 func authFileBranchSchema() *jsonschema.Schema {
 	props := orderedmap.New[string, *jsonschema.Schema]()
 	props.Set("type", &jsonschema.Schema{Type: "string", Const: AuthTypeFile})
-	props.Set("path", &jsonschema.Schema{Type: "string", MinLength: ptr(uint64(1)), Description: "Path to the credential file. Absolute, ~/-prefixed, or relative (relative paths resolve from the hook's working directory at fire time, not the config file's directory). Omit to use the default $XDG_STATE_HOME/ccgate/<target>/auth_key.<provider>.json."})
+	props.Set("path", &jsonschema.Schema{Type: "string", MinLength: ptr(uint64(1)), Description: "Path to the credential file. Absolute, ~/-prefixed, or relative (relative paths resolve from the hook's working directory at fire time, not the config file's directory). Omit to use the default $XDG_STATE_HOME/ccgate/<target>/auth_key.json; set path explicitly on each entry when a multi-provider config has more than one type=file."})
 	props.Set("refresh_margin_ms", &jsonschema.Schema{Type: "integer", Minimum: json.Number("0"), Description: "Minimum remaining TTL guard for file output, in milliseconds. Default: 60000."})
 	props.Set("timeout_ms", &jsonschema.Schema{Type: "integer", Minimum: json.Number("1"), Description: "Hard cap on the file read so a stalled mount surfaces as reason=timeout. Default: 30000."})
 	return &jsonschema.Schema{
@@ -382,15 +382,12 @@ func StateDir(sub string) string {
 }
 
 // DefaultAuthPath is the path ccgate uses for `auth.type=file` when
-// the config leaves `auth.path` empty: a per-target, per-provider
-// file under StateDir so multiple providers don't collide. An
-// external rotator that writes here works with no extra config.
-func DefaultAuthPath(target, providerName string) string {
-	name := strings.ToLower(strings.TrimSpace(providerName))
-	if name == "" {
-		name = "default"
-	}
-	return filepath.Join(StateDir(target), "auth_key."+name+".json")
+// the config leaves `auth.path` empty: a single per-target file
+// under StateDir. Multi-provider configs that want a per-entry
+// file (e.g. an Anthropic-direct entry plus an Anthropic proxy
+// entry) set `auth.path` explicitly on each.
+func DefaultAuthPath(target string) string {
+	return filepath.Join(StateDir(target), "auth_key.json")
 }
 
 // Load composes the runtime config from three layers, all using the

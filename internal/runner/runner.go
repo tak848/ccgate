@@ -685,7 +685,7 @@ func resolveAPIKey(ctx context.Context, p config.ProviderConfig, providerName, t
 		case config.AuthTypeFile:
 			opts.Path = p.Auth.Path
 			if opts.Path == "" {
-				opts.Path = config.DefaultAuthPath(target, providerName)
+				opts.Path = config.DefaultAuthPath(target)
 			}
 		}
 		res, err := keystore.Resolve(ctx, opts)
