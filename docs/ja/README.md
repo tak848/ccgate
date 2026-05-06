@@ -250,7 +250,7 @@ Claude Code と同じ環境変数を使います — [provider table](#3-api-キ
 | `provider.name`          | string                            | `"anthropic"`                                                                   | プロバイダー名。`"anthropic"` / `"openai"` / `"gemini"` のいずれか                                          |
 | `provider.model`         | string                            | `"claude-haiku-4-5"`                                                            | モデル名。例: `claude-haiku-4-5` / `claude-sonnet-4-6` (anthropic)、`gpt-5.4-nano-2026-03-17` (openai)、`gemini-3-flash-preview` (gemini)。互換 proxy 経由なら proxy が公開している任意の名前 (例: `anthropic/claude-haiku-4-5`) |
 | `provider.base_url`      | string                            | `""`                                                                            | API base URL の上書き。空文字列 (default) で SDK の既定 endpoint を使用。OpenAI 互換 / Anthropic 互換 proxy (LiteLLM proxy, Azure OpenAI, オンプレ gateway, 地域別 endpoint 等) 経由で叩きたい時に指定 |
-| `provider.auth`          | object (`{type, ...}`)            | (省略時は env var)                                                              | Unix 限定。短命 / ローテーションする認証情報を扱う discriminated union。`type=exec` (helper コマンド) / `type=file` (rotator が更新するファイル)。詳細は [api-key-helper.md](api-key-helper.md) |
+| `provider.auth`          | object (`{type, ...}`)            | (省略時は env var)                                                              | 短命 / ローテーションする認証情報を扱う discriminated union。`type=exec` (helper コマンド) / `type=file` (rotator が更新するファイル)。詳細は [api-key-helper.md](api-key-helper.md) |
 | `provider.timeout_ms`    | int                               | `20000`                                                                         | API タイムアウト (ms)。`0` = タイムアウトなし                                                              |
 | `log_path`               | string                            | `$XDG_STATE_HOME/ccgate/<target>/ccgate.log`                                    | ログファイルパス。`~` でホームディレクトリ展開                                                             |
 | `log_disabled`           | bool                              | `false`                                                                         | ログ出力を完全に無効化                                                                                     |
@@ -358,7 +358,7 @@ helper / file の中身は次のいずれかを書きます。
 - **JSON** `{"key":"sk-...","expires_at":"<RFC3339>"}` — `auth.type=exec` の場合 `$XDG_CACHE_HOME/ccgate/<target>/` にキャッシュされ、期限前に更新されます
 - **plain string** — 単一行の非空文字列。キャッシュなし
 
-解決順序: `provider.auth` (設定済み) > `CCGATE_*_API_KEY` > `*_API_KEY`。`auth` を設定済みのときに失敗しても **env var に黙って fallback はしません**。代わりに `kind=credential_unavailable` で fallthrough します。Unix のみ。
+解決順序: `provider.auth` (設定済み) > `CCGATE_*_API_KEY` > `*_API_KEY`。`auth` を設定済みのときに失敗しても **env var に黙って fallback はしません**。代わりに `kind=credential_unavailable` で fallthrough します。
 
 ccgate は jsonnet helper として `std.native('env')(name)` (未定義は空文字) と `std.native('must_env')(name)` (未定義は config-load エラー) を register しているので、任意の文字列フィールドから ccgate 独自記法を使わずに env を読めます。
 

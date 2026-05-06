@@ -21,7 +21,7 @@
           "description": "Override the provider's API base URL. Empty (default) uses the SDK default endpoint. Use this to route through an OpenAI- or Anthropic-compatible proxy (LiteLLM proxy, Azure OpenAI, on-prem gateway, regional endpoint, ...). For OpenAI-compatible endpoints include the `/v1` path; for Anthropic-compatible endpoints stop at the host root (the SDK appends `/v1/messages`)."
         },
         "auth": {
-          "description": "Discriminated union selecting the credential source for the provider. Unix only. See docs/api-key-helper.md for the full helper contract, examples, and recovery checklist.",
+          "description": "Discriminated union selecting the credential source for the provider. See docs/api-key-helper.md for the full helper contract, examples, and recovery checklist.",
           "oneOf": [
             {
               "type": "object",

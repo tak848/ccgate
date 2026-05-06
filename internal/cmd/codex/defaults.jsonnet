@@ -32,7 +32,7 @@
     // base_url:  route through an OpenAI-/Anthropic-compatible proxy.
     //            See README "Routing through a compatible proxy".
     // timeout_ms: API timeout in ms, default 20000.
-    // auth: short-lived / rotating credentials. Unix only. Discriminated
+    // auth: short-lived / rotating credentials. Discriminated
     //   by auth.type:
     //     auth: { type: 'exec', command: '/usr/local/bin/my-broker --provider anthropic' }
     //     auth: { type: 'file', path: '~/.config/my-broker/anthropic.json' }
