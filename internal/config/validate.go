@@ -42,14 +42,16 @@ func (c Config) Validate() error {
 //
 // Rules per type:
 //
-//   - type=exec: command required (non-empty after trim); refresh_margin
-//     / timeout / cache_key are optional. path is forbidden — it would
-//     come along with a different type.
-//   - type=file: path required (absolute or `~/`-prefixed; bare `~`
-//     points at the home dir itself, not a file, so it's rejected);
-//     refresh_margin is allowed as a minimum-remaining-TTL guard;
-//     command / timeout / cache_key are forbidden (file-mode has no
-//     helper exec to time out, no cache to salt).
+//   - type=exec: command required (non-empty after trim);
+//     refresh_margin_ms / timeout_ms / cache_key / shell are
+//     optional. path is forbidden.
+//   - type=file: path optional (runner falls back to
+//     config.DefaultAuthPath for the target). When set it must be
+//     absolute, `~/`-prefixed, or relative; bare `~` and `~/` are
+//     rejected (they expand to the home dir itself, not a file).
+//     refresh_margin_ms / timeout_ms are allowed (timeout bounds
+//     the file read for stalled mounts). command / cache_key /
+//     shell are forbidden.
 //   - type unknown / empty: rejected.
 //
 // Auth omitted entirely (nil) means env-var fallback, which Validate

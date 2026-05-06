@@ -150,7 +150,7 @@ type AuthConfig struct {
 	// (default 60 000). >= 0; 0 disables the guard.
 	RefreshMarginMS *int `json:"refresh_margin_ms,omitempty"`
 	// TimeoutMS bounds one Resolve call: lock + helper exec for
-	// type=exec, file read for type=file (default 5 000). > 0.
+	// type=exec, file read for type=file (default 30 000). > 0.
 	TimeoutMS *int `json:"timeout_ms,omitempty"`
 	// CacheKey is a secret-free salt for the cache fingerprint
 	// (type=exec only). Used as-is; pull env values via jsonnet
