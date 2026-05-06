@@ -106,9 +106,10 @@ const (
 type Options struct {
 	// Shell selects which shell binary runs Command. Allowed values
 	// are "bash" (default) and "powershell"; the runner is responsible
-	// for validating and defaulting before populating Options.
-	// "bash" runs `bash -c <Command>`; "powershell" runs
-	// `pwsh -Command <Command>`.
+	// for validating and defaulting before populating Options. "bash"
+	// runs `bash -c <Command>`. "powershell" runs `pwsh -Command
+	// <Command>` when `pwsh` resolves on PATH and falls back to
+	// `powershell -Command <Command>` otherwise.
 	Shell string
 	// Command is the verbatim `provider.auth.command` shell command
 	// (run by the configured Shell). Empty when only Path is set.
@@ -130,12 +131,14 @@ type Options struct {
 	// different targets keep credential scopes separate even when
 	// the rest of the config matches.
 	TargetName string
-	// CacheKey is the `provider.auth.cache_key` value after `${VAR}`
-	// env expansion. It contributes to the cache fingerprint as a
-	// user-supplied salt so an env / profile dependent helper (e.g.
-	// `aws sts ... --profile $AWS_PROFILE`) gets a separate cache
-	// file per profile. Secret-free; runner is responsible for
-	// rejecting undefined-env references upstream.
+	// CacheKey is the verbatim `provider.auth.cache_key` value. It
+	// contributes to the cache fingerprint as a user-supplied salt
+	// so an env / profile dependent helper (e.g. one whose command
+	// contains an account name) gets a separate cache file per
+	// account. The value is used as-is; configs that need to inject
+	// env values pull them in via the jsonnet `std.native('env')` /
+	// `std.native('must_env')` helpers at config-load time.
+	// Secret-free.
 	CacheKey string
 	// RefreshMargin is the early-refresh slack used by Resolve when
 	// deciding whether the cached `expires_at` is still in the

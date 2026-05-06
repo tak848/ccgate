@@ -69,7 +69,7 @@ A helper must:
 - Be **deterministic** for the same `(shell, command, provider.name, base_url, cache_key)` tuple. Two callers with the same config must agree on what the credential is.
 - **Not daemonize**. Forking past the process group escapes the timeout-kill.
 - Finish within `auth.timeout_ms`.
-- Avoid literal secrets in `auth.command`. The string is passed to the configured shell (`bash -c <command>` or `pwsh -Command <command>`) and shows up in `ps`, `/proc/<pid>/cmdline`, and shell history. Read secrets from a file or keychain inside the helper instead.
+- Avoid literal secrets in `auth.command`. The string is passed to the configured shell (`bash -c <command>`, or `pwsh -Command <command>` / `powershell -Command <command>` when `auth.shell: 'powershell'`) and shows up in `ps`, `/proc/<pid>/cmdline`, and shell history. Read secrets from a file or keychain inside the helper instead.
 
 ccgate exports `CCGATE_API_KEY_RESOLUTION=1` into the helper environment so a wrapper helper can detect recursive invocation. All other environment variables (including `*_API_KEY`) are inherited. Stdin is closed; the helper cannot read from the parent terminal.
 
@@ -204,6 +204,6 @@ To opt out of caching, return JSON without `expires_at` (or plain string) and th
 3. For `cache_parse` / `cache_read` / `cache_write` (log-only warnings), remove `$XDG_CACHE_HOME/ccgate/<target>/api_key.*.json` to force a refresh. Leave the sibling `*.lock` files alone.
 4. For `expired`, compare the helper's `expires_at` with `date -u`. Clock skew or a broken TTL inside the helper is the usual cause.
 5. For `command_exit` on a fresh setup, check first whether the configured `auth.shell` binary is on `$PATH`. `bash` is universal on Linux / macOS; for `powershell`, at least one of `pwsh` (preferred) or `powershell` must resolve via `$PATH`. When ccgate cannot find the shell at all, the failure surfaces as `command_exit` from `os/exec`'s lookup error.
-6. For repeated `provider_auth` even after cache invalidation, the helper itself is producing a credential the provider rejects. Re-run the helper manually with the same shell ccgate uses (`bash -c "$your_command"` or `pwsh -Command "$your_command"`) and inspect the stdout that reached the SDK.
+6. For repeated `provider_auth` even after cache invalidation, the helper itself is producing a credential the provider rejects. Re-run the helper manually with the same shell ccgate would use — `bash -c "$your_command"`, or `pwsh -Command "$your_command"` / `powershell -Command "$your_command"` for `auth.shell: 'powershell'` — and inspect the stdout that reached the SDK.
 
 The full reason list is in [docs/configuration.md](configuration.md#reason-values-for-credential_unavailable).
