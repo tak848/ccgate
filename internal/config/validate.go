@@ -3,7 +3,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 )
 
@@ -119,18 +118,12 @@ func validateAuthFile(a *AuthConfig) error {
 	return errors.Join(errs...)
 }
 
-// validateAuthPath rejects relative paths and the bare home
-// directory. The config loader does not pass the config file's
-// location into AuthConfig, so a relative path here would have no
-// well-defined base — surface that at validate time instead of
-// guessing later. A bare "~" expands to the home directory itself
-// rather than a credential file, which would consistently fail at
-// read time, so reject it up front as the deterministic
-// misconfiguration it is.
-//
-// Absolute paths use filepath.IsAbs so Windows drive paths
-// (`C:\...`) and UNC paths (`\\server\share\...`) are accepted in
-// addition to POSIX `/...`.
+// validateAuthPath rejects only the obviously broken cases (empty
+// string, bare home-directory). Absolute paths, `~/`-prefixed
+// paths, and relative paths are all accepted; relative paths
+// resolve from the hook's working directory (the project root for
+// Claude Code / Codex CLI), matching how those tools resolve
+// `command` paths in their own hook configs.
 func validateAuthPath(path string) error {
 	v := strings.TrimSpace(path)
 	if v == "" {
@@ -139,8 +132,5 @@ func validateAuthPath(path string) error {
 	if v == "~" || v == "~/" {
 		return fmt.Errorf("provider.auth.path must point at a file, got bare %q", v)
 	}
-	if strings.HasPrefix(v, "~/") || filepath.IsAbs(v) {
-		return nil
-	}
-	return fmt.Errorf("provider.auth.path %q must be an absolute path or start with ~/", v)
+	return nil
 }

@@ -45,9 +45,9 @@ Linux, macOS, *BSD, and Windows are supported. The shell that runs the helper co
 | `auth.type` | `"exec"` / `"file"` | (required when `auth` is set) | Selects the resolution mode. |
 | `auth.command` | string | `""` | (`exec` only, required) Shell command. Stdout is the credential. |
 | `auth.shell` | `"bash"` / `"powershell"` | `"bash"` | (`exec` only) Selects the shell. `bash` runs `bash -c <command>`. `powershell` resolves `pwsh` first (PowerShell 7+, cross-platform) and falls back to `powershell` (Windows PowerShell 5.1, shipped with stock Windows) when `pwsh` is not on PATH; both are invoked with `-Command <command>`. |
-| `auth.path` | string (abs or `~/`) | `""` | (`file` only, required) Local regular file. |
+| `auth.path` | string | `""` | (`file` only, required) Path to a local regular file. Absolute paths, `~/...`, and relative paths are all accepted; relative paths resolve from the hook's working directory (the project root for Claude Code / Codex CLI), matching how those tools resolve hook command paths. |
 | `auth.refresh_margin_ms` | int (ms) | `60000` | Treat a credential as expired this many milliseconds before its `expires_at`. `0` disables the early-refresh guard. |
-| `auth.timeout_ms` | int (ms) | `5000` | Hard cap on one Resolve call. For `exec` it bounds lock acquisition + helper exec; for `file` it bounds the file read so a stalled mount surfaces as `reason=timeout`. `> 0`. Raise it (e.g. `60000`) for `exec` helpers that open a browser on first run; see [Browser-based first-run auth](#browser-based-first-run-auth). |
+| `auth.timeout_ms` | int (ms) | `30000` | Hard cap on one Resolve call. For `exec` it bounds lock acquisition + helper exec; for `file` it bounds the file read so a stalled mount surfaces as `reason=timeout`. `> 0`. Raise it (e.g. `120000`) for `exec` helpers that open a browser on first run; see [Browser-based first-run auth](#browser-based-first-run-auth). |
 | `auth.cache_key` | string | `""` | (`exec` only) Extra salt for the cache fingerprint. See [Account isolation](#account-isolation). |
 
 Credential resolution order: `provider.auth` (when configured) > `CCGATE_*_API_KEY` > `*_API_KEY`. A configured `auth` block does not fall back to env vars on failure — the hook falls through with `kind=credential_unavailable` so the issue surfaces instead of being papered over.
@@ -77,10 +77,7 @@ ccgate exports `CCGATE_API_KEY_RESOLUTION=1` into the helper environment so a wr
 
 Helpers like `gcloud auth print-access-token`, `aws sso login`, or an internal SSO key broker open a browser on first run, complete OAuth / SAML in the browser, then print the credential on stdout. Subsequent runs read a cached refresh token and are silent.
 
-This pattern is supported. Two ways to use it:
-
-- **Prime the cache out-of-band** (recommended for everyday use). Run the helper once in your terminal before starting Claude Code / Codex CLI; the auth cache it writes makes every later hook invocation silent and fast. Default `auth.timeout_ms` (5000) is fine.
-- **Allow the first hook fire to pay the browser cost**. Set `auth.timeout_ms` high enough to cover the browser round-trip (e.g. `60000`–`120000`). The first Permission Request after a long idle will block until you complete the browser flow; subsequent fires return immediately.
+This pattern is supported. The default `auth.timeout_ms` (`30000`) covers most non-interactive helpers; for browser-based first-run flows that involve the user clicking through a consent screen, raise it to e.g. `120000` so the first Permission Request after a long idle does not surface as `reason=timeout`.
 
 ## Examples
 

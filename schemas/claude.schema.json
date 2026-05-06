@@ -70,7 +70,7 @@
                 "path": {
                   "type": "string",
                   "minLength": 1,
-                  "description": "Absolute or ~/-prefixed file path. Read every hook fire."
+                  "description": "Path to the credential file. Absolute, ~/-prefixed, or relative (relative paths resolve from the hook's working directory). Read every hook fire."
                 },
                 "refresh_margin_ms": {
                   "type": "integer",

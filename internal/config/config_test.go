@@ -139,9 +139,10 @@ func TestValidateAuthFields(t *testing.T) {
 		// refresh_margin_ms allowed (minimum-remaining-TTL guard).
 		"file abs":               {auth: &AuthConfig{Type: "file", Path: absKey}, wantErr: false},
 		"file home":              {auth: &AuthConfig{Type: "file", Path: "~/.ccgate/key"}, wantErr: false},
+		"file relative dot":      {auth: &AuthConfig{Type: "file", Path: "./key"}, wantErr: false},
+		"file relative bare":     {auth: &AuthConfig{Type: "file", Path: "key"}, wantErr: false},
 		"file bare ~":            {auth: &AuthConfig{Type: "file", Path: "~"}, wantErr: true},
-		"file relative":          {auth: &AuthConfig{Type: "file", Path: "./key"}, wantErr: true},
-		"file bare":              {auth: &AuthConfig{Type: "file", Path: "key"}, wantErr: true},
+		"file bare ~/":           {auth: &AuthConfig{Type: "file", Path: "~/"}, wantErr: true},
 		"file missing path":      {auth: &AuthConfig{Type: "file"}, wantErr: true},
 		"file with command":      {auth: &AuthConfig{Type: "file", Path: absKey, Command: "x"}, wantErr: true},
 		"file with timeout":      {auth: &AuthConfig{Type: "file", Path: absKey, TimeoutMS: intPtr(5000)}, wantErr: false},

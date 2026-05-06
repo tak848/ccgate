@@ -4,10 +4,11 @@ package config
 
 import "testing"
 
-// TestValidateAuthPathWindowsAbsolute pins that Windows-style
-// absolute paths are accepted by validate. POSIX `/foo` is not an
-// absolute path on Windows, so we only assert the OS-native shapes
-// here; Unix coverage is in config_test.go.
+// TestValidateAuthPathWindowsAbsolute pins the Windows-shaped
+// paths that validate accepts. Unix coverage is in config_test.go.
+// Relative paths are accepted on every OS; they resolve from the
+// hook's working directory (the project root for Claude Code /
+// Codex CLI), matching how those tools resolve hook command paths.
 func TestValidateAuthPathWindowsAbsolute(t *testing.T) {
 	t.Parallel()
 
@@ -19,10 +20,12 @@ func TestValidateAuthPathWindowsAbsolute(t *testing.T) {
 		"drive path forward slash": {path: `C:/Users/alice/key.json`},
 		"unc path":                 {path: `\\server\share\key.json`},
 		"home tilde":               {path: `~/key.json`},
-		"relative":                 {path: `key.json`, wantErr: true},
-		"relative with slash":      {path: `subdir\key.json`, wantErr: true},
+		"relative":                 {path: `key.json`},
+		"relative with slash":      {path: `subdir\key.json`},
+		"relative dot prefix":      {path: `.\key.json`},
 		"empty":                    {path: ``, wantErr: true},
 		"bare tilde":               {path: `~`, wantErr: true},
+		"bare tilde slash":         {path: `~/`, wantErr: true},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

@@ -36,14 +36,11 @@ const (
 	// default `provider.timeout_ms` (20 000 ms = 20s) so a cached
 	// credential will not race the next API call.
 	DefaultAuthRefreshMarginMS = 60_000
-	// DefaultAuthTimeoutMS caps the hot-path cost of resolving a
-	// credential through `auth.type=exec` (lock acquisition + helper
-	// exec). 5 seconds is enough for most STS / OAuth-style helpers
-	// while still bounding hook latency when something is wrong
-	// upstream. `auth.type=file` does not use this timeout — Go's
-	// os.File.SetDeadline is not supported on regular files, so the
-	// file path relies on a local-FS best-effort contract instead.
-	DefaultAuthTimeoutMS = 5_000
+	// DefaultAuthTimeoutMS caps one Resolve call. 30 seconds covers
+	// AWS STS, gcloud auth print-access-token, and an internal SSO
+	// key broker that opens a browser on first run; bump it higher
+	// (e.g. 120 000) if your helper takes longer.
+	DefaultAuthTimeoutMS = 30_000
 
 	// AuthTypeExec / AuthTypeFile are the AuthConfig.Type values.
 	AuthTypeExec = "exec"
@@ -230,7 +227,7 @@ func authExecBranchSchema() *jsonschema.Schema {
 func authFileBranchSchema() *jsonschema.Schema {
 	props := orderedmap.New[string, *jsonschema.Schema]()
 	props.Set("type", &jsonschema.Schema{Type: "string", Const: AuthTypeFile})
-	props.Set("path", &jsonschema.Schema{Type: "string", MinLength: ptr(uint64(1)), Description: "Absolute or ~/-prefixed file path. Read every hook fire."})
+	props.Set("path", &jsonschema.Schema{Type: "string", MinLength: ptr(uint64(1)), Description: "Path to the credential file. Absolute, ~/-prefixed, or relative (relative paths resolve from the hook's working directory). Read every hook fire."})
 	props.Set("refresh_margin_ms", &jsonschema.Schema{Type: "integer", Minimum: json.Number("0"), Description: "Minimum remaining TTL guard for file output, in milliseconds. Default: 60000."})
 	props.Set("timeout_ms", &jsonschema.Schema{Type: "integer", Minimum: json.Number("1"), Description: "Hard cap on the file read so a stalled mount surfaces as reason=timeout. Default: 5000."})
 	return &jsonschema.Schema{

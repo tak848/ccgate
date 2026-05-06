@@ -45,9 +45,9 @@ Linux / macOS / *BSD / Windows に対応します。helper コマンドを動か
 | `auth.type` | `"exec"` / `"file"` | (`auth` を書くなら必須) | 取得モードを選びます。 |
 | `auth.command` | string | `""` | (`exec` 専用、必須) シェルコマンド。stdout が認証情報になります。 |
 | `auth.shell` | `"bash"` / `"powershell"` | `"bash"` | (`exec` 専用) シェルを選択。`bash` は `bash -c <command>` を実行します。`powershell` は `pwsh` (PowerShell 7+、クロスプラットフォーム) を優先解決し、PATH に無ければ stock Windows 同梱の `powershell` (Windows PowerShell 5.1) に fallback します。どちらも `-Command <command>` で起動します。 |
-| `auth.path` | string (絶対パス または `~/` 始まり) | `""` | (`file` 専用、必須) ローカル通常ファイル。 |
+| `auth.path` | string | `""` | (`file` 専用、必須) ローカル通常ファイルのパス。絶対パス・`~/...`・相対パスのいずれも受け付けます。相対パスは hook 起動時のカレントディレクトリ (Claude Code / Codex CLI ならプロジェクトルート) から解決され、これらのツールが hook の `command` を解決するのと同じ規則です。 |
 | `auth.refresh_margin_ms` | int (ms) | `60000` | `expires_at` のこの ms 前から認証情報を期限切れ扱いにします。`0` で早期更新ガードを無効化。 |
-| `auth.timeout_ms` | int (ms) | `5000` | Resolve 1 回の上限。`exec` では lock 取得 + helper 実行、`file` ではファイル読み取りの上限になり、応答しない mount は `reason=timeout` で fallthrough します。`> 0`。`exec` で初回ブラウザが開く helper を使う場合は `60000` 程度まで上げてください ([初回ブラウザ認証](#初回ブラウザ認証) 参照)。 |
+| `auth.timeout_ms` | int (ms) | `30000` | Resolve 1 回の上限。`exec` では lock 取得 + helper 実行、`file` ではファイル読み取りの上限になり、応答しない mount は `reason=timeout` で fallthrough します。`> 0`。`exec` で初回ブラウザが開く helper を使う場合は `120000` 程度まで上げてください ([初回ブラウザ認証](#初回ブラウザ認証) 参照)。 |
 | `auth.cache_key` | string | `""` | (`exec` 専用) cache fingerprint に加えるサルト。[アカウント分離](#アカウント分離) 参照。 |
 
 認証情報の解決順は `provider.auth` (設定済みのとき) > `CCGATE_*_API_KEY` > `*_API_KEY` です。`auth` を設定している状態で解決に失敗しても env var には fallback しません。`kind=credential_unavailable` で fallthrough して問題が表に出るようにしています。
@@ -77,10 +77,7 @@ ccgate は helper の env に `CCGATE_API_KEY_RESOLUTION=1` を入れるので�
 
 `gcloud auth print-access-token`、`aws sso login`、社内 SSO 経由の key broker など、初回起動時にブラウザが開いて OAuth / SAML 認証 → 完了後 stdout に認証情報を出すタイプの helper も使えます。2 回目以降はローカルにキャッシュされた refresh token が使われ、サイレントに完了します。
 
-使い方は 2 通りあります。
-
-- **キャッシュを事前に温めておく** (普段使い向け推奨)。Claude Code / Codex CLI を起動する前にターミナルから helper を 1 回手動で実行し、認証キャッシュを作っておきます。以降の hook 起動はサイレントで速いので、`auth.timeout_ms` は既定値 (5000) のままで問題ありません。
-- **初回 hook 起動でブラウザを開く**。`auth.timeout_ms` をブラウザ往復が収まる値 (例: `60000`〜`120000`) に上げます。一定時間アイドル後の最初の Permission Request はブラウザ操作が完了するまでブロックしますが、それ以降の起動はキャッシュ経由で即座に返ります。
+既定の `auth.timeout_ms` (`30000`) は非対話的な helper の大半をカバーします。ブラウザでユーザーが同意画面を操作するタイプは `120000` 程度まで上げてください。一定時間アイドル後の最初の Permission Request がブラウザ操作の完了まで待つ形になりますが、`reason=timeout` で fallthrough しなくなります。
 
 ## 例
 
