@@ -683,8 +683,9 @@ func resolveAPIKey(ctx context.Context, p config.ProviderConfig, providerName, t
 				opts.Shell = config.AuthShellBash
 			}
 		case config.AuthTypeFile:
-			opts.Path = p.Auth.Path
-			if opts.Path == "" {
+			if p.Auth.Path != nil {
+				opts.Path = *p.Auth.Path
+			} else {
 				opts.Path = config.DefaultAuthPath(target)
 			}
 		}

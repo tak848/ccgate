@@ -144,8 +144,11 @@ type AuthConfig struct {
 	Shell string `json:"shell,omitempty"`
 	// Command is the shell command for type=exec.
 	Command string `json:"command,omitempty"`
-	// Path is the absolute or `~/`-prefixed file path for type=file.
-	Path string `json:"path,omitempty"`
+	// Path is the file path for type=file. nil means "field omitted":
+	// the runner falls back to config.DefaultAuthPath. An explicit
+	// empty string is rejected by validate (configs use omit, not
+	// empty, to ask for the default).
+	Path *string `json:"path,omitempty"`
 	// RefreshMarginMS is the early-refresh slack in milliseconds
 	// (default 60 000). >= 0; 0 disables the guard.
 	RefreshMarginMS *int `json:"refresh_margin_ms,omitempty"`
@@ -258,8 +261,9 @@ func Default() Config {
 	}
 }
 
-func intPtr(v int) *int       { return &v }
-func int64Ptr(v int64) *int64 { return &v }
+func intPtr(v int) *int          { return &v }
+func int64Ptr(v int64) *int64    { return &v }
+func stringPtr(v string) *string { return &v }
 
 // GetTimeoutMS returns the provider timeout in milliseconds.
 // nil defaults to DefaultTimeoutMS.

@@ -78,7 +78,7 @@ func validateAuthExec(a *AuthConfig) error {
 	if strings.TrimSpace(a.Command) == "" {
 		errs = append(errs, fmt.Errorf("provider.auth.command must not be empty when type=%q", AuthTypeExec))
 	}
-	if a.Path != "" {
+	if a.Path != nil {
 		errs = append(errs, fmt.Errorf("provider.auth.path is only allowed when type=%q", AuthTypeFile))
 	}
 	switch a.Shell {
@@ -99,10 +99,15 @@ func validateAuthExec(a *AuthConfig) error {
 
 func validateAuthFile(a *AuthConfig) error {
 	var errs []error
-	// Empty path is allowed: the runner falls back to
-	// config.DefaultAuthPath for the configured target / provider.
-	if a.Path != "" {
-		if err := validateAuthPath(a.Path); err != nil {
+	// Path is optional: nil = "omit, use the default per target".
+	// An explicit empty string is rejected so a config that
+	// produced "" via std.native('env') etc. surfaces as a config
+	// error instead of silently sharing the default with omitted
+	// configs.
+	if a.Path != nil {
+		if *a.Path == "" {
+			errs = append(errs, fmt.Errorf("provider.auth.path must not be an empty string; omit the field to use the default"))
+		} else if err := validateAuthPath(*a.Path); err != nil {
 			errs = append(errs, err)
 		}
 	}

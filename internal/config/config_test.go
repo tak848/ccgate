@@ -120,7 +120,7 @@ func TestValidateAuthFields(t *testing.T) {
 		// type=exec: command required, refresh_margin/timeout/cache_key optional.
 		"exec ok":                 {auth: &AuthConfig{Type: "exec", Command: "echo"}, wantErr: false},
 		"exec missing command":    {auth: &AuthConfig{Type: "exec"}, wantErr: true},
-		"exec with path":          {auth: &AuthConfig{Type: "exec", Command: "x", Path: "y"}, wantErr: true},
+		"exec with path":          {auth: &AuthConfig{Type: "exec", Command: "x", Path: stringPtr("y")}, wantErr: true},
 		"exec with cache_key":     {auth: &AuthConfig{Type: "exec", Command: "x", CacheKey: "prod"}, wantErr: false},
 		"exec with cache_key var": {auth: &AuthConfig{Type: "exec", Command: "x", CacheKey: "${AWS_PROFILE}"}, wantErr: false},
 
@@ -137,18 +137,19 @@ func TestValidateAuthFields(t *testing.T) {
 
 		// type=file: path required (absolute or ~/), command/timeout_ms/cache_key forbidden,
 		// refresh_margin_ms allowed (minimum-remaining-TTL guard).
-		"file abs":               {auth: &AuthConfig{Type: "file", Path: absKey}, wantErr: false},
-		"file home":              {auth: &AuthConfig{Type: "file", Path: "~/.ccgate/key"}, wantErr: false},
-		"file relative dot":      {auth: &AuthConfig{Type: "file", Path: "./key"}, wantErr: false},
-		"file relative bare":     {auth: &AuthConfig{Type: "file", Path: "key"}, wantErr: false},
+		"file abs":               {auth: &AuthConfig{Type: "file", Path: stringPtr(absKey)}, wantErr: false},
+		"file home":              {auth: &AuthConfig{Type: "file", Path: stringPtr("~/.ccgate/key")}, wantErr: false},
+		"file relative dot":      {auth: &AuthConfig{Type: "file", Path: stringPtr("./key")}, wantErr: false},
+		"file relative bare":     {auth: &AuthConfig{Type: "file", Path: stringPtr("key")}, wantErr: false},
 		"file path omitted":      {auth: &AuthConfig{Type: "file"}, wantErr: false},
-		"file bare ~":            {auth: &AuthConfig{Type: "file", Path: "~"}, wantErr: true},
-		"file bare ~/":           {auth: &AuthConfig{Type: "file", Path: "~/"}, wantErr: true},
-		"file with command":      {auth: &AuthConfig{Type: "file", Path: absKey, Command: "x"}, wantErr: true},
-		"file with timeout":      {auth: &AuthConfig{Type: "file", Path: absKey, TimeoutMS: intPtr(5000)}, wantErr: false},
-		"file with zero timeout": {auth: &AuthConfig{Type: "file", Path: absKey, TimeoutMS: intPtr(0)}, wantErr: true},
-		"file with cache_key":    {auth: &AuthConfig{Type: "file", Path: absKey, CacheKey: "x"}, wantErr: true},
-		"file refresh_margin":    {auth: &AuthConfig{Type: "file", Path: absKey, RefreshMarginMS: intPtr(60000)}, wantErr: false},
+		"file path empty string": {auth: &AuthConfig{Type: "file", Path: stringPtr("")}, wantErr: true},
+		"file bare ~":            {auth: &AuthConfig{Type: "file", Path: stringPtr("~")}, wantErr: true},
+		"file bare ~/":           {auth: &AuthConfig{Type: "file", Path: stringPtr("~/")}, wantErr: true},
+		"file with command":      {auth: &AuthConfig{Type: "file", Path: stringPtr(absKey), Command: "x"}, wantErr: true},
+		"file with timeout":      {auth: &AuthConfig{Type: "file", Path: stringPtr(absKey), TimeoutMS: intPtr(5000)}, wantErr: false},
+		"file with zero timeout": {auth: &AuthConfig{Type: "file", Path: stringPtr(absKey), TimeoutMS: intPtr(0)}, wantErr: true},
+		"file with cache_key":    {auth: &AuthConfig{Type: "file", Path: stringPtr(absKey), CacheKey: "x"}, wantErr: true},
+		"file refresh_margin":    {auth: &AuthConfig{Type: "file", Path: stringPtr(absKey), RefreshMarginMS: intPtr(60000)}, wantErr: false},
 
 		// Unknown type values are rejected — keeps the discriminator
 		// closed so editors and validate agree on what's accepted.

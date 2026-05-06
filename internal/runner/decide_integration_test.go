@@ -160,7 +160,7 @@ func buildTestConfig(t *testing.T, authType string) config.Config {
 		}
 		cfg.Provider.Auth = &config.AuthConfig{
 			Type: config.AuthTypeFile,
-			Path: path,
+			Path: &path,
 		}
 	}
 	return cfg
