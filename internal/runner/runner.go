@@ -30,7 +30,7 @@ import (
 	"time"
 
 	anthropicsdk "github.com/anthropics/anthropic-sdk-go"
-	openaisdk "github.com/openai/openai-go"
+	openaisdk "github.com/openai/openai-go/v3"
 
 	"github.com/tak848/ccgate/internal/config"
 	"github.com/tak848/ccgate/internal/gitutil"
