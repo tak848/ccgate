@@ -88,6 +88,23 @@
               "required": [
                 "type"
               ]
+            },
+            {
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "profile"
+                },
+                "profile": {
+                  "type": "string",
+                  "description": "Anthropic profile name (the value `ant auth login --profile \u003cname\u003e` writes to \u003cconfig_dir\u003e/credentials/\u003cname\u003e.json). Empty/omitted lets the SDK resolve $ANTHROPIC_PROFILE → active_config → \"default\". Anthropic provider only."
+                }
+              },
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "type"
+              ]
             }
           ],
           "title": "auth"

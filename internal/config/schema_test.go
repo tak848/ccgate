@@ -83,12 +83,13 @@ func TestProviderAuthOneOfShape(t *testing.T) {
 	}
 }
 
-// assertAuthOneOf checks that `provider.auth.oneOf` has exactly two
-// branches whose `type.const` values are "exec" and "file" (in any
-// order), each marked `additionalProperties: false`, with the
-// expected `required` field set. We do NOT pin every property
-// description here — those are allowed to differ between the
-// richer hand-edited root and the sparser generator output.
+// assertAuthOneOf checks that `provider.auth.oneOf` has exactly
+// three branches whose `type.const` values cover "exec", "file",
+// and "profile" (in any order), each marked
+// `additionalProperties: false`, with the expected `required`
+// field set. We do NOT pin every property description here —
+// those are allowed to differ between the richer hand-edited
+// root and the sparser generator output.
 func assertAuthOneOf(t *testing.T, path string) {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -116,8 +117,8 @@ func assertAuthOneOf(t *testing.T, path string) {
 	if err := json.Unmarshal(doc.Properties.Provider.Properties.Auth, &auth); err != nil {
 		t.Fatalf("%s: parse provider.auth: %v", path, err)
 	}
-	if len(auth.OneOf) != 2 {
-		t.Fatalf("%s: provider.auth.oneOf must have 2 branches, got %d", path, len(auth.OneOf))
+	if len(auth.OneOf) != 3 {
+		t.Fatalf("%s: provider.auth.oneOf must have 3 branches, got %d", path, len(auth.OneOf))
 	}
 
 	seen := map[string]bool{}
@@ -143,8 +144,10 @@ func assertAuthOneOf(t *testing.T, path string) {
 		if raw, ok := branch.Properties["type"]; ok {
 			_ = json.Unmarshal(raw, &typeProp)
 		}
-		if typeProp.Const != "exec" && typeProp.Const != "file" {
-			t.Fatalf("%s branch %d: type.const must be \"exec\" or \"file\", got %q", path, i, typeProp.Const)
+		switch typeProp.Const {
+		case "exec", "file", "profile":
+		default:
+			t.Fatalf("%s branch %d: type.const must be \"exec\", \"file\", or \"profile\", got %q", path, i, typeProp.Const)
 		}
 		if seen[typeProp.Const] {
 			t.Fatalf("%s: duplicate branch for type=%q", path, typeProp.Const)
@@ -167,8 +170,8 @@ func assertAuthOneOf(t *testing.T, path string) {
 				path, branch.Required)
 		}
 	}
-	if !seen["exec"] || !seen["file"] {
-		t.Fatalf("%s: provider.auth.oneOf must cover both exec and file, got %v", path, seen)
+	if !seen["exec"] || !seen["file"] || !seen["profile"] {
+		t.Fatalf("%s: provider.auth.oneOf must cover exec, file, and profile, got %v", path, seen)
 	}
 }
 

@@ -124,7 +124,7 @@ ccgate codex  metrics --days 7         # codex 側も同 shape
 
 `ft_kind` は LLM (またはランタイム) が fallthrough を返したときに埋まり、どの fallback path が発火したかを示します (`llm`, `api_unusable`, `no_apikey`, `credential_unavailable`, `unknown_provider`, `bypass`, `dontask`, `user_interaction`)。`forced=true` は `fallthrough_strategy` が LLM `fallthrough` を `decision` に promote したことを意味します。
 
-`credential_source` は `ft_kind=credential_unavailable` のときだけ埋まります。keystore のどの段階で credential 解決が起きた / 失敗したかを示し (現状は `exec` / `file` / `cache` / `lock`、`auth.type=exec` の helper exec 経路と表記を揃えています)、同じ `reason` を発生源別に集計するのに使えます。値の集合は open: 将来 OAuth refresh 経路や Windows ネイティブ backend が増えると新しい値が増えうるので、この field を parse する側は固定 enum で validation せず、未知の短い文字列を許容してください。
+`credential_source` は `ft_kind=credential_unavailable` のときだけ埋まります。credential 解決のどの段階で起きた / 失敗したかを示し、現状は `exec` / `file` / `cache` / `lock` (keystore 経由の `auth.type=exec` / `auth.type=file`) に加え `profile` (Anthropic 専用 `auth.type=profile`、解決は anthropic-sdk-go に委譲し keystore は通らない) を取ります。値の集合は open: 将来 Windows ネイティブ backend など新しい credential 経路が増えると値も増えうるので、この field を parse する側は固定 enum で validation せず、未知の短い文字列を許容してください。
 
 `reason` の意味は `ft_kind` で文脈が変わります:
 
@@ -139,7 +139,7 @@ ccgate codex  metrics --days 7         # codex 側も同 shape
 | `json_parse`            | helper / file の JSON が厳密 parse に失敗 / `key` 欠落                                                |
 | `invalid_expiration`    | JSON parse は成功したが `expires_at` が RFC3339 として解釈不能                                       |
 | `empty_output`          | plain 出力が trim 後に空                                                                             |
-| `invalid_plain_output`  | plain 出力に内部改行 (複数行は reject)                                                               |
+| `invalid_plain_output`  | plain 出力に内部改行 (複数行は拒否)                                                                  |
 | `expired`               | 読み取り時点で `expires_at` が過去、または残り TTL が `auth.refresh_margin_ms` 未満                  |
 | `file_missing`          | `auth.path` が存在しない                                                                             |
 | `file_read`             | ファイルはあるが読み取り失敗 (権限・FS エラー等)                                                     |
@@ -148,7 +148,8 @@ ccgate codex  metrics --days 7         # codex 側も同 shape
 | `lock_timeout`          | flock retry budget 切れ (peer が refresh 中)                                                         |
 | `lock_error`            | flock syscall が EWOULDBLOCK 以外で失敗 (lock 系が壊れている → helper exec はスキップ)               |
 | `cache_unavailable`     | cache dir を作成 / `chmod` できない。隣接 lock file も作れず concurrent helper の race を防げないため fail-fast (helper exec せずに fallthrough) |
-| `provider_auth`         | provider が **HTTP 401 または 403** で credential を拒否。`auth.type=exec` は cache を invalidate して次回 fire で helper 再実行、`auth.type=file` は内部 cache がないため fallthrough のみ、env var 経路は **意図的にこの経路に乗せず exit 1** (ccgate からは rotate できず、握り潰すと user 側の設定ミスを隠してしまうため) |
+| `provider_auth`         | provider が **HTTP 401 または 403** で credential を拒否。`auth.type=exec` は cache を invalidate して次回 hook 発火時に helper を再実行、`auth.type=file` は内部 cache がないため fallthrough のみ、`auth.type=profile` も fallthrough (SDK の refresh-token loop が credential を保有)、env var 経路は **意図的にこの経路に乗せず exit 1** (ccgate からは rotate できず、握り潰すと user 側の設定ミスを隠してしまうため) |
+| `profile_load`          | `auth.type=profile` で credential を SDK に渡す前に失敗 (profile config 不在 / parse error / profile 名不正、credentials file の preflight 失敗 = 不在 / 読めない)。slog の `error_class` で具体的な分類が得られる。詳細は [docs/ja/api-key-helper.md の障害時の復旧チェックリスト](api-key-helper.md#障害時の復旧チェックリスト) を参照 |
 
 `credential_unavailable` は単に「credential 解決に失敗した」だけでなく、「provider が credential を受け取った上で拒否した」(401 / 403) ケースも含みます。
 
@@ -164,7 +165,7 @@ cache 層の失敗は fallthrough せずに自動回復するので、`slog.Warn
 
 `ccgate <target> metrics` はデフォルトで 3 つのセクションを追加します:
 
-- **Top fallthrough commands**: LLM が判断に迷った頻度上位の操作。プロジェクトローカルで allow / deny ルールを追加すれば LLM 往復を skip できる候補
+- **Top fallthrough commands**: LLM が判断に迷った頻度上位の操作。プロジェクトローカルで allow / deny ルールを追加すれば LLM 往復を省略できる候補
 - **Top deny commands**: LLM が deny した頻度上位の操作。同じブロックされた操作を自動 job が繰り返してる場合、AI 側のプラン形を変えるべきサインであることが多い
 - **Credential failures**: `ft_kind=credential_unavailable` を `(source, reason)` で集計。tool input は意図的に無視 (credential 障害中は同じ source/reason が全 tool で出るため)。cache 層 warning はここには出ないので `ccgate.log` で確認
 

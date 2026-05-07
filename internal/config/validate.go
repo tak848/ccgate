@@ -21,6 +21,15 @@ func (c Config) Validate() error {
 	if err := validateAuth(c.Provider.Auth); err != nil {
 		errs = append(errs, err)
 	}
+	// type=profile delegates to anthropic-sdk-go's profile loader, so
+	// the abstraction only makes sense when the provider is anthropic.
+	// Catch the obvious user error (`provider.name = "openai" + auth.type
+	// = "profile"`) at config load time instead of at the first hook fire.
+	if c.Provider.Auth != nil && c.Provider.Auth.Type == AuthTypeProfile {
+		if strings.ToLower(strings.TrimSpace(c.Provider.Name)) != "anthropic" {
+			errs = append(errs, fmt.Errorf(`provider.auth.type=%q is only supported when provider.name="anthropic"`, AuthTypeProfile))
+		}
+	}
 	if c.LogMaxSize != nil && *c.LogMaxSize < 0 {
 		errs = append(errs, fmt.Errorf("log_max_size must not be negative, got %d", *c.LogMaxSize))
 	}
@@ -65,11 +74,13 @@ func validateAuth(a *AuthConfig) error {
 		return validateAuthExec(a)
 	case AuthTypeFile:
 		return validateAuthFile(a)
+	case AuthTypeProfile:
+		return validateAuthProfile(a)
 	case "":
-		return fmt.Errorf("provider.auth.type must be set to %q or %q", AuthTypeExec, AuthTypeFile)
+		return fmt.Errorf("provider.auth.type must be set to %q, %q, or %q", AuthTypeExec, AuthTypeFile, AuthTypeProfile)
 	default:
-		return fmt.Errorf("provider.auth.type %q is not supported (allowed: %q, %q)",
-			a.Type, AuthTypeExec, AuthTypeFile)
+		return fmt.Errorf("provider.auth.type %q is not supported (allowed: %q, %q, %q)",
+			a.Type, AuthTypeExec, AuthTypeFile, AuthTypeProfile)
 	}
 }
 
@@ -80,6 +91,9 @@ func validateAuthExec(a *AuthConfig) error {
 	}
 	if a.Path != nil {
 		errs = append(errs, fmt.Errorf("provider.auth.path is only allowed when type=%q", AuthTypeFile))
+	}
+	if a.Profile != "" {
+		errs = append(errs, fmt.Errorf("provider.auth.profile is only allowed when type=%q", AuthTypeProfile))
 	}
 	switch a.Shell {
 	case "", AuthShellBash, AuthShellPowerShell:
@@ -117,6 +131,9 @@ func validateAuthFile(a *AuthConfig) error {
 	if a.Shell != "" {
 		errs = append(errs, fmt.Errorf("provider.auth.shell is only allowed when type=%q", AuthTypeExec))
 	}
+	if a.Profile != "" {
+		errs = append(errs, fmt.Errorf("provider.auth.profile is only allowed when type=%q", AuthTypeProfile))
+	}
 	if a.TimeoutMS != nil && *a.TimeoutMS <= 0 {
 		errs = append(errs, fmt.Errorf("provider.auth.timeout_ms must be positive, got %d", *a.TimeoutMS))
 	}
@@ -141,4 +158,45 @@ func validateAuthPath(path string) error {
 		return fmt.Errorf("provider.auth.path must point at a file, got bare %q", v)
 	}
 	return nil
+}
+
+// validateAuthProfile enforces the rules for type=profile (Anthropic
+// only). The SDK's profile loader runs at hook fire time and
+// surfaces real semantic failures (missing config, invalid name,
+// missing credentials) as ErrProfileUnavailable -> fallthrough, so
+// ccgate-side validation only catches the obvious config-shape
+// mistakes:
+//
+//   - profile optional; whitespace-only is rejected (almost certainly
+//     a templating mistake). Character-set rules are delegated to
+//     anthropicconfig.LoadProfile's own validateProfileName so the
+//     two implementations cannot drift.
+//   - command / path / shell / refresh_margin_ms / timeout_ms /
+//     cache_key are all forbidden — the profile path delegates the
+//     credential lifecycle to the SDK, so none of them have anything
+//     to bound or salt on the ccgate side.
+func validateAuthProfile(a *AuthConfig) error {
+	var errs []error
+	if a.Profile != "" && strings.TrimSpace(a.Profile) == "" {
+		errs = append(errs, fmt.Errorf("provider.auth.profile must not be whitespace only"))
+	}
+	if a.Command != "" {
+		errs = append(errs, fmt.Errorf("provider.auth.command is only allowed when type=%q", AuthTypeExec))
+	}
+	if a.Path != nil {
+		errs = append(errs, fmt.Errorf("provider.auth.path is only allowed when type=%q", AuthTypeFile))
+	}
+	if a.Shell != "" {
+		errs = append(errs, fmt.Errorf("provider.auth.shell is only allowed when type=%q", AuthTypeExec))
+	}
+	if a.RefreshMarginMS != nil {
+		errs = append(errs, fmt.Errorf("provider.auth.refresh_margin_ms is not supported when type=%q (SDK manages refresh internally)", AuthTypeProfile))
+	}
+	if a.TimeoutMS != nil {
+		errs = append(errs, fmt.Errorf("provider.auth.timeout_ms is not supported when type=%q (SDK owns the credential lifecycle)", AuthTypeProfile))
+	}
+	if a.CacheKey != "" {
+		errs = append(errs, fmt.Errorf("provider.auth.cache_key is only allowed when type=%q", AuthTypeExec))
+	}
+	return errors.Join(errs...)
 }

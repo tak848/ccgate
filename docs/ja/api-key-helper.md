@@ -45,12 +45,13 @@ Linux / macOS / *BSD / Windows に対応します。helper コマンドを動か
 
 | 項目 | 型 | 既定値 | 説明 |
 |---|---|---|---|
-| `auth.type` | `"exec"` / `"file"` | (`auth` を書くなら必須) | 取得モード |
+| `auth.type` | `"exec"` / `"file"` / `"profile"` | (`auth` を書くなら必須) | 取得モード。`profile` は Anthropic 専用、[Profile ベース認証](#profile-ベース認証-anthropic-のみ) を参照 |
 | `auth.command` | string | `""` | (`exec` 専用、必須) シェルコマンド。stdout が認証情報 |
 | `auth.shell` | `"bash"` / `"powershell"` | `"bash"` | (`exec` 専用) `powershell` は `pwsh` を優先解決、無ければ `powershell` に fallback |
 | `auth.path` | string | `$XDG_STATE_HOME/ccgate/<target>/auth_key.json` | (`file` 専用) 認証情報ファイルのパス。省略でデフォルトを使用 |
-| `auth.refresh_margin_ms` | int (ms) | `60000` | `expires_at` の何 ms 前で期限切れ扱いにするか。`0` で無効 |
-| `auth.timeout_ms` | int (ms) | `30000` | Resolve 1 回の上限。`> 0` |
+| `auth.profile` | string | `""` | (`profile` 専用) Anthropic profile 名 (`ant auth login --profile <name>` が `<config_dir>/credentials/<name>.json` に書く値)。空 / 省略時は SDK が `$ANTHROPIC_PROFILE` → `<config_dir>/active_config` → `"default"` を解決 |
+| `auth.refresh_margin_ms` | int (ms) | `60000` | `expires_at` の何 ms 前で期限切れ扱いにするか。`0` で無効。(`exec` / `file` 専用 — `profile` は SDK が refresh を担当するので無視) |
+| `auth.timeout_ms` | int (ms) | `30000` | Resolve 1 回の上限。`> 0`。(`exec` / `file` 専用) |
 | `auth.cache_key` | string | `""` | (`exec` 専用) cache fingerprint に加える salt。[アカウント分離](#アカウント分離) 参照 |
 
 `auth.command` / `auth.path` の相対パスは hook 起動時のカレントディレクトリから解決します (設定ファイルのあるディレクトリではありません)。
@@ -83,6 +84,31 @@ ccgate は helper の env に `CCGATE_API_KEY_RESOLUTION=1` を入れるので�
 `gcloud auth print-access-token`、`aws sso login`、社内 SSO 経由の key broker など、初回起動時にブラウザが開いて OAuth / SAML 認証 → 完了後 stdout に認証情報を出すタイプの helper も使えます。2 回目以降はローカルにキャッシュされた refresh token が使われ、サイレントに完了します。
 
 既定の `auth.timeout_ms` (`30000`) は非対話的な helper の大半をカバーします。ブラウザでユーザーが同意画面を操作するタイプは `120000` 程度まで上げてください。一定時間アイドル後の最初の Permission Request がブラウザ操作の完了まで待つ形になりますが、`reason=timeout` で fallthrough しなくなります。
+
+## Profile ベース認証 (Anthropic のみ)
+
+Anthropic provider 専用です。公式 `ant` CLI (`ant auth login` でブラウザ OAuth、`ant profile activate <name>` で active profile を切り替え) が `<config_dir>/credentials/<name>.json` (mode 0600) に credentials を書き出します。`<config_dir>` の既定は `~/.config/anthropic`。Anthropic の profile 解決順 (`$ANTHROPIC_PROFILE` → `<config_dir>/active_config` → `"default"`) は Go SDK / Claude Code / Claude Agent SDK で **共有** されます ([wif-reference doc](https://platform.claude.com/docs/en/api/authentication/wif-reference))。access token の refresh は SDK 自身が行うため、ccgate は credential 経路には立ち入りません — ただし SDK の static-credential 用 env autoload (`ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN`) は無効化するので、残っている env var が、宣言した profile を silent に上書きすることはありません。Workload Identity Federation は `authentication.type=oidc_federation` を含む profile config 経由のみ対応 (env だけで WIF を構成する経路は本リリースの範囲外)。
+
+### Quick start
+
+```sh
+mise use -g aqua:anthropics/anthropic-cli   # または `aqua g -i anthropics/anthropic-cli`。binary は `ant`
+ant auth login --profile ccgate         # ブラウザが開き ~/.config/anthropic/credentials/ccgate.json を書き出す
+# ccgate.jsonnet に追記:
+#   provider: { ..., auth: { type: 'profile', profile: 'ccgate' } }
+# tail -f $XDG_STATE_HOME/ccgate/<target>/ccgate.log
+#   → 期待: rg 'credential source selected.*source=profile.*profile_name_set=true'
+```
+
+> [!IMPORTANT]
+> **`ant auth login` は profile 名に関わらず `<config_dir>/active_config` を書き換える** 仕様です。ant は `--profile <name>` 指定時はその `<name>` に、`--profile` 省略時は `default` に、`<config_dir>/active_config` を毎回書き換えます。Anthropic の profile 解決順は Claude Code / Claude Agent SDK と共有されるため、この書き換えで Claude Code の credential 経路が subscription から従量課金 API に移ることがあります。対応:
+>
+> - `default` 以外の名前 (例: `ccgate`) で profile を作成し、ccgate.jsonnet で明示宣言する。`ant auth login` を `--profile` 指定なしで実行すると `default` profile が作られて active profile を奪うので、それを避ける。
+> - `ant auth login` の後は active profile の参照先を戻す。2 つの選択肢:
+>   - `rm <config_dir>/active_config` で参照先を完全に消す (SDK は `default` 解決に戻る)
+>   - 普段使う profile があれば `ant profile activate <previous-profile-name>`
+> - 同じ profile を別 org / workspace に紐づけ直したい場合: ant は既に紐づいた profile への再 login を拒否するので、`<config_dir>/configs/<name>.json` を削除して `ant auth login --profile <name>` を再実行する。
+> - upstream の `--no-activate` flag (upstream PR [anthropics/anthropic-cli#45](https://github.com/anthropics/anthropic-cli/pull/45)) がマージされれば、`ant auth login --profile <name> --no-activate` で書き換え自体を回避できるようになる。
 
 ## 例
 
@@ -192,10 +218,10 @@ cache fingerprint には **カレントディレクトリもホスト名も含�
 
 provider が認証情報を拒否した場合、HTTP status のみで挙動が決まります。
 
-| HTTP status         | `auth.type=exec`                                  | `auth.type=file`                          | env var      |
-|---------------------|---------------------------------------------------|-------------------------------------------|--------------|
-| 401 / 403           | `provider_auth`、**キャッシュ削除して fallthrough** | `provider_auth`、fallthrough のみ (cache 無し) | **exit 1**   |
-| 5xx / 429 / network | exit 1 (従来通り)                                  | exit 1                                    | exit 1       |
+| HTTP status         | `auth.type=exec`                                  | `auth.type=file`                          | `auth.type=profile`                                                 | env var      |
+|---------------------|---------------------------------------------------|-------------------------------------------|---------------------------------------------------------------------|--------------|
+| 401 / 403           | `provider_auth`、**キャッシュ削除して fallthrough** | `provider_auth`、fallthrough のみ (cache 無し) | `provider_auth`、fallthrough (SDK の refresh-token loop が credential を保有、ccgate cache 無し) | **exit 1**   |
+| 5xx / 429 / network | exit 1 (従来通り)                                  | exit 1                                    | exit 1                                                              | exit 1       |
 
 env 経路で 401 / 403 を exit 1 にしているのは、ccgate 側で env を rotate する手段がないためです。黙って飲み込むとユーザー側の設定ミスを隠してしまいます。
 
@@ -216,5 +242,11 @@ env 経路で 401 / 403 を exit 1 にしているのは、ccgate 側で env を
 4. `expired` が出続ける場合は helper の `expires_at` と `date -u` を比較してください。helper 側の TTL ロジックや時計ズレが原因のことが多いです。
 5. 新しい環境で `command_exit` が出る場合は、まず `auth.shell` で指定したシェルが `$PATH` にあるかを確認してください。Linux / macOS の `bash` は標準で入ります。`powershell` は `pwsh` (優先) または `powershell` のどちらか一方が `$PATH` で解決できれば動きます。両方とも見つからない場合、`os/exec` の lookup エラーとして `command_exit` で現れます。
 6. キャッシュを削除しても `provider_auth` が繰り返される場合は、helper 自体が provider に拒否される認証情報を生成しています。ccgate と同じシェルで手動実行してください — `bash -c "$your_command"`、`auth.shell: 'powershell'` の場合は `pwsh -Command "$your_command"` / `powershell -Command "$your_command"`。SDK に渡された stdout を直接確認します。
+7. `profile_load` (`auth.type=profile`) の場合、slog の `error_class` で原因を絞れます:
+   - `profile_config_missing`: `ant auth login --profile <name>` で profile を作成。
+   - `profile_config_parse` / `profile_config_invalid`: `<config_dir>/configs/<name>.json` を mode `0644` に戻すか、削除して `ant auth login --profile <name>` で作り直す。
+   - `credentials_missing`: `ant auth login --profile <name>` で credentials を発行。
+   - `credentials_stat_failed`: credentials file または親 dir の `os.Stat` が "missing" 以外で失敗 (権限が典型)。`<config_dir>/credentials/` を mode 0700 に戻す。
+8. `ant auth login` の後は `ant auth status` で `<config_dir>/active_config` を確認してください。Claude Code が想定外の profile を使い始めたら `rm <config_dir>/active_config` で参照先を消すか、`ant profile activate <previous-profile>` で戻します。upstream PR [anthropics/anthropic-cli#45](https://github.com/anthropics/anthropic-cli/pull/45) (`--no-activate`) がマージされれば `ant auth login` が書き換えを回避できるようになります。
 
 reason の網羅は [configuration.md](configuration.md#credential_unavailable-の-reason-値) にあります。

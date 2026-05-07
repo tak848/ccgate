@@ -9,16 +9,19 @@ package runner
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	anthropicsdk "github.com/anthropics/anthropic-sdk-go"
 	openaisdk "github.com/openai/openai-go"
 
 	"github.com/tak848/ccgate/internal/config"
 	"github.com/tak848/ccgate/internal/llm"
+	"github.com/tak848/ccgate/internal/llm/anthropic"
 )
 
 // fakeProvider implements llm.Provider with a single canned error
@@ -101,7 +104,7 @@ func TestDecideProviderErrorMatrix(t *testing.T) {
 			ro := runtimeOptions{
 				targetName:  "claude",
 				cacheTarget: "claude",
-				providerFactory: func(_, _, _ string) llm.Provider {
+				providerFactory: func(_ string, _ config.ProviderConfig, _, _ string) llm.Provider {
 					return fake
 				},
 			}
@@ -135,6 +138,9 @@ func TestDecideProviderErrorMatrix(t *testing.T) {
 // fields are populated so resolveAPIKey can produce a credential
 // without spinning up a real helper; the env path leaves Auth nil
 // and relies on the test setting CCGATE_OPENAI_API_KEY itself.
+// type=profile flips the provider to anthropic (the only provider
+// that supports it) and lets the fake provider raise the desired
+// SDK error from Decide.
 func buildTestConfig(t *testing.T, authType string) config.Config {
 	t.Helper()
 	cfg := config.Default()
@@ -162,8 +168,80 @@ func buildTestConfig(t *testing.T, authType string) config.Config {
 			Type: config.AuthTypeFile,
 			Path: &path,
 		}
+	case "profile":
+		cfg.Provider.Name = "anthropic"
+		cfg.Provider.Auth = &config.AuthConfig{
+			Type:    config.AuthTypeProfile,
+			Profile: "ccgate",
+		}
 	}
 	return cfg
+}
+
+// TestDecideProfileFallthrough pins the routing for
+// auth.type=profile failures: anthropic.ErrProfileUnavailable becomes
+// reason=profile_load (NOT provider_auth — that path tries to
+// invalidate a keystore cache profile mode never populated), while
+// 401 / 403 over the wire still routes through the existing
+// provider_auth branch. Both end up labeled with credentialSource
+// "profile" so the metrics column stays uniform.
+func TestDecideProfileFallthrough(t *testing.T) {
+	cases := map[string]struct {
+		err            error
+		wantKind       string
+		wantReason     string
+		wantCredSource string
+	}{
+		"profile unavailable": {
+			err:            fmt.Errorf("%w: load profile", anthropic.ErrProfileUnavailable),
+			wantKind:       llm.FallthroughKindCredentialUnavailable,
+			wantReason:     "profile_load",
+			wantCredSource: "profile",
+		},
+		"profile 401 routes via provider_auth": {
+			err:            &anthropicsdk.Error{StatusCode: http.StatusUnauthorized},
+			wantKind:       llm.FallthroughKindCredentialUnavailable,
+			wantReason:     "provider_auth",
+			wantCredSource: "profile",
+		},
+		"profile 403 routes via provider_auth": {
+			err:            &anthropicsdk.Error{StatusCode: http.StatusForbidden},
+			wantKind:       llm.FallthroughKindCredentialUnavailable,
+			wantReason:     "provider_auth",
+			wantCredSource: "profile",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			cfg := buildTestConfig(t, "profile")
+			fake := &fakeProvider{err: tc.err}
+			ro := runtimeOptions{
+				targetName:  "claude",
+				cacheTarget: "claude",
+				providerFactory: func(_ string, _ config.ProviderConfig, _, _ string) llm.Provider {
+					return fake
+				},
+			}
+			_, _, kind, reason, source, _, runErr := decide(
+				context.Background(),
+				cfg,
+				HookInput{ToolName: "Bash", ToolInput: HookToolInput{Command: "echo hi"}},
+				ro,
+			)
+			if runErr != nil {
+				t.Fatalf("unexpected runErr: %v", runErr)
+			}
+			if kind != tc.wantKind {
+				t.Fatalf("kind = %q, want %q", kind, tc.wantKind)
+			}
+			if reason != tc.wantReason {
+				t.Fatalf("reason = %q, want %q", reason, tc.wantReason)
+			}
+			if source != tc.wantCredSource {
+				t.Fatalf("source = %q, want %q", source, tc.wantCredSource)
+			}
+		})
+	}
 }
 
 // TestDecideRedactsRawErrorBody guards the contract that
@@ -182,7 +260,7 @@ func TestDecideRedactsRawErrorBody(t *testing.T) {
 	ro := runtimeOptions{
 		targetName:  "claude",
 		cacheTarget: "claude",
-		providerFactory: func(_, _, _ string) llm.Provider {
+		providerFactory: func(_ string, _ config.ProviderConfig, _, _ string) llm.Provider {
 			return fake
 		},
 	}

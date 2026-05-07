@@ -156,11 +156,66 @@ func TestValidateAuthFields(t *testing.T) {
 		"unknown type":   {auth: &AuthConfig{Type: "wif"}, wantErr: true},
 		"empty type":     {auth: &AuthConfig{Type: ""}, wantErr: true},
 		"missing fields": {auth: &AuthConfig{Type: "exec"}, wantErr: true},
+
+		// type=profile (anthropic-only): name optional, the SDK runs the
+		// real validation at first hook fire and we surface its failures
+		// as fallthrough. The profile path delegates the credential
+		// lifecycle to the SDK, so timeout_ms / refresh_margin_ms /
+		// cache_key are all rejected (no ccgate-side I/O to bound).
+		"profile ok empty profile":        {auth: &AuthConfig{Type: "profile"}, wantErr: false},
+		"profile ok with profile":         {auth: &AuthConfig{Type: "profile", Profile: "ccgate"}, wantErr: false},
+		"profile profile whitespace only": {auth: &AuthConfig{Type: "profile", Profile: "   "}, wantErr: true},
+		"profile with command":            {auth: &AuthConfig{Type: "profile", Command: "x"}, wantErr: true},
+		"profile with path":               {auth: &AuthConfig{Type: "profile", Path: stringPtr(absKey)}, wantErr: true},
+		"profile with shell":              {auth: &AuthConfig{Type: "profile", Shell: AuthShellBash}, wantErr: true},
+		"profile with refresh_margin":     {auth: &AuthConfig{Type: "profile", RefreshMarginMS: intPtr(30000)}, wantErr: true},
+		"profile with timeout_ms":         {auth: &AuthConfig{Type: "profile", Profile: "ccgate", TimeoutMS: intPtr(60000)}, wantErr: true},
+		"profile with cache_key":          {auth: &AuthConfig{Type: "profile", CacheKey: "prod"}, wantErr: true},
+
+		// Cross-type guards: profile field is profile-only.
+		"exec with profile": {auth: &AuthConfig{Type: "exec", Command: "x", Profile: "ccgate"}, wantErr: true},
+		"file with profile": {auth: &AuthConfig{Type: "file", Path: stringPtr(absKey), Profile: "ccgate"}, wantErr: true},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			err := base(tc.auth).Validate()
+			if tc.wantErr && err == nil {
+				t.Fatal("expected validation error, got nil")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("unexpected validation error: %v", err)
+			}
+		})
+	}
+}
+
+// TestProfileAuthCrossFieldProvider pins that auth.type=profile is
+// rejected on non-anthropic providers. The check lives at the
+// Config.Validate level (not in validateAuthProfile) because the
+// rejection criterion combines two separate fields.
+func TestProfileAuthCrossFieldProvider(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		providerName string
+		wantErr      bool
+	}{
+		"anthropic ok":        {providerName: "anthropic", wantErr: false},
+		"anthropic case-fold": {providerName: "Anthropic", wantErr: false},
+		"openai rejected":     {providerName: "openai", wantErr: true},
+		"gemini rejected":     {providerName: "gemini", wantErr: true},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			cfg := Config{Provider: ProviderConfig{
+				Name:      tc.providerName,
+				Model:     "m",
+				TimeoutMS: intPtr(1000),
+				Auth:      &AuthConfig{Type: "profile", Profile: "ccgate"},
+			}}
+			err := cfg.Validate()
 			if tc.wantErr && err == nil {
 				t.Fatal("expected validation error, got nil")
 			}

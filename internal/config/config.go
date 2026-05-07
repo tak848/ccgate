@@ -42,9 +42,14 @@ const (
 	// (e.g. 120 000) if your helper takes longer.
 	DefaultAuthTimeoutMS = 30_000
 
-	// AuthTypeExec / AuthTypeFile are the AuthConfig.Type values.
-	AuthTypeExec = "exec"
-	AuthTypeFile = "file"
+	// AuthTypeExec / AuthTypeFile / AuthTypeProfile are the
+	// AuthConfig.Type values. AuthTypeProfile is anthropic-only and
+	// delegates credential resolution to the Anthropic SDK's profile
+	// loader (`ant auth login` produces the credentials on disk and
+	// the SDK refreshes the access token in-process).
+	AuthTypeExec    = "exec"
+	AuthTypeFile    = "file"
+	AuthTypeProfile = "profile"
 
 	// AuthShellBash / AuthShellPowerShell are the accepted
 	// AuthConfig.Shell values, mirroring the Claude Code hook
@@ -137,7 +142,7 @@ type ProviderConfig struct {
 // on the wrong branch. See docs/api-key-helper.md for the full
 // reference (output formats, caching rules, examples).
 type AuthConfig struct {
-	// Type discriminates: AuthTypeExec or AuthTypeFile.
+	// Type discriminates: AuthTypeExec, AuthTypeFile, or AuthTypeProfile.
 	Type string `json:"type"`
 	// Shell selects bash (default) or powershell for type=exec; see
 	// keystore.shellInvocation for the launch details.
@@ -147,11 +152,20 @@ type AuthConfig struct {
 	// Path is the file path for type=file. nil = use the per-target
 	// default; an empty pointer is rejected.
 	Path *string `json:"path,omitempty"`
+	// Profile is the Anthropic profile name for type=profile. Empty
+	// (omitted) lets the SDK resolve $ANTHROPIC_PROFILE → active_config
+	// → "default". Named after the field's job (the profile to load),
+	// not as a generic "name" — the latter reads ambiguously next to
+	// the type=exec / type=file branches that name their value fields
+	// after the value itself (`command`, `path`).
+	Profile string `json:"profile,omitempty"`
 	// RefreshMarginMS is the early-refresh slack in milliseconds
 	// (default 60 000). >= 0; 0 disables the guard.
 	RefreshMarginMS *int `json:"refresh_margin_ms,omitempty"`
 	// TimeoutMS bounds one Resolve call: lock + helper exec for
 	// type=exec, file read for type=file (default 30 000). > 0.
+	// type=profile delegates the credential lifecycle to the SDK so
+	// the field is rejected there (no ccgate-side I/O to bound).
 	TimeoutMS *int `json:"timeout_ms,omitempty"`
 	// CacheKey is a secret-free salt for the cache fingerprint
 	// (type=exec only). Used as-is; pull env values via jsonnet
@@ -194,10 +208,11 @@ func (a AuthConfig) GetTimeout() time.Duration {
 
 // JSONSchema implements jsonschema.customSchemaImpl so the generated
 // schemas/{claude,codex}.schema.json present `provider.auth` as a
-// `oneOf` over the `type=exec` and `type=file` branches, mirroring
-// the validate() rules (required field per type, additionalProperties
-// false). Editor users get the same mutual-exclusion feedback that
-// runtime validate would give them at hook fire time.
+// `oneOf` over the type=exec, type=file, and type=profile branches,
+// mirroring the validate() rules (required field per type,
+// additionalProperties false). Editor users get the same
+// mutual-exclusion feedback that runtime validate would give them at
+// hook fire time.
 func (AuthConfig) JSONSchema() *jsonschema.Schema {
 	return &jsonschema.Schema{
 		Title:       "auth",
@@ -205,6 +220,7 @@ func (AuthConfig) JSONSchema() *jsonschema.Schema {
 		OneOf: []*jsonschema.Schema{
 			authExecBranchSchema(),
 			authFileBranchSchema(),
+			authProfileBranchSchema(),
 		},
 	}
 }
@@ -231,6 +247,18 @@ func authFileBranchSchema() *jsonschema.Schema {
 	props.Set("path", &jsonschema.Schema{Type: "string", MinLength: ptr(uint64(1)), Description: "Path to the credential file. Absolute, ~/-prefixed, or relative (relative paths resolve from the hook's working directory at fire time, not the config file's directory). Omit the field to use the default $XDG_STATE_HOME/ccgate/<target>/auth_key.json; do not set it to an empty string."})
 	props.Set("refresh_margin_ms", &jsonschema.Schema{Type: "integer", Minimum: json.Number("0"), Description: "Minimum remaining TTL guard for file output, in milliseconds. Default: 60000."})
 	props.Set("timeout_ms", &jsonschema.Schema{Type: "integer", Minimum: json.Number("1"), Description: "Hard cap on the file read so a stalled mount surfaces as reason=timeout. Default: 30000."})
+	return &jsonschema.Schema{
+		Type:                 "object",
+		Required:             []string{"type"},
+		Properties:           props,
+		AdditionalProperties: jsonschema.FalseSchema,
+	}
+}
+
+func authProfileBranchSchema() *jsonschema.Schema {
+	props := orderedmap.New[string, *jsonschema.Schema]()
+	props.Set("type", &jsonschema.Schema{Type: "string", Const: AuthTypeProfile})
+	props.Set("profile", &jsonschema.Schema{Type: "string", Description: "Anthropic profile name (the value `ant auth login --profile <name>` writes to <config_dir>/credentials/<name>.json). Empty/omitted lets the SDK resolve $ANTHROPIC_PROFILE → active_config → \"default\". Anthropic provider only."})
 	return &jsonschema.Schema{
 		Type:                 "object",
 		Required:             []string{"type"},

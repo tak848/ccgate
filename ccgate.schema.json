@@ -83,6 +83,21 @@
                   "description": "Hard cap on the file read so a stalled mount surfaces as reason=timeout, in milliseconds. `> 0`; default 30000."
                 }
               }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type"],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "profile"
+                },
+                "profile": {
+                  "type": "string",
+                  "description": "Anthropic profile name (the value `ant auth login --profile <name>` writes to `<config_dir>/credentials/<name>.json`). Empty / omitted lets the SDK resolve `$ANTHROPIC_PROFILE` → `active_config` → `\"default\"`. Anthropic provider only. The Anthropic SDK refreshes the access token on its own using the stored refresh token; ccgate stays out of the credential lifecycle entirely. Run `ant auth login --profile <name>` once to publish credentials, then declare the profile here."
+                }
+              }
             }
           ]
         },

@@ -111,7 +111,7 @@ ccgate は埋込 Codex defaults (`internal/cmd/codex/defaults.jsonnet`) を持�
 - `deny`: remote content の pipe-to-shell、one-shot remote package execution (`npx` / `pnpx` / `bunx` で unfamiliar package)、`sudo`、workspace 外への `rm -rf` / `mv` / `apply_patch` hunks、protected branch への破壊的 git、無制限 network out (`nc` / `ssh` / `scp` / `ftp` の非 allowlist 先)、destructive side effect を advertise する MCP tool で per-rule allow なし
 - `environment`: heterogeneous tool surface、trusted-repo 境界、path scope ルール、**ccgate は upstream prompt の代替** -- 真に曖昧なときだけ fallthrough、それ以外は allow / deny を返す、`recent_transcript` は不在
 
-workspace 内 `apply_patch` は意図的に `allow` に**含めています**: Claude Code の Edit/Write が ccgate を通る際と同じ bar で、ユーザーが ccgate を入れた目的はまさに repo 内編集の prompt を skip することだからです。workspace 外への apply_patch hunk は既存の deny rule でブロックされます。より保守的にしたい場合は、project-local rule で apply_patch の allow scope を狭めてください (specific subtree のみ等)。
+workspace 内 `apply_patch` は意図的に `allow` に**含めています**: Claude Code の Edit/Write が ccgate を通る際と同じ bar で、ユーザーが ccgate を入れた目的はまさに repo 内編集の prompt を省略することだからです。workspace 外への apply_patch hunk は既存の deny rule でブロックされます。より保守的にしたい場合は、project-local rule で apply_patch の allow scope を狭めてください (specific subtree のみ等)。
 
 ## Claude Code との挙動差分
 

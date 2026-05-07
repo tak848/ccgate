@@ -24,6 +24,7 @@
     //   by auth.type:
     //     auth: { type: 'exec', command: '/usr/local/bin/my-broker --provider anthropic' }
     //     auth: { type: 'file', path: '~/.config/my-broker/anthropic.json' }
+    //     auth: { type: 'profile', profile: 'ccgate' }                           // anthropic-only; reads `ant auth login --profile ccgate` credentials, SDK refreshes
     //   The provider block is replaced atomically across config layers,
     //   so a project-local config that restates `provider` must repeat
     //   the auth block. See docs/api-key-helper.md for the full helper
