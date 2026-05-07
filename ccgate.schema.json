@@ -83,6 +83,30 @@
                   "description": "Hard cap on the file read so a stalled mount surfaces as reason=timeout, in milliseconds. `> 0`; default 30000."
                 }
               }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type"],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "profile"
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Anthropic profile name. Empty / omitted lets the SDK resolve `$ANTHROPIC_PROFILE` → `active_config` → `\"default\"`. Required when `auto_login=true` so the bootstrap never silently writes a `default` profile that may collide with Claude Code's subscription credentials. Anthropic provider only."
+                },
+                "auto_login": {
+                  "type": "boolean",
+                  "description": "[Beta] When true, ccgate spawns `ant auth login --profile <name>` if the credentials file is missing at preflight. Requires a non-empty `name` and ant CLI v1.5.0+ on PATH. ant rewrites `<config_dir>/active_config` as a side effect of `--profile`; ccgate does not mitigate this in the current release (upstream `--no-activate` flag PR pending). See docs/api-key-helper.md."
+                },
+                "timeout_ms": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Hard cap (ms) on the ant auto-login subprocess. Passed to ant via `--timeout`; ccgate's CommandContext kill cap = `timeout_ms + 30000`. Default: 360000 (6 min). Ignored when `auto_login=false`."
+                }
+              }
             }
           ]
         },
