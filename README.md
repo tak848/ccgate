@@ -252,7 +252,7 @@ Project-local configs are loaded only when **not tracked by Git**.
 | `provider.name`          | string                            | `"anthropic"`                                                                 | Provider name. One of `"anthropic"`, `"openai"`, `"gemini"`.                                            |
 | `provider.model`         | string                            | `"claude-haiku-4-5"`                                                          | Model name. Examples: `claude-haiku-4-5` / `claude-sonnet-4-6` (anthropic), `gpt-5.4-nano-2026-03-17` (openai), `gemini-3-flash-preview` (gemini). When routing through a compatible proxy, use whatever model name the proxy exposes (e.g. `anthropic/claude-haiku-4-5`). |
 | `provider.base_url`      | string                            | `""`                                                                          | Override the provider's API base URL. Empty = use the SDK default. Use this to route through an OpenAI- / Anthropic-compatible proxy (LiteLLM proxy, Azure OpenAI, on-prem gateway, regional endpoint, ...). |
-| `provider.auth`          | object (`{type, ...}`)            | (omit = env var)                                                              | Discriminated union for short-lived / rotating credentials. `type=exec` (run a shell command), `type=file` (read a rotator-managed file). See [docs/api-key-helper.md](docs/api-key-helper.md) for full reference. |
+| `provider.auth`          | object (`{type, ...}`)            | (omit = env var)                                                              | Discriminated union for short-lived / rotating credentials. `type=exec` (run a shell command), `type=file` (read a rotator-managed file), `type=profile` (Anthropic-only, reads `ant auth login` credentials; `auto_login: true` is **Beta** and spawns `ant auth login` on credentials-missing). See [docs/api-key-helper.md](docs/api-key-helper.md) for full reference. |
 | `provider.timeout_ms`    | int                               | `20000`                                                                       | API timeout (ms). `0` = no timeout.                                                                    |
 | `log_path`               | string                            | `$XDG_STATE_HOME/ccgate/<target>/ccgate.log`                                  | Log file path. Supports `~` for home directory.                                                        |
 | `log_disabled`           | bool                              | `false`                                                                       | Disable logging entirely                                                                               |
@@ -329,7 +329,7 @@ Export the proxy's API key as `CCGATE_ANTHROPIC_API_KEY`. The Anthropic SDK appe
 
 ### Short-lived / rotating API keys
 
-When the credential rotates faster than a static env var can keep up (AWS STS, Vertex ADC, OpenAI-compatible gateways with virtual keys, internal key brokers), use `provider.auth`. It's a discriminated union over two shapes — pick the one that matches your setup:
+When the credential rotates faster than a static env var can keep up (AWS STS, Vertex ADC, OpenAI-compatible gateways with virtual keys, internal key brokers), use `provider.auth`. It's a discriminated union over three shapes — pick the one that matches your setup:
 
 ```jsonnet
 // Run a shell helper to mint a credential on demand
@@ -356,6 +356,21 @@ When the credential rotates faster than a static env var can keep up (AWS STS, V
     },
   },
 }
+
+// Or read credentials from an `ant auth login` profile (Anthropic only;
+// the SDK refreshes the access token on its own, ccgate stays out of the
+// credential path entirely)
+{
+  provider: {
+    name: 'anthropic',
+    model: 'claude-haiku-4-5',
+    auth: {
+      type: 'profile',
+      name: 'ccgate',          // matches `ant auth login --profile ccgate`
+      // auto_login: true,     // [Beta] spawns `ant auth login` on miss; requires ant v1.5.0+
+    },
+  },
+}
 ```
 
 The helper / file content is one of:
@@ -363,11 +378,13 @@ The helper / file content is one of:
 - **JSON** `{"key":"sk-...","expires_at":"<RFC3339>"}` — for `auth.type=exec`, memoized in `$XDG_CACHE_HOME/ccgate/<target>/` and refreshed early.
 - **Plain string** — a single non-empty line, not cached.
 
+`auth.type=profile` is different: ccgate hands the loaded profile to anthropic-sdk-go via `option.WithConfig`, and the SDK's refresh-token loop owns the credential lifecycle. ccgate also calls `option.WithoutEnvironmentDefaults` so a leftover `ANTHROPIC_API_KEY` cannot silently shadow your declared profile. After any `ant auth login` (auto-login or manual) check `ant auth status` — `ant` rewrites `<config_dir>/active_config` (shared with Claude Code) as a side effect of `--profile`; upstream PR [anthropics/anthropic-cli#45](https://github.com/anthropics/anthropic-cli/pull/45) adds a `--no-activate` flag to drop that side effect.
+
 Resolution order: `provider.auth` (when configured) > `CCGATE_*_API_KEY` > `*_API_KEY`. When `auth` is configured ccgate **does not silently fall back to env vars on failure** — the hook falls through with `kind=credential_unavailable` instead.
 
 ccgate also registers `std.native('env')(name)` (returns empty string for undefined) and `std.native('must_env')(name)` (raises a config-load error) as Jsonnet helpers, so any string field can pull values from the environment without ccgate-specific syntax.
 
-See [docs/api-key-helper.md](docs/api-key-helper.md) for the full helper contract, runnable examples, account-aware caching via `auth.cache_key`, browser-based first-run auth, the 401/403 behaviour matrix, and the operational recovery checklist.
+See [docs/api-key-helper.md](docs/api-key-helper.md) for the full helper contract, runnable examples, account-aware caching via `auth.cache_key`, browser-based first-run auth, the profile auto-login Beta + `active_config` caveat, the 401/403 behaviour matrix, and the operational recovery checklist.
 ## Default Rules
 
 ccgate ships built-in default rules per target. They are always applied as the base; your global / project-local configs layer on top.

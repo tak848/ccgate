@@ -250,7 +250,7 @@ Claude Code と同じ環境変数を使います — [provider table](#3-api-キ
 | `provider.name`          | string                            | `"anthropic"`                                                                   | プロバイダー名。`"anthropic"` / `"openai"` / `"gemini"` のいずれか                                          |
 | `provider.model`         | string                            | `"claude-haiku-4-5"`                                                            | モデル名。例: `claude-haiku-4-5` / `claude-sonnet-4-6` (anthropic)、`gpt-5.4-nano-2026-03-17` (openai)、`gemini-3-flash-preview` (gemini)。互換 proxy 経由なら proxy が公開している任意の名前 (例: `anthropic/claude-haiku-4-5`) |
 | `provider.base_url`      | string                            | `""`                                                                            | API base URL の上書き。空文字列 (default) で SDK の既定 endpoint を使用。OpenAI 互換 / Anthropic 互換 proxy (LiteLLM proxy, Azure OpenAI, オンプレ gateway, 地域別 endpoint 等) 経由で叩きたい時に指定 |
-| `provider.auth`          | object (`{type, ...}`)            | (省略時は env var)                                                              | 短命 / ローテーションする認証情報を扱う discriminated union。`type=exec` (helper コマンド) / `type=file` (rotator が更新するファイル)。詳細は [api-key-helper.md](api-key-helper.md) |
+| `provider.auth`          | object (`{type, ...}`)            | (省略時は env var)                                                              | 短命 / ローテーションする認証情報を扱う discriminated union。`type=exec` (helper コマンド) / `type=file` (rotator が更新するファイル) / `type=profile` (Anthropic 専用、`ant auth login` の credentials を読む。`auto_login: true` は **Beta**、credentials 不在時に `ant auth login` を起動)。詳細は [api-key-helper.md](api-key-helper.md) |
 | `provider.timeout_ms`    | int                               | `20000`                                                                         | API タイムアウト (ms)。`0` = タイムアウトなし                                                              |
 | `log_path`               | string                            | `$XDG_STATE_HOME/ccgate/<target>/ccgate.log`                                    | ログファイルパス。`~` でホームディレクトリ展開                                                             |
 | `log_disabled`           | bool                              | `false`                                                                         | ログ出力を完全に無効化                                                                                     |
@@ -327,7 +327,7 @@ proxy の API キーを `CCGATE_ANTHROPIC_API_KEY` で export。Anthropic SDK �
 
 ### 期限付き・自動更新される API キー
 
-認証情報が静的な環境変数では追従できない頻度で更新される (AWS STS / Vertex ADC / OpenAI 互換 gateway の virtual key / 社内 key broker など) 場合は `provider.auth` を使います。2 つの形式の discriminated union — 用途に合う方を選びます。
+認証情報が静的な環境変数では追従できない頻度で更新される (AWS STS / Vertex ADC / OpenAI 互換 gateway の virtual key / 社内 key broker など) 場合は `provider.auth` を使います。3 つの形式の discriminated union — 用途に合う方を選びます。
 
 ```jsonnet
 // helper コマンドを実行して認証情報を取得
@@ -354,6 +354,21 @@ proxy の API キーを `CCGATE_ANTHROPIC_API_KEY` で export。Anthropic SDK �
     },
   },
 }
+
+// `ant auth login` の profile から認証情報を読む (Anthropic 専用)
+// access token の refresh は SDK 自身が行うので ccgate は credential 経路に
+// 一切介入しない
+{
+  provider: {
+    name: 'anthropic',
+    model: 'claude-haiku-4-5',
+    auth: {
+      type: 'profile',
+      name: 'ccgate',          // `ant auth login --profile ccgate` と一致
+      // auto_login: true,     // [Beta] credentials 不在時に `ant auth login` を起動。ant v1.5.0+ 必須
+    },
+  },
+}
 ```
 
 helper / file の中身は次のいずれかを書きます。
@@ -361,11 +376,13 @@ helper / file の中身は次のいずれかを書きます。
 - **JSON** `{"key":"sk-...","expires_at":"<RFC3339>"}` — `auth.type=exec` の場合 `$XDG_CACHE_HOME/ccgate/<target>/` にキャッシュされ、期限前に更新されます
 - **plain string** — 単一行の非空文字列。キャッシュなし
 
+`auth.type=profile` は別経路です: ccgate は読み込んだ profile を `option.WithConfig` で anthropic-sdk-go に渡し、SDK の refresh-token loop が credential ライフサイクルを保有します。さらに `option.WithoutEnvironmentDefaults` を付けるので、残骸の `ANTHROPIC_API_KEY` が宣言した profile を silent に shadow しません。`ant auth login` (auto-login / 手動どちらでも) の後は `ant auth status` を確認してください — `ant` は `--profile` の副作用として `<config_dir>/active_config` (Claude Code 共有) を書き換えます。upstream PR [anthropics/anthropic-cli#45](https://github.com/anthropics/anthropic-cli/pull/45) (`--no-activate` flag) が merge されればその副作用が消えます。
+
 解決順序: `provider.auth` (設定済み) > `CCGATE_*_API_KEY` > `*_API_KEY`。`auth` を設定済みのときに失敗しても **env var に黙って fallback はしません**。代わりに `kind=credential_unavailable` で fallthrough します。
 
 ccgate は jsonnet helper として `std.native('env')(name)` (未定義は空文字) と `std.native('must_env')(name)` (未定義は config-load エラー) を register しているので、任意の文字列フィールドから ccgate 独自記法を使わずに env を読めます。
 
-helper の完全な仕様 (動かせる例 / `auth.cache_key` によるアカウント別キャッシュ / 初回ブラウザ認証 / 401/403 の挙動マトリクス / 障害復旧チェックリスト) は [api-key-helper.md](api-key-helper.md) を参照してください。
+helper の完全な仕様 (動かせる例 / `auth.cache_key` によるアカウント別キャッシュ / 初回ブラウザ認証 / profile auto-login Beta + `active_config` の注意 / 401/403 の挙動マトリクス / 障害復旧チェックリスト) は [api-key-helper.md](api-key-helper.md) を参照してください。
 ## デフォルトルール
 
 ccgate は target ごとに組み込みのデフォルトルールを持っています。常にベースとして適用され、その上にグローバル / プロジェクトローカル設定が重なります。

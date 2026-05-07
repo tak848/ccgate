@@ -13,6 +13,9 @@
     name: 'anthropic',
     model: 'claude-haiku-4-5',
     timeout_ms: 40000,
+    // Profile auth (Anthropic only): see docs/api-key-helper.md.
+    // auth: { type: 'profile', name: 'ccgate' },                              // reads `ant auth login` credentials, SDK refreshes
+    // auth: { type: 'profile', name: 'ccgate', auto_login: true },            // [Beta] requires ant v1.5.0+ on PATH
   },
 
   // What to do when the LLM is uncertain (returns "fallthrough"):
