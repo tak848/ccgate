@@ -101,7 +101,11 @@ ant auth login --profile ccgate         # opens a browser, writes ~/.config/anth
 #   → expect: rg 'credential source selected.*source=profile.*profile_name_set=true'
 ```
 
-> **⚠ Recommended — non-default profile name on Claude Max / Pro**: `ant auth login` without `--profile` creates a `default` profile and points `<config_dir>/active_config` at it. Because Anthropic profile resolution is shared with Claude Code, reusing `default` for ccgate can route Claude Code's credential lookup through the same OAuth profile and shift it from your subscription onto pay-as-you-go API billing. Use a non-default profile name (e.g. `ccgate`) and declare it explicitly in ccgate.jsonnet.
+> [!IMPORTANT]
+> **`ant auth login` retargets `<config_dir>/active_config` regardless of profile name.** ant rewrites the active pointer to whatever `--profile <name>` you pass (or to `default` when `--profile` is omitted) on every login. Because Anthropic profile resolution is shared with Claude Code and the Claude Agent SDK, that retarget can shift Claude Code from your subscription onto pay-as-you-go API billing if it follows the active pointer. So:
+>
+> - Use a non-default profile name (e.g. `ccgate`) and declare it explicitly in ccgate.jsonnet, so a stray `ant auth login` (no `--profile`) creating `default` does not silently take over.
+> - After every `ant auth login` (yours or ccgate's auto-login), run `ant auth status` and, if needed, `ant profile activate <claude-profile>` to put Claude Code's profile back as active. The non-default name choice does not avoid the retarget; it only makes the bad state easier to recover from.
 
 ### Auto-login bootstrap (opt-in, **Beta**)
 
@@ -119,7 +123,8 @@ ant --version    # confirm v1.5.0+
 
 `auto_login: true` requires a non-empty `name`; ccgate validates this so the bootstrap never silently writes a `default` profile. `auth.timeout_ms` (default `360000` ms = 6 min) becomes the value passed to `ant --timeout`, and ccgate's CommandContext kill cap is that value + 30 s. Per-profile flock (target-agnostic; under `$XDG_STATE_HOME/ccgate/auto_login.<sha>.lock`) keeps two concurrent hook fires from racing the same browser callback. When ant is missing or fails, ccgate falls through with `kind=credential_unavailable, reason=profile_load`; `error_class` in the slog warning narrows the cause.
 
-> **🚧 Beta — `active_config` side effect not mitigated**: `ant auth login --profile <name>` rewrites `<config_dir>/active_config` to `<name>` unconditionally, and `<config_dir>/active_config` is shared with Claude Code and the Claude Agent SDK. ccgate **does not** save / restore `active_config` in this release; mitigating the race in ccgate would itself be racy. The proper fix is upstream PR [anthropics/anthropic-cli#45](https://github.com/anthropics/anthropic-cli/pull/45) (`--no-activate` flag); once that lands, a follow-up ccgate PR will pass the new flag and drop this warning. After auto-login (or a manual `ant auth login`) always run `ant auth status` to confirm the active profile and, if needed, `ant profile activate <claude-profile>` to point Claude Code back. Also: `ant` is invoked via `PATH` lookup, so the binary your `PATH` resolves to must be the trusted upstream `ant` — declaring `auth.auto_login` opts you into trusting that lookup.
+> [!WARNING]
+> **`auto_login` is Beta. ccgate does not mitigate the `active_config` side effect.** `ant auth login --profile <name>` rewrites `<config_dir>/active_config` to `<name>` unconditionally — see the IMPORTANT callout above; a non-default profile name does not change this. `<config_dir>/active_config` is shared with Claude Code and the Claude Agent SDK. ccgate **does not** save / restore `active_config` in this release; mitigating the race in ccgate would itself be racy. The proper fix is upstream PR [anthropics/anthropic-cli#45](https://github.com/anthropics/anthropic-cli/pull/45) (`--no-activate` flag); once that lands, a follow-up ccgate PR will pass the new flag and drop this warning. Until then, treat every auto-login fire the same way as a manual `ant auth login`: confirm `<config_dir>/active_config` with `ant auth status` and reset Claude Code's active profile with `ant profile activate <claude-profile>` if needed. Also: `ant` is invoked via `PATH` lookup, so the binary your `PATH` resolves to must be the trusted upstream `ant` — declaring `auth.auto_login` opts you into trusting that lookup.
 
 ### Migrating from env-var auth
 

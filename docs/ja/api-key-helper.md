@@ -101,7 +101,11 @@ ant auth login --profile ccgate         # ブラウザが開き ~/.config/anthro
 #   → 期待: rg 'credential source selected.*source=profile.*profile_name_set=true'
 ```
 
-> **⚠ 推奨 — Claude Max / Pro 利用時は default 以外の profile 名を使う**: `ant auth login` を `--profile` 指定なしで実行すると `default` profile が作られ、`<config_dir>/active_config` が `default` を指します。Anthropic profile resolution は Claude Code と共有されるため、ccgate のために `default` を流用すると Claude Code 側の credential 解決も同じ OAuth profile を経由してしまい、subscription から従量課金 API への切り替わりが起こり得ます。`ccgate` のような non-default 名を使い、ccgate.jsonnet に明示宣言してください。
+> [!IMPORTANT]
+> **`ant auth login` は profile 名に関わらず `<config_dir>/active_config` を書き換える** 仕様です。ant は `--profile <name>` 指定時はその `<name>` に、`--profile` 省略時は `default` に、`<config_dir>/active_config` を毎回書き換えます。Anthropic profile resolution は Claude Code / Claude Agent SDK と共有されるため、この retarget で Claude Code の credential 経路が subscription から従量課金 API に移ることがあります。対応:
+>
+> - default 以外の名前 (例: `ccgate`) で profile を作成し、ccgate.jsonnet で明示宣言する。`ant auth login` を `--profile` 指定なしで実行すると `default` profile が作られて active を奪うので、それを避ける。
+> - `ant auth login` (手動 / auto-login どちらでも) の後は `ant auth status` で active profile を確認し、必要なら `ant profile activate <claude-profile>` で Claude Code 用 profile に戻す。non-default 名にしても retarget 自体は起きるので、復旧しやすくなるだけ。
 
 ### Auto-login bootstrap (opt-in、**Beta**)
 
@@ -119,7 +123,8 @@ ant --version    # v1.5.0+ 確認
 
 `auto_login: true` は `name` を必須化します (default profile を silent に作って billing を巻き込まないため、ccgate validate でも reject)。`auth.timeout_ms` (default `360000` ms = 6 min) が `ant --timeout` に渡され、ccgate の CommandContext kill cap はその値 + 30 s。同一 profile を狙う 2 つの hook fire を per-profile flock (target 横断、`$XDG_STATE_HOME/ccgate/auto_login.<sha>.lock` に置く) で逐次化するので、ブラウザ承認の race にはなりません。ant が見つからない / 失敗した場合は `kind=credential_unavailable, reason=profile_load` で fallthrough。slog warn の `error_class` で原因を絞れます。
 
-> **🚧 Beta — `active_config` 副作用は本リリースでは緩和なし**: `ant auth login --profile <name>` は `<config_dir>/active_config` を `<name>` に **無条件で書き換え** ます。`<config_dir>/active_config` は Claude Code / Claude Agent SDK と共有される情報です。本リリースの ccgate は `active_config` の保存・復元を **行いません** (ccgate 側で緩和を試みること自体が race を生むため)。根本対応は upstream PR [anthropics/anthropic-cli#45](https://github.com/anthropics/anthropic-cli/pull/45) (`--no-activate` flag)。それが merge され次第、ccgate 側で flag を渡す follow-up PR を出してこの注意は縮小予定です。auto-login (または手動の `ant auth login`) 後は必ず `ant auth status` で active profile を確認し、必要なら `ant profile activate <claude-profile>` で Claude Code 用に戻してください。また `ant` は `PATH` lookup で起動するため、`PATH` 上で resolve される `ant` が信頼できる upstream バイナリである前提で `auth.auto_login` を有効化してください。
+> [!WARNING]
+> **`auto_login` は Beta、ccgate は `active_config` 副作用を緩和しません。** `ant auth login --profile <name>` は `<config_dir>/active_config` を `<name>` に **無条件で書き換え** ます (上の IMPORTANT callout 参照、profile 名が non-default でも同じ)。`<config_dir>/active_config` は Claude Code / Claude Agent SDK と共有される情報です。本リリースの ccgate は `active_config` の保存・復元を **行いません** (ccgate 側で緩和を試みること自体が race を生むため)。根本対応は upstream PR [anthropics/anthropic-cli#45](https://github.com/anthropics/anthropic-cli/pull/45) (`--no-activate` flag)。それが merge され次第、ccgate 側で flag を渡す follow-up PR を出してこの注意は縮小予定です。それまでは auto-login の発火も手動の `ant auth login` と同じ扱いで、`ant auth status` で `<config_dir>/active_config` を確認、必要なら `ant profile activate <claude-profile>` で Claude Code 用 profile に戻してください。また `ant` は `PATH` lookup で起動するため、`PATH` 上で resolve される `ant` が信頼できる upstream バイナリである前提で `auth.auto_login` を有効化してください。
 
 ### env var auth からの移行
 
