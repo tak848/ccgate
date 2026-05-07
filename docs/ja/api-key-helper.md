@@ -92,7 +92,7 @@ Anthropic provider 専用です。公式 `ant` CLI (`ant auth login` でブラ�
 ### Quick start
 
 ```sh
-brew install anthropics/tap/ant         # または anthropics/anthropic-cli の release を取得
+mise use -g aqua:anthropics/anthropic-cli   # または `aqua g -i anthropics/anthropic-cli`。binary は `ant`
 ant auth login --profile ccgate         # ブラウザが開き ~/.config/anthropic/credentials/ccgate.json を書き出す
 # ccgate.jsonnet に追記:
 #   provider: { ..., auth: { type: 'profile', profile: 'ccgate' } }

@@ -92,7 +92,7 @@ Anthropic provider only. The official `ant` CLI (`ant auth login` for browser-ba
 ### Quick start
 
 ```sh
-brew install anthropics/tap/ant         # or download a release from anthropics/anthropic-cli
+mise use -g aqua:anthropics/anthropic-cli   # or `aqua g -i anthropics/anthropic-cli`; binary lands as `ant`
 ant auth login --profile ccgate         # opens a browser, writes ~/.config/anthropic/credentials/ccgate.json
 # add to ccgate.jsonnet:
 #   provider: { ..., auth: { type: 'profile', profile: 'ccgate' } }
