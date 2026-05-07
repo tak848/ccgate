@@ -159,27 +159,22 @@ func TestValidateAuthFields(t *testing.T) {
 
 		// type=profile (anthropic-only): name optional, the SDK runs the
 		// real validation at first hook fire and we surface its failures
-		// as fallthrough.
-		"profile ok empty name":          {auth: &AuthConfig{Type: "profile"}, wantErr: false},
-		"profile ok with name":           {auth: &AuthConfig{Type: "profile", Name: "ccgate"}, wantErr: false},
-		"profile name whitespace only":   {auth: &AuthConfig{Type: "profile", Name: "   "}, wantErr: true},
-		"profile with command":           {auth: &AuthConfig{Type: "profile", Command: "x"}, wantErr: true},
-		"profile with path":              {auth: &AuthConfig{Type: "profile", Path: stringPtr(absKey)}, wantErr: true},
-		"profile with shell":             {auth: &AuthConfig{Type: "profile", Shell: AuthShellBash}, wantErr: true},
-		"profile with refresh_margin":    {auth: &AuthConfig{Type: "profile", RefreshMarginMS: intPtr(30000)}, wantErr: true},
-		"profile with cache_key":         {auth: &AuthConfig{Type: "profile", CacheKey: "prod"}, wantErr: true},
-		"profile auto_login + name":      {auth: &AuthConfig{Type: "profile", Name: "ccgate", AutoLogin: true}, wantErr: false},
-		"profile auto_login no name":     {auth: &AuthConfig{Type: "profile", AutoLogin: true}, wantErr: true},
-		"profile timeout positive":       {auth: &AuthConfig{Type: "profile", Name: "ccgate", AutoLogin: true, TimeoutMS: intPtr(120000)}, wantErr: false},
-		"profile timeout zero":           {auth: &AuthConfig{Type: "profile", Name: "ccgate", AutoLogin: true, TimeoutMS: intPtr(0)}, wantErr: true},
-		"profile timeout negative":       {auth: &AuthConfig{Type: "profile", Name: "ccgate", AutoLogin: true, TimeoutMS: intPtr(-1)}, wantErr: true},
-		"profile auto_login=false noerr": {auth: &AuthConfig{Type: "profile", Name: "ccgate", AutoLogin: false, TimeoutMS: intPtr(60000)}, wantErr: false},
+		// as fallthrough. The profile path delegates the credential
+		// lifecycle to the SDK, so timeout_ms / refresh_margin_ms /
+		// cache_key are all rejected (no ccgate-side I/O to bound).
+		"profile ok empty profile":        {auth: &AuthConfig{Type: "profile"}, wantErr: false},
+		"profile ok with profile":         {auth: &AuthConfig{Type: "profile", Profile: "ccgate"}, wantErr: false},
+		"profile profile whitespace only": {auth: &AuthConfig{Type: "profile", Profile: "   "}, wantErr: true},
+		"profile with command":            {auth: &AuthConfig{Type: "profile", Command: "x"}, wantErr: true},
+		"profile with path":               {auth: &AuthConfig{Type: "profile", Path: stringPtr(absKey)}, wantErr: true},
+		"profile with shell":              {auth: &AuthConfig{Type: "profile", Shell: AuthShellBash}, wantErr: true},
+		"profile with refresh_margin":     {auth: &AuthConfig{Type: "profile", RefreshMarginMS: intPtr(30000)}, wantErr: true},
+		"profile with timeout_ms":         {auth: &AuthConfig{Type: "profile", Profile: "ccgate", TimeoutMS: intPtr(60000)}, wantErr: true},
+		"profile with cache_key":          {auth: &AuthConfig{Type: "profile", CacheKey: "prod"}, wantErr: true},
 
-		// Cross-type guards: profile-only fields rejected on exec / file.
-		"exec with name":       {auth: &AuthConfig{Type: "exec", Command: "x", Name: "ccgate"}, wantErr: true},
-		"exec with auto_login": {auth: &AuthConfig{Type: "exec", Command: "x", AutoLogin: true}, wantErr: true},
-		"file with name":       {auth: &AuthConfig{Type: "file", Path: stringPtr(absKey), Name: "ccgate"}, wantErr: true},
-		"file with auto_login": {auth: &AuthConfig{Type: "file", Path: stringPtr(absKey), AutoLogin: true}, wantErr: true},
+		// Cross-type guards: profile field is profile-only.
+		"exec with profile": {auth: &AuthConfig{Type: "exec", Command: "x", Profile: "ccgate"}, wantErr: true},
+		"file with profile": {auth: &AuthConfig{Type: "file", Path: stringPtr(absKey), Profile: "ccgate"}, wantErr: true},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -218,7 +213,7 @@ func TestProfileAuthCrossFieldProvider(t *testing.T) {
 				Name:      tc.providerName,
 				Model:     "m",
 				TimeoutMS: intPtr(1000),
-				Auth:      &AuthConfig{Type: "profile", Name: "ccgate"},
+				Auth:      &AuthConfig{Type: "profile", Profile: "ccgate"},
 			}}
 			err := cfg.Validate()
 			if tc.wantErr && err == nil {
@@ -237,15 +232,11 @@ func TestAuthDurationDefaults(t *testing.T) {
 	a := AuthConfig{}
 	wantMargin := time.Duration(DefaultAuthRefreshMarginMS) * time.Millisecond
 	wantTimeout := time.Duration(DefaultAuthTimeoutMS) * time.Millisecond
-	wantAutoLogin := time.Duration(DefaultAuthAutoLoginTimeoutMS) * time.Millisecond
 	if got := a.GetRefreshMargin(); got != wantMargin {
 		t.Fatalf("GetRefreshMargin() default = %s, want %s", got, wantMargin)
 	}
 	if got := a.GetTimeout(); got != wantTimeout {
 		t.Fatalf("GetTimeout() default = %s, want %s", got, wantTimeout)
-	}
-	if got := a.GetAutoLoginTimeout(); got != wantAutoLogin {
-		t.Fatalf("GetAutoLoginTimeout() default = %s, want %s", got, wantAutoLogin)
 	}
 
 	a.RefreshMarginMS = intPtr(90000)
@@ -255,9 +246,6 @@ func TestAuthDurationDefaults(t *testing.T) {
 	}
 	if got := a.GetTimeout(); got != 12*time.Second {
 		t.Fatalf("GetTimeout() = %s, want 12s", got)
-	}
-	if got := a.GetAutoLoginTimeout(); got != 12*time.Second {
-		t.Fatalf("GetAutoLoginTimeout() = %s, want 12s (overridden)", got)
 	}
 }
 

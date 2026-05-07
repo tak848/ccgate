@@ -92,11 +92,8 @@ func validateAuthExec(a *AuthConfig) error {
 	if a.Path != nil {
 		errs = append(errs, fmt.Errorf("provider.auth.path is only allowed when type=%q", AuthTypeFile))
 	}
-	if a.Name != "" {
-		errs = append(errs, fmt.Errorf("provider.auth.name is only allowed when type=%q", AuthTypeProfile))
-	}
-	if a.AutoLogin {
-		errs = append(errs, fmt.Errorf("provider.auth.auto_login is only allowed when type=%q", AuthTypeProfile))
+	if a.Profile != "" {
+		errs = append(errs, fmt.Errorf("provider.auth.profile is only allowed when type=%q", AuthTypeProfile))
 	}
 	switch a.Shell {
 	case "", AuthShellBash, AuthShellPowerShell:
@@ -134,11 +131,8 @@ func validateAuthFile(a *AuthConfig) error {
 	if a.Shell != "" {
 		errs = append(errs, fmt.Errorf("provider.auth.shell is only allowed when type=%q", AuthTypeExec))
 	}
-	if a.Name != "" {
-		errs = append(errs, fmt.Errorf("provider.auth.name is only allowed when type=%q", AuthTypeProfile))
-	}
-	if a.AutoLogin {
-		errs = append(errs, fmt.Errorf("provider.auth.auto_login is only allowed when type=%q", AuthTypeProfile))
+	if a.Profile != "" {
+		errs = append(errs, fmt.Errorf("provider.auth.profile is only allowed when type=%q", AuthTypeProfile))
 	}
 	if a.TimeoutMS != nil && *a.TimeoutMS <= 0 {
 		errs = append(errs, fmt.Errorf("provider.auth.timeout_ms must be positive, got %d", *a.TimeoutMS))
@@ -167,26 +161,24 @@ func validateAuthPath(path string) error {
 }
 
 // validateAuthProfile enforces the rules for type=profile (Anthropic
-// only). Most semantic checks live in the SDK's profile loader at
-// hook fire time and surface as ErrProfileUnavailable / fallthrough,
-// so we keep ccgate-side validation narrow:
+// only). The SDK's profile loader runs at hook fire time and
+// surfaces real semantic failures (missing config, invalid name,
+// missing credentials) as ErrProfileUnavailable -> fallthrough, so
+// ccgate-side validation only catches the obvious config-shape
+// mistakes:
 //
-//   - name optional; whitespace-only is rejected (almost certainly a
-//     templating mistake), real character-set rules are delegated to
+//   - profile optional; whitespace-only is rejected (almost certainly
+//     a templating mistake). Character-set rules are delegated to
 //     anthropicconfig.LoadProfile's own validateProfileName so the
 //     two implementations cannot drift.
-//   - command / path / shell / refresh_margin_ms / cache_key are
-//     forbidden — they belong to other types and would be silently
-//     ignored otherwise.
-//   - timeout_ms is allowed (passed to ant via --timeout when
-//     auto_login=true); positive only, ignored when auto_login=false.
-//   - auto_login=true requires a non-empty name so the bootstrap
-//     never silently writes a "default" profile that may collide
-//     with Claude Code's subscription credentials.
+//   - command / path / shell / refresh_margin_ms / timeout_ms /
+//     cache_key are all forbidden — the profile path delegates the
+//     credential lifecycle to the SDK, so none of them have anything
+//     to bound or salt on the ccgate side.
 func validateAuthProfile(a *AuthConfig) error {
 	var errs []error
-	if a.Name != "" && strings.TrimSpace(a.Name) == "" {
-		errs = append(errs, fmt.Errorf("provider.auth.name must not be whitespace only"))
+	if a.Profile != "" && strings.TrimSpace(a.Profile) == "" {
+		errs = append(errs, fmt.Errorf("provider.auth.profile must not be whitespace only"))
 	}
 	if a.Command != "" {
 		errs = append(errs, fmt.Errorf("provider.auth.command is only allowed when type=%q", AuthTypeExec))
@@ -200,11 +192,8 @@ func validateAuthProfile(a *AuthConfig) error {
 	if a.RefreshMarginMS != nil {
 		errs = append(errs, fmt.Errorf("provider.auth.refresh_margin_ms is not supported when type=%q (SDK manages refresh internally)", AuthTypeProfile))
 	}
-	if a.TimeoutMS != nil && *a.TimeoutMS <= 0 {
-		errs = append(errs, fmt.Errorf("provider.auth.timeout_ms must be positive, got %d", *a.TimeoutMS))
-	}
-	if a.AutoLogin && a.Name == "" {
-		errs = append(errs, fmt.Errorf("provider.auth.name is required when auto_login=true (use a non-default profile name to avoid colliding with Claude Code subscription credentials)"))
+	if a.TimeoutMS != nil {
+		errs = append(errs, fmt.Errorf("provider.auth.timeout_ms is not supported when type=%q (SDK owns the credential lifecycle)", AuthTypeProfile))
 	}
 	if a.CacheKey != "" {
 		errs = append(errs, fmt.Errorf("provider.auth.cache_key is only allowed when type=%q", AuthTypeExec))

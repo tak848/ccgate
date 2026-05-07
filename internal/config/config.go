@@ -42,18 +42,11 @@ const (
 	// (e.g. 120 000) if your helper takes longer.
 	DefaultAuthTimeoutMS = 30_000
 
-	// DefaultAuthAutoLoginTimeoutMS bounds the `ant auth login`
-	// subprocess `auth.type=profile` spawns when `auto_login: true`
-	// is opted into. Six minutes leaves comfortable room over ant's
-	// own 5-minute browser-callback default while still capping a
-	// runaway login that the user never finishes; ccgate's
-	// CommandContext kill cap is this value + 30 s.
-	DefaultAuthAutoLoginTimeoutMS = 360_000
-
 	// AuthTypeExec / AuthTypeFile / AuthTypeProfile are the
 	// AuthConfig.Type values. AuthTypeProfile is anthropic-only and
 	// delegates credential resolution to the Anthropic SDK's profile
-	// loader (`ant auth login` produces the credentials on disk).
+	// loader (`ant auth login` produces the credentials on disk and
+	// the SDK refreshes the access token in-process).
 	AuthTypeExec    = "exec"
 	AuthTypeFile    = "file"
 	AuthTypeProfile = "profile"
@@ -159,25 +152,20 @@ type AuthConfig struct {
 	// Path is the file path for type=file. nil = use the per-target
 	// default; an empty pointer is rejected.
 	Path *string `json:"path,omitempty"`
-	// Name is the Anthropic profile name for type=profile. Empty
+	// Profile is the Anthropic profile name for type=profile. Empty
 	// (omitted) lets the SDK resolve $ANTHROPIC_PROFILE → active_config
-	// → "default". Required when AutoLogin is true so the bootstrap
-	// never silently writes a "default" profile that Claude Code's
-	// subscription credentials may also live under.
-	Name string `json:"name,omitempty"`
-	// AutoLogin opts in (Beta) to ccgate spawning
-	// `ant auth login --profile <Name>` when the credentials file is
-	// missing at preflight. type=profile only. Default false keeps
-	// the existing read-only path unchanged.
-	AutoLogin bool `json:"auto_login,omitempty"`
+	// → "default". Named after the field's job (the profile to load),
+	// not as a generic "name" — the latter reads ambiguously next to
+	// the type=exec / type=file branches that name their value fields
+	// after the value itself (`command`, `path`).
+	Profile string `json:"profile,omitempty"`
 	// RefreshMarginMS is the early-refresh slack in milliseconds
 	// (default 60 000). >= 0; 0 disables the guard.
 	RefreshMarginMS *int `json:"refresh_margin_ms,omitempty"`
 	// TimeoutMS bounds one Resolve call: lock + helper exec for
 	// type=exec, file read for type=file (default 30 000). > 0.
-	// For type=profile + auto_login it is the value passed to ant via
-	// `--timeout`; the ccgate context kill cap is this value + 30 s
-	// (default DefaultAuthAutoLoginTimeoutMS = 360 000).
+	// type=profile delegates the credential lifecycle to the SDK so
+	// the field is rejected there (no ccgate-side I/O to bound).
 	TimeoutMS *int `json:"timeout_ms,omitempty"`
 	// CacheKey is a secret-free salt for the cache fingerprint
 	// (type=exec only). Used as-is; pull env values via jsonnet
@@ -212,19 +200,6 @@ func (a AuthConfig) GetRefreshMargin() time.Duration {
 // auth.type=exec config that reached the runner.
 func (a AuthConfig) GetTimeout() time.Duration {
 	ms := DefaultAuthTimeoutMS
-	if a.TimeoutMS != nil {
-		ms = *a.TimeoutMS
-	}
-	return time.Duration(ms) * time.Millisecond
-}
-
-// GetAutoLoginTimeout returns the timeout passed to
-// `ant auth login --timeout` for type=profile + auto_login,
-// defaulting to DefaultAuthAutoLoginTimeoutMS. Distinct from
-// GetTimeout because helper-exec defaults (30 s) are too short for
-// a browser OAuth callback.
-func (a AuthConfig) GetAutoLoginTimeout() time.Duration {
-	ms := DefaultAuthAutoLoginTimeoutMS
 	if a.TimeoutMS != nil {
 		ms = *a.TimeoutMS
 	}
@@ -283,9 +258,7 @@ func authFileBranchSchema() *jsonschema.Schema {
 func authProfileBranchSchema() *jsonschema.Schema {
 	props := orderedmap.New[string, *jsonschema.Schema]()
 	props.Set("type", &jsonschema.Schema{Type: "string", Const: AuthTypeProfile})
-	props.Set("name", &jsonschema.Schema{Type: "string", Description: "Anthropic profile name. Empty/omitted lets the SDK resolve $ANTHROPIC_PROFILE → active_config → \"default\". Required when auto_login=true. Anthropic provider only."})
-	props.Set("auto_login", &jsonschema.Schema{Type: "boolean", Description: "[Beta] When true, ccgate spawns `ant auth login --profile <name>` if the credentials file is missing at preflight. Requires `name` and ant CLI v1.5.0+. See docs/api-key-helper.md for the active_config side-effect caveat (not mitigated in ccgate; upstream `--no-activate` flag PR pending)."})
-	props.Set("timeout_ms", &jsonschema.Schema{Type: "integer", Minimum: json.Number("1"), Description: "Hard cap (ms) on the ant auto-login subprocess. Passed to ant via `--timeout`; ccgate context kill cap = timeout_ms + 30000. Default: 360000 (6 min). Ignored when auto_login=false."})
+	props.Set("profile", &jsonschema.Schema{Type: "string", Description: "Anthropic profile name (the value `ant auth login --profile <name>` writes to <config_dir>/credentials/<name>.json). Empty/omitted lets the SDK resolve $ANTHROPIC_PROFILE → active_config → \"default\". Anthropic provider only."})
 	return &jsonschema.Schema{
 		Type:                 "object",
 		Required:             []string{"type"},

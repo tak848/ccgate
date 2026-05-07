@@ -252,7 +252,7 @@ Project-local configs are loaded only when **not tracked by Git**.
 | `provider.name`          | string                            | `"anthropic"`                                                                 | Provider name. One of `"anthropic"`, `"openai"`, `"gemini"`.                                            |
 | `provider.model`         | string                            | `"claude-haiku-4-5"`                                                          | Model name. Examples: `claude-haiku-4-5` / `claude-sonnet-4-6` (anthropic), `gpt-5.4-nano-2026-03-17` (openai), `gemini-3-flash-preview` (gemini). When routing through a compatible proxy, use whatever model name the proxy exposes (e.g. `anthropic/claude-haiku-4-5`). |
 | `provider.base_url`      | string                            | `""`                                                                          | Override the provider's API base URL. Empty = use the SDK default. Use this to route through an OpenAI- / Anthropic-compatible proxy (LiteLLM proxy, Azure OpenAI, on-prem gateway, regional endpoint, ...). |
-| `provider.auth`          | object (`{type, ...}`)            | (omit = env var)                                                              | Discriminated union for short-lived / rotating credentials. `type=exec` (run a shell command), `type=file` (read a rotator-managed file), `type=profile` (Anthropic-only, reads `ant auth login` credentials; `auto_login: true` is **Beta** and spawns `ant auth login` on credentials-missing). See [docs/api-key-helper.md](docs/api-key-helper.md) for full reference. |
+| `provider.auth`          | object (`{type, ...}`)            | (omit = env var)                                                              | Discriminated union for short-lived / rotating credentials. `type=exec` (run a shell command), `type=file` (read a rotator-managed file), `type=profile` (Anthropic-only — reads `ant auth login --profile <name>` credentials, the SDK refreshes the access token on its own). See [docs/api-key-helper.md](docs/api-key-helper.md) for full reference. |
 | `provider.timeout_ms`    | int                               | `20000`                                                                       | API timeout (ms). `0` = no timeout.                                                                    |
 | `log_path`               | string                            | `$XDG_STATE_HOME/ccgate/<target>/ccgate.log`                                  | Log file path. Supports `~` for home directory.                                                        |
 | `log_disabled`           | bool                              | `false`                                                                       | Disable logging entirely                                                                               |
@@ -366,8 +366,7 @@ When the credential rotates faster than a static env var can keep up (AWS STS, V
     model: 'claude-haiku-4-5',
     auth: {
       type: 'profile',
-      name: 'ccgate',          // matches `ant auth login --profile ccgate`
-      // auto_login: true,     // [Beta] spawns `ant auth login` on miss; requires ant v1.5.0+
+      profile: 'ccgate',       // matches `ant auth login --profile ccgate`
     },
   },
 }

@@ -171,8 +171,8 @@ func buildTestConfig(t *testing.T, authType string) config.Config {
 	case "profile":
 		cfg.Provider.Name = "anthropic"
 		cfg.Provider.Auth = &config.AuthConfig{
-			Type: config.AuthTypeProfile,
-			Name: "ccgate",
+			Type:    config.AuthTypeProfile,
+			Profile: "ccgate",
 		}
 	}
 	return cfg

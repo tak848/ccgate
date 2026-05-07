@@ -49,10 +49,9 @@ Linux, macOS, *BSD, and Windows are supported. The shell that runs the helper co
 | `auth.command` | string | `""` | (`exec` only, required) Shell command; stdout is the credential. |
 | `auth.shell` | `"bash"` / `"powershell"` | `"bash"` | (`exec` only) Shell. `powershell` tries `pwsh` first, falls back to `powershell`. |
 | `auth.path` | string | `$XDG_STATE_HOME/ccgate/<target>/auth_key.json` | (`file` only) Credential file path. Omit to use the default. |
-| `auth.name` | string | `""` | (`profile` only) Anthropic profile name. Empty/omitted lets the SDK resolve `$ANTHROPIC_PROFILE` → `<config_dir>/active_config` → `"default"`. Required when `auto_login=true`. |
-| `auth.auto_login` | bool | `false` | (`profile` only, **Beta**) When true, ccgate spawns `ant auth login --profile <name>` if the credentials file is missing at preflight. Requires `name` and `ant` v1.5.0+. |
+| `auth.profile` | string | `""` | (`profile` only) Anthropic profile name (the value `ant auth login --profile <name>` writes to `<config_dir>/credentials/<name>.json`). Empty/omitted lets the SDK resolve `$ANTHROPIC_PROFILE` → `<config_dir>/active_config` → `"default"`. |
 | `auth.refresh_margin_ms` | int (ms) | `60000` | Treat credentials as expired this many ms before `expires_at`. `0` disables. (`exec` / `file` only — `profile` delegates refresh to the SDK.) |
-| `auth.timeout_ms` | int (ms) | `30000` (`exec` / `file`); `360000` (`profile` + `auto_login`) | Hard cap on one Resolve call (`exec` / `file`) or on the `ant` subprocess (`profile` + `auto_login`, passed to `ant --timeout`; ccgate's CommandContext kill cap is `timeout_ms + 30000`). `> 0`. |
+| `auth.timeout_ms` | int (ms) | `30000` | Hard cap on one Resolve call. `> 0`. (`exec` / `file` only.) |
 | `auth.cache_key` | string | `""` | (`exec` only) Salt added to the cache fingerprint. See [Account isolation](#account-isolation). |
 
 Relative paths in `auth.command` and `auth.path` resolve from the hook's working directory at fire time, not from the config file's directory.
@@ -96,7 +95,7 @@ Anthropic provider only. The official `ant` CLI (`ant auth login` for browser-ba
 brew install anthropics/tap/ant         # or download a release from anthropics/anthropic-cli
 ant auth login --profile ccgate         # opens a browser, writes ~/.config/anthropic/credentials/ccgate.json
 # add to ccgate.jsonnet:
-#   provider: { ..., auth: { type: 'profile', name: 'ccgate' } }
+#   provider: { ..., auth: { type: 'profile', profile: 'ccgate' } }
 # tail -f $XDG_STATE_HOME/ccgate/<target>/ccgate.log
 #   → expect: rg 'credential source selected.*source=profile.*profile_name_set=true'
 ```
@@ -105,26 +104,11 @@ ant auth login --profile ccgate         # opens a browser, writes ~/.config/anth
 > **`ant auth login` retargets `<config_dir>/active_config` regardless of profile name.** ant rewrites the active pointer to whatever `--profile <name>` you pass (or to `default` when `--profile` is omitted) on every login. Because Anthropic profile resolution is shared with Claude Code and the Claude Agent SDK, that retarget can shift Claude Code from your subscription onto pay-as-you-go API billing if it follows the active pointer. So:
 >
 > - Use a non-default profile name (e.g. `ccgate`) and declare it explicitly in ccgate.jsonnet, so a stray `ant auth login` (no `--profile`) creating `default` does not silently take over.
-> - After every `ant auth login` (yours or ccgate's auto-login), run `ant auth status` and, if needed, `ant profile activate <claude-profile>` to put Claude Code's profile back as active. The non-default name choice does not avoid the retarget; it only makes the bad state easier to recover from.
-
-### Auto-login bootstrap (opt-in, **Beta**)
-
-**Prerequisites**: `ant` v1.5.0 or newer on `PATH`. Verify with `ant --version`.
-
-```sh
-brew install anthropics/tap/ant
-ant --version    # confirm v1.5.0+
-# add to ccgate.jsonnet:
-#   provider: { ..., auth: { type: 'profile', name: 'ccgate', auto_login: true } }
-# the first hook fire after credentials go missing spawns
-#   `ant auth login --profile ccgate --timeout 6m`
-# (a browser opens for OAuth approval)
-```
-
-`auto_login: true` requires a non-empty `name`; ccgate validates this so the bootstrap never silently writes a `default` profile. `auth.timeout_ms` (default `360000` ms = 6 min) becomes the value passed to `ant --timeout`, and ccgate's CommandContext kill cap is that value + 30 s. Per-profile flock (target-agnostic; under `$XDG_STATE_HOME/ccgate/auto_login.<sha>.lock`) keeps two concurrent hook fires from racing the same browser callback. When ant is missing or fails, ccgate falls through with `kind=credential_unavailable, reason=profile_load`; `error_class` in the slog warning narrows the cause.
-
-> [!WARNING]
-> **`auto_login` is Beta. ccgate does not mitigate the `active_config` side effect.** `ant auth login --profile <name>` rewrites `<config_dir>/active_config` to `<name>` unconditionally — see the IMPORTANT callout above; a non-default profile name does not change this. `<config_dir>/active_config` is shared with Claude Code and the Claude Agent SDK. ccgate **does not** save / restore `active_config` in this release; mitigating the race in ccgate would itself be racy. The proper fix is upstream PR [anthropics/anthropic-cli#45](https://github.com/anthropics/anthropic-cli/pull/45) (`--no-activate` flag); once that lands, a follow-up ccgate PR will pass the new flag and drop this warning. Until then, treat every auto-login fire the same way as a manual `ant auth login`: confirm `<config_dir>/active_config` with `ant auth status` and reset Claude Code's active profile with `ant profile activate <claude-profile>` if needed. Also: `ant` is invoked via `PATH` lookup, so the binary your `PATH` resolves to must be the trusted upstream `ant` — declaring `auth.auto_login` opts you into trusting that lookup.
+> - After every `ant auth login`, restore the active pointer to where you want it. Two options:
+>   - `rm <config_dir>/active_config` to clear the pointer entirely (the SDK then resolves to `default`).
+>   - `ant profile activate <previous-profile-name>` if you have a profile you actively use.
+> - To bind a profile to a different org / workspace, ant rejects re-login on a profile that already has one bound. Delete `<config_dir>/configs/<name>.json` and run `ant auth login --profile <name>` again.
+> - An upstream `--no-activate` flag (upstream PR [anthropics/anthropic-cli#45](https://github.com/anthropics/anthropic-cli/pull/45)) would let `ant auth login --profile <name> --no-activate` skip the retarget once it lands.
 
 ### Migrating from env-var auth
 
@@ -267,16 +251,8 @@ To opt out of caching, return JSON without `expires_at` (or plain string) and th
 7. For `profile_load` (`auth.type=profile`), the slog `error_class` field narrows the cause:
    - `profile_config_missing`: run `ant auth login --profile <name>` to create the profile.
    - `profile_config_parse` / `profile_config_invalid`: restore `<config_dir>/configs/<name>.json` to mode `0644`, or delete it and re-run `ant auth login --profile <name>`.
-   - `credentials_missing` (`auto_login=false`): run `ant auth login --profile <name>` to publish credentials.
+   - `credentials_missing`: run `ant auth login --profile <name>` to publish credentials.
    - `credentials_stat_failed`: the credentials file or its parent dir failed `os.Stat` for a reason other than "missing" (typically permissions). Restore mode 0700 on `<config_dir>/credentials/`.
-   - `auto_login_requires_profile`: declare `auth.name` (the bootstrap requires a non-default profile name).
-   - `credentials_path_auto_login_unsupported`: the profile config sets a custom `credentials_path`; auto-login only knows the SDK default. Either drop the custom path or set `auto_login: false`.
-   - `ant_lock_unavailable`: another hook fire is bootstrapping the same profile; the next fire reads the published credentials.
-   - `ant_not_found`: install `ant` (`brew install anthropics/tap/ant`) and confirm `ant --version` reports v1.5.0+.
-   - `ant_lookup_failed`: the `ant` entry on `PATH` is not a working executable; check with `which ant` / `ls -l $(which ant)`.
-   - `ant_timeout`: nobody approved the browser login within `auth.timeout_ms`; raise it or run `ant auth login --profile <name>` manually.
-   - `ant_failed`: ant exited non-zero — re-run it manually to inspect the error.
-   - `credentials_missing_after_login`: ant exited 0 but no credentials file appeared (rare ant bug). Run `ant auth status`.
-8. After any `ant auth login` (auto-login or manual), confirm `<config_dir>/active_config` with `ant auth status`. If Claude Code starts using an unexpected profile, run `ant profile activate <claude-profile>`. Upstream PR [anthropics/anthropic-cli#45](https://github.com/anthropics/anthropic-cli/pull/45) (`--no-activate`) will let ccgate stop touching `active_config` once it lands.
+8. After any `ant auth login`, confirm `<config_dir>/active_config` with `ant auth status`. If Claude Code starts using an unexpected profile, either `rm <config_dir>/active_config` (clears the pointer) or `ant profile activate <previous-profile>`. Upstream PR [anthropics/anthropic-cli#45](https://github.com/anthropics/anthropic-cli/pull/45) (`--no-activate`) will let `ant auth login` skip the retarget once it lands.
 
 The full reason list is in [docs/configuration.md](configuration.md#reason-values-for-credential_unavailable).

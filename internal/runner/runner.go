@@ -233,7 +233,7 @@ func WithRecentTranscript(fn func(transcriptPath string) any) Option {
 // runner uses newProviderClient. The signature mirrors
 // newProviderClient so a fake can implement llm.Provider with no
 // awareness of the underlying SDK shape; the ProviderConfig
-// argument lets fakes observe auth.type=profile + name + auto_login
+// argument lets fakes observe auth.type=profile + the profile name
 // without re-parsing the merged config.
 func WithProviderFactory(fn func(providerName string, p config.ProviderConfig, apiKey, baseURL string) llm.Provider) Option {
 	return func(o *runtimeOptions) { o.providerFactory = fn }
@@ -783,13 +783,11 @@ func newProviderClient(providerName string, p config.ProviderConfig, apiKey, bas
 	default: // anthropic
 		cli := &anthropic.Client{APIKey: apiKey, BaseURL: baseURL}
 		// auth.type=profile delegates resolution to the SDK; apiKey
-		// arrives empty in that branch and the Profile / AutoLogin
-		// fields drive Decide's credential pipeline instead.
+		// arrives empty in that branch and the Profile field drives
+		// Decide's credential pipeline instead.
 		if p.Auth != nil && p.Auth.Type == config.AuthTypeProfile {
 			cli.UseProfile = true
-			cli.Profile = p.Auth.Name
-			cli.AutoLogin = p.Auth.AutoLogin
-			cli.AutoLoginTimeout = p.Auth.GetAutoLoginTimeout()
+			cli.Profile = p.Auth.Profile
 		}
 		return cli
 	}

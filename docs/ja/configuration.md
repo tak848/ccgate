@@ -149,7 +149,7 @@ ccgate codex  metrics --days 7         # codex 側も同 shape
 | `lock_error`            | flock syscall が EWOULDBLOCK 以外で失敗 (lock 系が壊れている → helper exec はスキップ)               |
 | `cache_unavailable`     | cache dir を作成 / `chmod` できない。隣接 lock file も作れず concurrent helper の race を防げないため fail-fast (helper exec せずに fallthrough) |
 | `provider_auth`         | provider が **HTTP 401 または 403** で credential を拒否。`auth.type=exec` は cache を invalidate して次回 fire で helper 再実行、`auth.type=file` は内部 cache がないため fallthrough のみ、`auth.type=profile` も fallthrough (SDK の refresh-token loop が credential を保有)、env var 経路は **意図的にこの経路に乗せず exit 1** (ccgate からは rotate できず、握り潰すと user 側の設定ミスを隠してしまうため) |
-| `profile_load`          | `auth.type=profile` で credential を SDK に渡す前に失敗 (profile config 不在 / parse error / profile 名不正、credentials file の preflight、または auto_login bootstrap = `ant` 不在 / timeout / 非 0 exit)。slog の `error_class` で具体的な分類が得られる。詳細は [docs/ja/api-key-helper.md の障害時の復旧チェックリスト](api-key-helper.md#障害時の復旧チェックリスト) を参照 |
+| `profile_load`          | `auth.type=profile` で credential を SDK に渡す前に失敗 (profile config 不在 / parse error / profile 名不正、credentials file の preflight 失敗 = 不在 / 読めない)。slog の `error_class` で具体的な分類が得られる。詳細は [docs/ja/api-key-helper.md の障害時の復旧チェックリスト](api-key-helper.md#障害時の復旧チェックリスト) を参照 |
 
 `credential_unavailable` は単に「credential 解決に失敗した」だけでなく、「provider が credential を受け取った上で拒否した」(401 / 403) ケースも含みます。
 
