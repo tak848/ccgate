@@ -217,10 +217,6 @@ func TestProfileLoadPaths(t *testing.T) {
 // credentials missing (auto_login=false), profile name validation,
 // and profile config absent / parse / invalid.
 func TestProfileLoadFailures(t *testing.T) {
-	type profileSetup struct {
-		write           bool
-		credentialsPath string // when non-empty, override default to this path
-	}
 	cases := map[string]struct {
 		profile string
 		setup   func(t *testing.T) // populates tmp config dir
@@ -281,9 +277,13 @@ func TestProfileLoadFailures(t *testing.T) {
 // dir un-readable so os.Stat returns permission denied. auto_login
 // is true to prove ant is NOT spawned in this case.
 //
-// Skipped when running as root — chmod 0 cannot keep root out, so
-// the assertion would not hold.
+// Skipped when running as root (chmod 0 cannot keep root out) and on
+// Windows (chmod 0 has no equivalent effect on the NTFS DACL ladder
+// the test relies on).
 func TestPreflightStatFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod 0 does not produce stat failure on windows")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("permission test cannot run as root")
 	}
@@ -357,12 +357,11 @@ func TestAutoLoginSuccess(t *testing.T) {
 // and the auto_login_requires_profile defense guard.
 func TestAutoLoginFailures(t *testing.T) {
 	cases := map[string]struct {
-		setup            func(t *testing.T) (client *Client, credPath string)
-		fakeAntMode      string
-		fakeAntSleep     string
-		autoLoginTimeout time.Duration
-		hidePath         bool   // stub PATH so ant is not found
-		wantSubstr       string // substring expected in err.Error()
+		setup        func(t *testing.T) (client *Client, credPath string)
+		fakeAntMode  string
+		fakeAntSleep string
+		hidePath     bool   // stub PATH so ant is not found
+		wantSubstr   string // substring expected in err.Error()
 	}{
 		"ant binary not found": {
 			setup: func(t *testing.T) (*Client, string) {
@@ -380,16 +379,13 @@ func TestAutoLoginFailures(t *testing.T) {
 			fakeAntMode: "fail",
 			wantSubstr:  "ant auto-login",
 		},
-		"ant times out": {
-			setup: func(t *testing.T) (*Client, string) {
-				p := fixtureProfileConfig(t, "work", "https://api.anthropic.com")
-				return &Client{UseProfile: true, Profile: "work", AutoLogin: true, AutoLoginTimeout: 200 * time.Millisecond}, p
-			},
-			fakeAntMode:      "sleep",
-			fakeAntSleep:     "30s",
-			autoLoginTimeout: 200 * time.Millisecond,
-			wantSubstr:       "ant auto-login",
-		},
+		// Note: an "ant_timeout" case is not exercised here. Reproducing
+		// CommandContext deadline-exceeded would require the fake ant
+		// to ignore --timeout AND sleep past `AutoLoginTimeout +
+		// autoLoginKillCapMargin` (currently 30 s), which is too slow
+		// for a unit test. The taxonomy label is pinned by
+		// TestClassifyAntError below, which feeds an already-canceled
+		// context into classifyAntError directly — no subprocess.
 		"ant succeeded but credentials still missing": {
 			setup: func(t *testing.T) (*Client, string) {
 				p := fixtureProfileConfig(t, "work", "https://api.anthropic.com")
@@ -576,6 +572,24 @@ func TestCancellationChain(t *testing.T) {
 	}
 	if !errors.Is(err, ErrProfileUnavailable) {
 		t.Fatalf("err = %v, want ErrProfileUnavailable (cancellation classified as ant_timeout)", err)
+	}
+}
+
+// TestClassifyAntErrorTimeout pins that classifyAntError treats a
+// context.DeadlineExceeded ctx as ant_timeout. Reproducing the same
+// path through bootstrapWithAnt + a real subprocess would mean
+// sleeping past the (antTimeout + autoLoginKillCapMargin) kill cap,
+// which is too slow for CI; this unit test exercises the classifier
+// directly without launching ant at all.
+func TestClassifyAntErrorTimeout(t *testing.T) {
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	err := classifyAntError(ctx, errors.New("subprocess error"))
+	if err == nil {
+		t.Fatal("classifyAntError returned nil")
+	}
+	if !strings.Contains(err.Error(), "timeout") {
+		t.Fatalf("err = %q, want sanitized timeout marker", err.Error())
 	}
 }
 
