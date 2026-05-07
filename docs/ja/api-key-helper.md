@@ -87,7 +87,7 @@ ccgate は helper の env に `CCGATE_API_KEY_RESOLUTION=1` を入れるので�
 
 ## Profile ベース認証 (Anthropic のみ)
 
-Anthropic provider 専用です。公式 `ant` CLI (`ant auth login` でブラウザ OAuth、`ant profile activate <name>` で active profile を切り替え) が `<config_dir>/credentials/<name>.json` (mode 0600) に credentials を書き出します。`<config_dir>` の既定は `~/.config/anthropic`。Anthropic の profile 解決順 (`$ANTHROPIC_PROFILE` → `<config_dir>/active_config` → `"default"`) は Go SDK / Claude Code / Claude Agent SDK で **共有** されます ([wif-reference doc](https://platform.claude.com/docs/en/api/authentication/wif-reference))。access token の refresh は SDK 自身が行うため、ccgate は credential 経路には立ち入りません — ただし SDK の static-credential 用 env autoload (`ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN`) は無効化するので、残っている env var が、宣言した profile を黙って上書きすることはありません。Workload Identity Federation は `authentication.type=oidc_federation` を含む profile config 経由のみ対応 (env だけで WIF を構成する経路は本リリースの範囲外)。
+Anthropic provider 専用です。公式 `ant` CLI (`ant auth login` でブラウザ OAuth、`ant profile activate <name>` で active profile を切り替え) が `<config_dir>/credentials/<name>.json` (mode 0600) に credentials を書き出します。`<config_dir>` の既定は `~/.config/anthropic`。Anthropic の profile 解決順 (`$ANTHROPIC_PROFILE` → `<config_dir>/active_config` → `"default"`) は Go SDK / Claude Code / Claude Agent SDK で **共有** されます ([wif-reference doc](https://platform.claude.com/docs/en/api/authentication/wif-reference))。access token の refresh は SDK 自身が行うため、ccgate は credential 経路には立ち入りません — ただし SDK の static-credential 用 env autoload (`ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN`) は無効化するので、残っている env var が、宣言した profile を silent に上書きすることはありません。Workload Identity Federation は `authentication.type=oidc_federation` を含む profile config 経由のみ対応 (env だけで WIF を構成する経路は本リリースの範囲外)。
 
 ### Quick start
 

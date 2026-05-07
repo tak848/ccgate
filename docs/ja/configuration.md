@@ -50,7 +50,7 @@ LLM は `allow` / `deny` / `fallthrough` のいずれかを返します。`fallt
 | `deny`    | 自動拒否。deny メッセージが「user に聞くな、別コマンドで回避するな」と AI に指示する                    | 無人実行で「許可待ちで止まる」より「失敗で抜ける」を選びたいとき                    |
 | `allow`   | 自動許可                                                                                              | 完全自律実行で「LLM が迷ったケースも進めたい」リスクを受容できるとき                |
 
-**`allow` は見た目より危険です**。Claude Code / Codex とも、hook 仕様上 `decision.message` は `behavior=deny` のときしか AI に届きません。強制 allow のメッセージは黙って drop されるので、AI には「ccgate が auto approve した、注意して進めて」のような警告が見えません。このトレードオフを理解した上で選択してください。
+**`allow` は見た目より危険です**。Claude Code / Codex とも、hook 仕様上 `decision.message` は `behavior=deny` のときしか AI に届きません。強制 allow のメッセージは silent に drop されるので、AI には「ccgate が auto approve した、注意して進めて」のような警告が見えません。このトレードオフを理解した上で選択してください。
 
 ### `fallthrough_strategy` の対象**外**
 
@@ -62,7 +62,7 @@ LLM は `allow` / `deny` / `fallthrough` のいずれかを返します。`fallt
 - Claude `permission_mode == "bypassPermissions"` または `"dontAsk"`
 - Claude `tool_name` が `{ExitPlanMode, AskUserQuestion}` (ユーザーインタラクション専用 tool)
 
-これは意図的: `allow` は「LLM が躊躇したら自律実行を進める」用途であり、「LLM が判定すらしてないリクエストを黙って通す」用途ではありません。
+これは意図的: `allow` は「LLM が躊躇したら自律実行を進める」用途であり、「LLM が判定すらしてないリクエストを silent に通す」用途ではありません。
 
 各 strategy がどれだけ発火したかは metrics 出力で監査可能 (後述)。`forced_allow` / `forced_deny` 列が、まさに `fallthrough_strategy` が LLM `fallthrough` を allow/deny に flip したケース数です。
 
