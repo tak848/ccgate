@@ -21,6 +21,15 @@ func (c Config) Validate() error {
 	if err := validateAuth(c.Provider.Auth); err != nil {
 		errs = append(errs, err)
 	}
+	// type=profile delegates to anthropic-sdk-go's profile loader, so
+	// the abstraction only makes sense when the provider is anthropic.
+	// Catch the obvious user error (`provider.name = "openai" + auth.type
+	// = "profile"`) at config load time instead of at the first hook fire.
+	if c.Provider.Auth != nil && c.Provider.Auth.Type == AuthTypeProfile {
+		if strings.ToLower(strings.TrimSpace(c.Provider.Name)) != "anthropic" {
+			errs = append(errs, fmt.Errorf(`provider.auth.type=%q is only supported when provider.name="anthropic"`, AuthTypeProfile))
+		}
+	}
 	if c.LogMaxSize != nil && *c.LogMaxSize < 0 {
 		errs = append(errs, fmt.Errorf("log_max_size must not be negative, got %d", *c.LogMaxSize))
 	}
@@ -65,11 +74,13 @@ func validateAuth(a *AuthConfig) error {
 		return validateAuthExec(a)
 	case AuthTypeFile:
 		return validateAuthFile(a)
+	case AuthTypeProfile:
+		return validateAuthProfile(a)
 	case "":
-		return fmt.Errorf("provider.auth.type must be set to %q or %q", AuthTypeExec, AuthTypeFile)
+		return fmt.Errorf("provider.auth.type must be set to %q, %q, or %q", AuthTypeExec, AuthTypeFile, AuthTypeProfile)
 	default:
-		return fmt.Errorf("provider.auth.type %q is not supported (allowed: %q, %q)",
-			a.Type, AuthTypeExec, AuthTypeFile)
+		return fmt.Errorf("provider.auth.type %q is not supported (allowed: %q, %q, %q)",
+			a.Type, AuthTypeExec, AuthTypeFile, AuthTypeProfile)
 	}
 }
 
@@ -80,6 +91,12 @@ func validateAuthExec(a *AuthConfig) error {
 	}
 	if a.Path != nil {
 		errs = append(errs, fmt.Errorf("provider.auth.path is only allowed when type=%q", AuthTypeFile))
+	}
+	if a.Name != "" {
+		errs = append(errs, fmt.Errorf("provider.auth.name is only allowed when type=%q", AuthTypeProfile))
+	}
+	if a.AutoLogin {
+		errs = append(errs, fmt.Errorf("provider.auth.auto_login is only allowed when type=%q", AuthTypeProfile))
 	}
 	switch a.Shell {
 	case "", AuthShellBash, AuthShellPowerShell:
@@ -117,6 +134,12 @@ func validateAuthFile(a *AuthConfig) error {
 	if a.Shell != "" {
 		errs = append(errs, fmt.Errorf("provider.auth.shell is only allowed when type=%q", AuthTypeExec))
 	}
+	if a.Name != "" {
+		errs = append(errs, fmt.Errorf("provider.auth.name is only allowed when type=%q", AuthTypeProfile))
+	}
+	if a.AutoLogin {
+		errs = append(errs, fmt.Errorf("provider.auth.auto_login is only allowed when type=%q", AuthTypeProfile))
+	}
 	if a.TimeoutMS != nil && *a.TimeoutMS <= 0 {
 		errs = append(errs, fmt.Errorf("provider.auth.timeout_ms must be positive, got %d", *a.TimeoutMS))
 	}
@@ -141,4 +164,50 @@ func validateAuthPath(path string) error {
 		return fmt.Errorf("provider.auth.path must point at a file, got bare %q", v)
 	}
 	return nil
+}
+
+// validateAuthProfile enforces the rules for type=profile (Anthropic
+// only). Most semantic checks live in the SDK's profile loader at
+// hook fire time and surface as ErrProfileUnavailable / fallthrough,
+// so we keep ccgate-side validation narrow:
+//
+//   - name optional; whitespace-only is rejected (almost certainly a
+//     templating mistake), real character-set rules are delegated to
+//     anthropicconfig.LoadProfile's own validateProfileName so the
+//     two implementations cannot drift.
+//   - command / path / shell / refresh_margin_ms / cache_key are
+//     forbidden — they belong to other types and would be silently
+//     ignored otherwise.
+//   - timeout_ms is allowed (passed to ant via --timeout when
+//     auto_login=true); positive only, ignored when auto_login=false.
+//   - auto_login=true requires a non-empty name so the bootstrap
+//     never silently writes a "default" profile that may collide
+//     with Claude Code's subscription credentials.
+func validateAuthProfile(a *AuthConfig) error {
+	var errs []error
+	if a.Name != "" && strings.TrimSpace(a.Name) == "" {
+		errs = append(errs, fmt.Errorf("provider.auth.name must not be whitespace only"))
+	}
+	if a.Command != "" {
+		errs = append(errs, fmt.Errorf("provider.auth.command is only allowed when type=%q", AuthTypeExec))
+	}
+	if a.Path != nil {
+		errs = append(errs, fmt.Errorf("provider.auth.path is only allowed when type=%q", AuthTypeFile))
+	}
+	if a.Shell != "" {
+		errs = append(errs, fmt.Errorf("provider.auth.shell is only allowed when type=%q", AuthTypeExec))
+	}
+	if a.RefreshMarginMS != nil {
+		errs = append(errs, fmt.Errorf("provider.auth.refresh_margin_ms is not supported when type=%q (SDK manages refresh internally)", AuthTypeProfile))
+	}
+	if a.TimeoutMS != nil && *a.TimeoutMS <= 0 {
+		errs = append(errs, fmt.Errorf("provider.auth.timeout_ms must be positive, got %d", *a.TimeoutMS))
+	}
+	if a.AutoLogin && a.Name == "" {
+		errs = append(errs, fmt.Errorf("provider.auth.name is required when auto_login=true (use a non-default profile name to avoid colliding with Claude Code subscription credentials)"))
+	}
+	if a.CacheKey != "" {
+		errs = append(errs, fmt.Errorf("provider.auth.cache_key is only allowed when type=%q", AuthTypeExec))
+	}
+	return errors.Join(errs...)
 }

@@ -101,7 +101,7 @@ func TestDecideProviderErrorMatrix(t *testing.T) {
 			ro := runtimeOptions{
 				targetName:  "claude",
 				cacheTarget: "claude",
-				providerFactory: func(_, _, _ string) llm.Provider {
+				providerFactory: func(_ string, _ config.ProviderConfig, _, _ string) llm.Provider {
 					return fake
 				},
 			}
@@ -182,7 +182,7 @@ func TestDecideRedactsRawErrorBody(t *testing.T) {
 	ro := runtimeOptions{
 		targetName:  "claude",
 		cacheTarget: "claude",
-		providerFactory: func(_, _, _ string) llm.Provider {
+		providerFactory: func(_ string, _ config.ProviderConfig, _, _ string) llm.Provider {
 			return fake
 		},
 	}

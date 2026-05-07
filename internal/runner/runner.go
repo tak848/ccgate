@@ -47,6 +47,14 @@ import (
 // puts ccgate into plan-mode evaluation.
 const PermissionModePlan = "plan"
 
+// credentialSourceProfile labels metrics / log entries when an
+// auth.type=profile resolution failed. The label is runner-local
+// because the profile path bypasses keystore entirely (so
+// keystore.Source does not cover it), but it shares the
+// credential_source slot with the keystore-managed values in
+// metrics.Entry so the field has a uniform meaning.
+const credentialSourceProfile = "profile"
+
 // HookInput is the on-the-wire JSON Claude Code and Codex CLI both
 // deliver to the PermissionRequest hook. Fields that only one of the
 // two surfaces stay omitempty so the user payload sent to the LLM
@@ -163,7 +171,7 @@ type runtimeOptions struct {
 	// back to newProviderClient. Wired through runtimeOptions
 	// instead of a package-level var so parallel tests can each pass
 	// their own fake without racing.
-	providerFactory func(providerName, apiKey, baseURL string) llm.Provider
+	providerFactory func(providerName string, p config.ProviderConfig, apiKey, baseURL string) llm.Provider
 }
 
 // WithTargetName labels the host tool in the system prompt header
@@ -224,8 +232,10 @@ func WithRecentTranscript(fn func(transcriptPath string) any) Option {
 // decide(). Test-only: production callers leave it unset and the
 // runner uses newProviderClient. The signature mirrors
 // newProviderClient so a fake can implement llm.Provider with no
-// awareness of the underlying SDK shape.
-func WithProviderFactory(fn func(providerName, apiKey, baseURL string) llm.Provider) Option {
+// awareness of the underlying SDK shape; the ProviderConfig
+// argument lets fakes observe auth.type=profile + name + auto_login
+// without re-parsing the merged config.
+func WithProviderFactory(fn func(providerName string, p config.ProviderConfig, apiKey, baseURL string) llm.Provider) Option {
 	return func(o *runtimeOptions) { o.providerFactory = fn }
 }
 
@@ -339,8 +349,12 @@ func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOpti
 		// already carry the diagnostic into metrics + log.
 		return llm.Decision{}, false, kind, reason, source, nil, nil //nolint:nilerr // intentional: credential failures never exit 1
 	}
-	if apiKey == "" {
-		// No key configured at all (kind already classified).
+	// kind != "" means resolveAPIKey produced a fallthrough classifier
+	// (no_apikey / unknown_provider / credential_unavailable). The
+	// auth.type=profile success path returns kind="" with an empty
+	// apiKey because the SDK resolves credentials itself, so the
+	// previous `apiKey == ""` guard would have short-circuited it.
+	if kind != "" {
 		return llm.Decision{}, false, kind, reason, source, nil, nil
 	}
 
@@ -361,9 +375,29 @@ func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOpti
 	if clientFactory == nil {
 		clientFactory = newProviderClient
 	}
-	client := clientFactory(providerName, apiKey, baseURL)
+	client := clientFactory(providerName, cfg.Provider, apiKey, baseURL)
 	res, err := client.Decide(ctx, p)
 	if err != nil {
+		// auth.type=profile preflight / load / auto-login failures
+		// surface as a typed sentinel from anthropic.Client. Catch
+		// them BEFORE the 401/403 router so the failure routes into
+		// reason=profile_load (not provider_auth) and we don't try
+		// to invalidate a keystore cache that profile mode never
+		// populated. anthropic.Client already logged the
+		// secret-free error_class; here we just emit the runner's
+		// uniform "falling through" trace.
+		if errors.Is(err, anthropic.ErrProfileUnavailable) {
+			slog.Warn("profile credential unavailable, falling through",
+				"kind", llm.FallthroughKindCredentialUnavailable,
+				"reason", string(keystore.ReasonProfileLoad),
+				"source", credentialSourceProfile,
+			)
+			return llm.Decision{}, false,
+				llm.FallthroughKindCredentialUnavailable,
+				string(keystore.ReasonProfileLoad),
+				credentialSourceProfile,
+				res.Usage, nil
+		}
 		// 401 / 403 against a key that came from a helper / file
 		// path is the canonical "the credential we just used is
 		// stale or wrong" signal: invalidate the keystore cache
@@ -667,6 +701,13 @@ func resolveAPIKey(ctx context.Context, p config.ProviderConfig, providerName, t
 	}
 
 	if p.Auth != nil {
+		// auth.type=profile delegates credential resolution to the
+		// Anthropic SDK at request time, so runner returns
+		// (key="", kind="") and lets newProviderClient seed the
+		// profile fields on anthropic.Client.
+		if p.Auth.Type == config.AuthTypeProfile {
+			return "", "", "", credentialSourceProfile, nil
+		}
 		opts := keystore.Options{
 			ProviderName:   providerName,
 			BaseURL:        strings.TrimSpace(p.BaseURL),
@@ -733,14 +774,24 @@ func isKnownProvider(name string) bool {
 	return false
 }
 
-func newProviderClient(providerName, apiKey, baseURL string) llm.Provider {
+func newProviderClient(providerName string, p config.ProviderConfig, apiKey, baseURL string) llm.Provider {
 	switch providerName {
 	case "openai":
 		return &openai.Client{APIKey: apiKey, BaseURL: baseURL}
 	case "gemini":
 		return &gemini.Client{APIKey: apiKey, BaseURL: baseURL}
 	default: // anthropic
-		return &anthropic.Client{APIKey: apiKey, BaseURL: baseURL}
+		cli := &anthropic.Client{APIKey: apiKey, BaseURL: baseURL}
+		// auth.type=profile delegates resolution to the SDK; apiKey
+		// arrives empty in that branch and the Profile / AutoLogin
+		// fields drive Decide's credential pipeline instead.
+		if p.Auth != nil && p.Auth.Type == config.AuthTypeProfile {
+			cli.UseProfile = true
+			cli.Profile = p.Auth.Name
+			cli.AutoLogin = p.Auth.AutoLogin
+			cli.AutoLoginTimeout = p.Auth.GetAutoLoginTimeout()
+		}
+		return cli
 	}
 }
 

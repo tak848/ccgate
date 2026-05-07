@@ -15,6 +15,14 @@ import (
 // Reason is a secret-free classifier surfaced in metrics for
 // credential_unavailable fallthroughs and in log-only warnings.
 // "" means success. See docs/configuration.md for the full list.
+//
+// Although this type is defined in the keystore package, it is the
+// shared vocabulary for every credential-resolution path ccgate
+// surfaces — including ReasonProfileLoad, which is produced by
+// internal/llm/anthropic for `auth.type=profile` (a path that does
+// not flow through keystore at all). Keeping the names here lets
+// runner.decide() emit a uniform `reason=` attribute regardless of
+// where the resolution failure originated.
 type Reason string
 
 // Reason values. Keep these aligned with docs/configuration.md.
@@ -34,6 +42,13 @@ const (
 	ReasonLockError          Reason = "lock_error"
 	ReasonCacheUnavailable   Reason = "cache_unavailable"
 	ReasonProviderAuth       Reason = "provider_auth"
+	// ReasonProfileLoad is produced by internal/llm/anthropic for
+	// auth.type=profile failures (LoadProfile / LoadConfig errors,
+	// credentials file preflight, ant auto-login bootstrap). The
+	// keystore code path itself never emits this value; it lives in
+	// the shared vocabulary so runner can route the fallthrough into
+	// the same `reason=` slot as the keystore-resolved cases.
+	ReasonProfileLoad Reason = "profile_load"
 
 	// Log-only (Resolve still succeeds; these never sit in metrics).
 	ReasonCacheParse Reason = "cache_parse"

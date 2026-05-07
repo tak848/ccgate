@@ -6,7 +6,7 @@ toolchain go1.25.9
 
 require (
 	github.com/alecthomas/kong v1.15.0
-	github.com/anthropics/anthropic-sdk-go v1.37.0
+	github.com/anthropics/anthropic-sdk-go v1.40.0
 	github.com/gofrs/flock v0.13.0
 	github.com/google/go-jsonnet v0.22.0
 	github.com/invopop/jsonschema v0.13.0
