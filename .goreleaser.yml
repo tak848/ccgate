@@ -69,6 +69,7 @@ brews:
     repository:
       owner: tak848
       name: homebrew-tap
+      branch: "ccgate-{{ .Version }}"
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
       pull_request:
         enabled: true
