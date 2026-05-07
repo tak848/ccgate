@@ -87,7 +87,7 @@ ccgate は helper の env に `CCGATE_API_KEY_RESOLUTION=1` を入れるので�
 
 ## Profile ベース認証 (Anthropic のみ)
 
-Anthropic provider 専用です。公式 `ant` CLI (`ant auth login` でブラウザ OAuth、`ant profile activate <name>` で active profile 切替) が `<config_dir>/credentials/<name>.json` (mode 0600) に認証情報を書き出します。`<config_dir>` の既定は `~/.config/anthropic`。Anthropic profile resolution (`$ANTHROPIC_PROFILE` → `<config_dir>/active_config` → `"default"`) は Go SDK / Claude Code / Claude Agent SDK で **共有** されます ([wif-reference doc](https://platform.claude.com/docs/en/api/authentication/wif-reference))。access token の refresh は SDK 自身が行うため、ccgate は credential 経路に介入しません — ただし SDK の static credential 自動 env (`ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN`) は無効化するので、残骸の env var が宣言した profile を silent に shadow しません。Workload Identity Federation は `authentication.type=oidc_federation` を含む profile config 経由のみ対応 (env-only WIF は本リリース範囲外)。
+Anthropic provider 専用です。公式 `ant` CLI (`ant auth login` でブラウザ OAuth、`ant profile activate <name>` で active profile を切り替え) が `<config_dir>/credentials/<name>.json` (mode 0600) に credentials を書き出します。`<config_dir>` の既定は `~/.config/anthropic`。Anthropic の profile 解決順 (`$ANTHROPIC_PROFILE` → `<config_dir>/active_config` → `"default"`) は Go SDK / Claude Code / Claude Agent SDK で **共有** されます ([wif-reference doc](https://platform.claude.com/docs/en/api/authentication/wif-reference))。access token の refresh は SDK 自身が行うため、ccgate は credential 経路には立ち入りません — ただし SDK の static-credential 用 env autoload (`ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN`) は無効化するので、残っている env var が、宣言した profile を黙って上書きすることはありません。Workload Identity Federation は `authentication.type=oidc_federation` を含む profile config 経由のみ対応 (env だけで WIF を構成する経路は本リリースの範囲外)。
 
 ### Quick start
 
@@ -101,20 +101,14 @@ ant auth login --profile ccgate         # ブラウザが開き ~/.config/anthro
 ```
 
 > [!IMPORTANT]
-> **`ant auth login` は profile 名に関わらず `<config_dir>/active_config` を書き換える** 仕様です。ant は `--profile <name>` 指定時はその `<name>` に、`--profile` 省略時は `default` に、`<config_dir>/active_config` を毎回書き換えます。Anthropic profile resolution は Claude Code / Claude Agent SDK と共有されるため、この retarget で Claude Code の credential 経路が subscription から従量課金 API に移ることがあります。対応:
+> **`ant auth login` は profile 名に関わらず `<config_dir>/active_config` を書き換える** 仕様です。ant は `--profile <name>` 指定時はその `<name>` に、`--profile` 省略時は `default` に、`<config_dir>/active_config` を毎回書き換えます。Anthropic の profile 解決順は Claude Code / Claude Agent SDK と共有されるため、この書き換えで Claude Code の credential 経路が subscription から従量課金 API に移ることがあります。対応:
 >
-> - default 以外の名前 (例: `ccgate`) で profile を作成し、ccgate.jsonnet で明示宣言する。`ant auth login` を `--profile` 指定なしで実行すると `default` profile が作られて active を奪うので、それを避ける。
-> - `ant auth login` の後は active pointer を戻す。2 つの選択肢:
->   - `rm <config_dir>/active_config` で pointer を完全クリア (SDK は `default` 解決に戻る)
+> - `default` 以外の名前 (例: `ccgate`) で profile を作成し、ccgate.jsonnet で明示宣言する。`ant auth login` を `--profile` 指定なしで実行すると `default` profile が作られて active profile を奪うので、それを避ける。
+> - `ant auth login` の後は active profile の参照先を戻す。2 つの選択肢:
+>   - `rm <config_dir>/active_config` で参照先を完全に消す (SDK は `default` 解決に戻る)
 >   - 普段使う profile があれば `ant profile activate <previous-profile-name>`
-> - 同じ profile を別 org / workspace に bind し直したい場合: ant は既に bind 済みの profile への再 login を reject する。`<config_dir>/configs/<name>.json` を削除して `ant auth login --profile <name>` を再実行する。
-> - upstream の `--no-activate` flag (upstream PR [anthropics/anthropic-cli#45](https://github.com/anthropics/anthropic-cli/pull/45)) が land すれば `ant auth login --profile <name> --no-activate` で retarget 自体を skip できるようになる。
-
-### env var auth からの移行
-
-- `auth: { type: 'profile', ... }` を宣言するまでは挙動は完全に従来通り (env var 経路のまま)
-- 宣言後は ccgate が SDK の env autoload を無効化するので、残骸の `ANTHROPIC_API_KEY` が profile を silent に shadow しません
-- `auth` ブロックを消せば即座に env var 経路に戻ります (cache や状態は残りません)
+> - 同じ profile を別 org / workspace に紐づけ直したい場合: ant は既に紐づいた profile への再 login を拒否するので、`<config_dir>/configs/<name>.json` を削除して `ant auth login --profile <name>` を再実行する。
+> - upstream の `--no-activate` flag (upstream PR [anthropics/anthropic-cli#45](https://github.com/anthropics/anthropic-cli/pull/45)) がマージされれば、`ant auth login --profile <name> --no-activate` で書き換え自体を回避できるようになる。
 
 ## 例
 
@@ -253,6 +247,6 @@ env 経路で 401 / 403 を exit 1 にしているのは、ccgate 側で env を
    - `profile_config_parse` / `profile_config_invalid`: `<config_dir>/configs/<name>.json` を mode `0644` に戻すか、削除して `ant auth login --profile <name>` で作り直す。
    - `credentials_missing`: `ant auth login --profile <name>` で credentials を発行。
    - `credentials_stat_failed`: credentials file または親 dir の `os.Stat` が "missing" 以外で失敗 (権限が典型)。`<config_dir>/credentials/` を mode 0700 に戻す。
-8. `ant auth login` の後は `ant auth status` で `<config_dir>/active_config` を確認してください。Claude Code が想定外の profile を使い始めたら `rm <config_dir>/active_config` (pointer をクリア) または `ant profile activate <previous-profile>` で戻します。upstream PR [anthropics/anthropic-cli#45](https://github.com/anthropics/anthropic-cli/pull/45) (`--no-activate`) が land すれば `ant auth login` が retarget を skip できるようになります。
+8. `ant auth login` の後は `ant auth status` で `<config_dir>/active_config` を確認してください。Claude Code が想定外の profile を使い始めたら `rm <config_dir>/active_config` で参照先を消すか、`ant profile activate <previous-profile>` で戻します。upstream PR [anthropics/anthropic-cli#45](https://github.com/anthropics/anthropic-cli/pull/45) (`--no-activate`) がマージされれば `ant auth login` が書き換えを回避できるようになります。
 
 reason の網羅は [configuration.md](configuration.md#credential_unavailable-の-reason-値) にあります。

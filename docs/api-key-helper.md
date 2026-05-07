@@ -110,12 +110,6 @@ ant auth login --profile ccgate         # opens a browser, writes ~/.config/anth
 > - To bind a profile to a different org / workspace, ant rejects re-login on a profile that already has one bound. Delete `<config_dir>/configs/<name>.json` and run `ant auth login --profile <name>` again.
 > - An upstream `--no-activate` flag (upstream PR [anthropics/anthropic-cli#45](https://github.com/anthropics/anthropic-cli/pull/45)) would let `ant auth login --profile <name> --no-activate` skip the retarget once it lands.
 
-### Migrating from env-var auth
-
-- The hook behaves exactly like before until you add `auth: { type: 'profile', ... }` (env var path stays in effect).
-- Once `auth.type=profile` is declared, ccgate disables the SDK's env autoload, so a leftover `ANTHROPIC_API_KEY` cannot silently shadow your profile.
-- Removing the `auth` block reverts to the env-var path immediately; no cache or state is left behind.
-
 ## Examples
 
 ### Wrap an existing env-var credential

@@ -375,13 +375,13 @@ helper / file の中身は次のいずれかを書きます。
 - **JSON** `{"key":"sk-...","expires_at":"<RFC3339>"}` — `auth.type=exec` の場合 `$XDG_CACHE_HOME/ccgate/<target>/` にキャッシュされ、期限前に更新されます
 - **plain string** — 単一行の非空文字列。キャッシュなし
 
-`auth.type=profile` は別経路です: ccgate は読み込んだ profile を `option.WithConfig` で anthropic-sdk-go に渡し、SDK の refresh-token loop が credential ライフサイクルを保有します。さらに `option.WithoutEnvironmentDefaults` を付けるので、残骸の `ANTHROPIC_API_KEY` が宣言した profile を silent に shadow しません。`ant auth login` (auto-login / 手動どちらでも) の後は `ant auth status` を確認してください — `ant` は `--profile` の副作用として `<config_dir>/active_config` (Claude Code 共有) を書き換えます。upstream PR [anthropics/anthropic-cli#45](https://github.com/anthropics/anthropic-cli/pull/45) (`--no-activate` flag) が merge されればその副作用が消えます。
+`auth.type=profile` は別経路です: ccgate は読み込んだ profile を `option.WithConfig` で anthropic-sdk-go に渡し、SDK の refresh-token loop が credential ライフサイクルを保有します。さらに `option.WithoutEnvironmentDefaults` を付けるので、残っている `ANTHROPIC_API_KEY` が、宣言した profile を黙って上書きすることはありません。`ant auth login` の後は `ant auth status` を確認してください — `ant` は `--profile` の副作用として `<config_dir>/active_config` (Claude Code と共有) を書き換えます。upstream PR [anthropics/anthropic-cli#45](https://github.com/anthropics/anthropic-cli/pull/45) (`--no-activate` flag) がマージされればその副作用が消えます。
 
 解決順序: `provider.auth` (設定済み) > `CCGATE_*_API_KEY` > `*_API_KEY`。`auth` を設定済みのときに失敗しても **env var に黙って fallback はしません**。代わりに `kind=credential_unavailable` で fallthrough します。
 
 ccgate は jsonnet helper として `std.native('env')(name)` (未定義は空文字) と `std.native('must_env')(name)` (未定義は config-load エラー) を register しているので、任意の文字列フィールドから ccgate 独自記法を使わずに env を読めます。
 
-helper の完全な仕様 (動かせる例 / `auth.cache_key` によるアカウント別キャッシュ / 初回ブラウザ認証 / profile auto-login Beta + `active_config` の注意 / 401/403 の挙動マトリクス / 障害復旧チェックリスト) は [api-key-helper.md](api-key-helper.md) を参照してください。
+helper の完全な仕様 (動かせる例 / `auth.cache_key` によるアカウント別キャッシュ / 初回ブラウザ認証 / `auth.type=profile` と `active_config` の注意 / 401/403 の挙動マトリクス / 障害復旧チェックリスト) は [api-key-helper.md](api-key-helper.md) を参照してください。
 ## デフォルトルール
 
 ccgate は target ごとに組み込みのデフォルトルールを持っています。常にベースとして適用され、その上にグローバル / プロジェクトローカル設定が重なります。
