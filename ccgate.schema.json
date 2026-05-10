@@ -151,6 +151,10 @@
       "enum": ["ask", "allow", "deny"],
       "description": "How to resolve LLM-driven fallthrough decisions. 'ask' (default): defer to Claude Code's prompt. 'deny': auto-deny uncertain requests; the hook message tells Claude that the decision was forced for safety and that it must not ask the user or bypass the restriction. 'allow': auto-approve uncertain requests; note that Claude Code's hook spec only delivers decision.message on deny, so Claude will NOT see any warning that an uncertain request was auto-approved — choose this only when you are comfortable with that. Only LLM fallthrough is affected (bypassPermissions, dontAsk, missing API key, non-Anthropic provider, and ExitPlanMode/AskUserQuestion still defer to Claude Code regardless)."
     },
+    "disable_load_main_worktree_local_config": {
+      "type": "boolean",
+      "description": "Kill switch for the linked-worktree convenience that reads the main worktree's untracked project-local config (e.g. <main_worktree>/.claude/ccgate.local.jsonnet, or .codex/...) before the current worktree's local config. Default: false (the main worktree is read). Set to true to skip the main worktree entirely and use only the current worktree's local config. Only evaluated at the embed/global layer — values written into project-local config are ignored to avoid a chicken-and-egg loop."
+    },
     "environment": {
       "type": "array",
       "items": {

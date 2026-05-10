@@ -82,6 +82,15 @@ type Config struct {
 	MetricsDisabled     *bool          `json:"metrics_disabled,omitempty"`
 	MetricsMaxSize      *int64         `json:"metrics_max_size,omitempty"`
 	FallthroughStrategy *string        `json:"fallthrough_strategy,omitempty"`
+	// DisableLoadMainWorktreeLocalConfig is a kill switch for the
+	// linked-worktree convenience that reads
+	// `<main_worktree>/.claude/ccgate.local.jsonnet` (or `.codex/...`)
+	// before the current worktree's local config. Defaults to false
+	// (= the main worktree is read). Set to true to skip it and read
+	// only the current worktree's local config. Evaluated at the
+	// embed+global layer; values written into project-local config
+	// are ignored — see `Load` for the rationale.
+	DisableLoadMainWorktreeLocalConfig *bool `json:"disable_load_main_worktree_local_config,omitempty"`
 	// Allow / Deny / Environment replace the value carried over from
 	// previous layers when the layer sets them (even to []). Embedded
 	// defaults are always layer 0, so writing `allow: [...]` in your
@@ -107,6 +116,15 @@ func (c Config) GetFallthroughStrategy() string {
 		return FallthroughStrategyAsk
 	}
 	return *c.FallthroughStrategy
+}
+
+// ShouldLoadMainWorktreeLocalConfig reports whether ccgate should
+// read the main worktree's untracked project-local config when run
+// inside a linked git worktree. Default true; set
+// `disable_load_main_worktree_local_config: true` in the embedded
+// defaults or your global config to skip the main worktree entirely.
+func (c Config) ShouldLoadMainWorktreeLocalConfig() bool {
+	return c.DisableLoadMainWorktreeLocalConfig == nil || !*c.DisableLoadMainWorktreeLocalConfig
 }
 
 type ProviderConfig struct {
@@ -461,6 +479,21 @@ func Load(opts LoadOptions, cwd string) (LoadResult, error) {
 		source = SourceGlobalConfig
 	}
 
+	// In a linked git worktree, layer the main worktree's untracked
+	// project-local config before the current worktree's. The flag is
+	// evaluated at this point so it can only be set by embedded
+	// defaults or the global config; writing it into project-local
+	// config would create a chicken-and-egg loop (we'd need to read
+	// the main worktree's config to decide whether to read the main
+	// worktree's config) and is intentionally ignored.
+	if cfg.ShouldLoadMainWorktreeLocalConfig() {
+		for _, path := range safeMainWorktreeLocalConfigPaths(cwd, opts.ProjectLocalRelativePaths) {
+			if err := mergeConfigFile(path, &cfg); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return LoadResult{Config: cfg}, fmt.Errorf("main-worktree local config %s: %w", path, err)
+			}
+		}
+	}
+
 	for _, path := range safeProjectLocalConfigPaths(cwd, opts.ProjectLocalRelativePaths) {
 		if err := mergeConfigFile(path, &cfg); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return LoadResult{Config: cfg}, fmt.Errorf("local config %s: %w", path, err)
@@ -509,8 +542,43 @@ func safeProjectLocalConfigPaths(cwd string, relativePaths []string) []string {
 		root = repoRoot
 	}
 
+	return safeUntrackedPaths(root, projectLocalConfigPaths(cwd, relativePaths))
+}
+
+// safeMainWorktreeLocalConfigPaths returns the equivalents of
+// safeProjectLocalConfigPaths anchored at the *main* worktree root
+// rather than the current cwd's repo root, used when ccgate runs
+// inside a linked git worktree. Returns nil when not in a linked
+// worktree, when the main worktree root coincides with the current
+// repo root (no-op, avoids reading the same file twice), or when
+// no relative paths are supplied.
+func safeMainWorktreeLocalConfigPaths(cwd string, relativePaths []string) []string {
+	if len(relativePaths) == 0 {
+		return nil
+	}
+	mainRoot := gitutil.MainWorktreeRoot(cwd)
+	if mainRoot == "" {
+		return nil
+	}
+	repoRoot, err := gitutil.RepoRoot(cwd)
+	if err == nil && repoRoot == mainRoot {
+		return nil
+	}
+
+	candidates := make([]string, 0, len(relativePaths))
+	for _, rel := range relativePaths {
+		candidates = append(candidates, filepath.Join(mainRoot, rel))
+	}
+	return safeUntrackedPaths(mainRoot, candidates)
+}
+
+// safeUntrackedPaths filters candidate paths anchored at root,
+// returning the existing files that git does not track. Tracked
+// files are skipped on purpose — ccgate's project-local layer is for
+// per-user, gitignored config, never something checked in.
+func safeUntrackedPaths(root string, candidates []string) []string {
 	var safe []string
-	for _, path := range projectLocalConfigPaths(cwd, relativePaths) {
+	for _, path := range candidates {
 		if _, err := os.Stat(path); err != nil {
 			continue
 		}
@@ -649,6 +717,9 @@ func mergeConfigJSON(data string, cfg *Config) error {
 	}
 	if override.FallthroughStrategy != nil {
 		cfg.FallthroughStrategy = override.FallthroughStrategy
+	}
+	if override.DisableLoadMainWorktreeLocalConfig != nil {
+		cfg.DisableLoadMainWorktreeLocalConfig = override.DisableLoadMainWorktreeLocalConfig
 	}
 
 	// Lists: `allow` / `deny` / `environment` REPLACE the value
