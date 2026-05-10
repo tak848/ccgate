@@ -38,6 +38,17 @@
   // Only LLM uncertainty is affected; bypassPermissions / dontAsk / missing API key still defer.
   // fallthrough_strategy: 'ask',
 
+  // disable_load_main_worktree_local_config: true,
+  // When ccgate runs inside a linked git worktree (`git worktree add`),
+  // it reads <main_worktree>/.claude/ccgate.local.jsonnet (untracked
+  // only) before the current worktree's local config, so the
+  // personal rules in your main checkout still apply in PR-review
+  // worktrees. Set this to true to skip the main worktree and read
+  // only the current worktree's local config. Evaluated at the
+  // embed/global layer; written into project-local config it is
+  // ignored (we'd need to read the main config to decide whether
+  // to read the main config).
+
   allow: [
     'Read-Only Operations: Read, Glob, Grep, and other read-only tools that do not modify state.',
     'Local Development: Build, test, lint, format commands in the current repository.',

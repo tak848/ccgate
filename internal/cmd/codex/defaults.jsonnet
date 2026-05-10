@@ -50,6 +50,17 @@
   // Only LLM uncertainty is affected; runtime-mode fallthroughs (no API key, etc.) still defer.
   // fallthrough_strategy: 'ask',
 
+  // disable_load_main_worktree_local_config: true,
+  // When ccgate runs inside a linked git worktree (`git worktree add`),
+  // it reads <main_worktree>/.codex/ccgate.local.jsonnet (untracked
+  // only) before the current worktree's local config, so the
+  // personal rules in your main checkout still apply in PR-review
+  // worktrees. Set this to true to skip the main worktree and read
+  // only the current worktree's local config. Evaluated at the
+  // embed/global layer; written into project-local config it is
+  // ignored (we'd need to read the main config to decide whether
+  // to read the main config).
+
   allow: [
     'Read-only operations: Bash inspection commands (ls, cat, head, tail, less, file, stat, find/grep without -exec/--delete, git status/log/diff/show/branch/remote -v), or any tool whose tool_input shape implies pure read (no writes, no network calls with side effects).',
     'Local writes inside the workspace: apply_patch hunks whose target paths are all under cwd / repo_root, edits to project files for editing/refactoring/scaffolding the AI is currently doing. Same bar as Claude Code Edit/Write through ccgate.',
