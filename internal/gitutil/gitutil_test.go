@@ -118,6 +118,58 @@ func TestIsTrackedEmptyRoot(t *testing.T) {
 	}
 }
 
+func TestMainWorktreeRoot(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		isGit        bool
+		makeWorktree bool
+	}{
+		"main repo":       {isGit: true, makeWorktree: false},
+		"linked worktree": {isGit: true, makeWorktree: true},
+		"non-git dir":     {isGit: false, makeWorktree: false},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			main := t.TempDir()
+			if tc.isGit {
+				initGit(t, main)
+			}
+
+			target := main
+			var wantMain string
+			if tc.makeWorktree {
+				gitRun(t, main, "commit", "--allow-empty", "-m", "init")
+				wt := filepath.Join(filepath.Dir(main), filepath.Base(main)+"-wt")
+				t.Cleanup(func() { _ = os.RemoveAll(wt) })
+				gitRun(t, main, "worktree", "add", "--detach", wt)
+				target = wt
+				wantMain, _ = filepath.EvalSymlinks(main)
+			}
+
+			got := MainWorktreeRoot(target)
+
+			if wantMain == "" {
+				if got != "" {
+					t.Fatalf("got %q, want empty", got)
+				}
+				return
+			}
+
+			gotResolved, err := filepath.EvalSymlinks(got)
+			if err != nil {
+				t.Fatalf("EvalSymlinks(%q): %v", got, err)
+			}
+			if gotResolved != wantMain {
+				t.Fatalf("got %q, want %q", gotResolved, wantMain)
+			}
+		})
+	}
+}
+
 func initGit(t *testing.T, dir string) {
 	t.Helper()
 	gitRun(t, dir, "init")
