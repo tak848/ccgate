@@ -18,6 +18,36 @@ ccgate は target ごとに 3 つの設定層を順に読み込みます。各�
 
 `{repo_root}` は git repo root で、hook の `cwd` から `git rev-parse --show-toplevel` で解決します。git repo 外では `cwd` 自体が使われます。
 
+### linked git worktree でのふるまい
+
+ccgate が linked git worktree (`git worktree add ...`) の中で動作するとき、上記 (3) には sub-layer が追加されます: **main worktree** 側の untracked な `ccgate.local.jsonnet` を、current worktree のものより *先に* 読みます。PR レビュー用や並行作業用の一時 worktree でも、main checkout に置いた個人ルールをそのまま使い続けたい、というニーズに応えるためのものです。
+
+| sub-layer (merge 順、step 3 内) | 動作 |
+|---|---|
+| 3a. main-worktree project-local: `{main_worktree}/.claude/ccgate.local.jsonnet` (or `.codex/...`) | **新規**。ccgate が linked worktree 内で動作し、かつ当該 file が untracked のときのみ読み込む |
+| 3b. current-worktree project-local | 従来どおり |
+
+これは ccgate 独自の便宜であり、Claude Code 本体 / Codex CLI 本体は main worktree から自分達の project-local 設定を継承するわけではありません。ccgate が自前の untracked な `ccgate.local.jsonnet` だけにこの層を足しています。
+
+**継承を無効化する**: `disable_load_main_worktree_local_config: true` を embedded defaults もしくは global config に書く。flag は embed + global の 2 層までで確定し、project-local (main / current いずれ) に書いても **無視** されます (main の config を読むかどうかを決めるのに main の config を読まないといけない、という鶏卵問題を避けるため)。そのため debug dump で `disable_load_main_worktree_local_config: true` が見えていても、その `true` を project-local に書いた場合は実挙動では main 側が読まれ続けます。
+
+**`append_*` は両 sub-layer をまたいで累積**: main-worktree local で append したものは current-worktree local の append にそのまま積まれます。current worktree 側で「main から来た特定 1 行だけを取り消す」操作はマージ規則上できません — これは layer 間共通の制約です (「既知の制約」参照)。
+
+**相対パスは current worktree の cwd 基準**: `log_path` / `metrics_path` / `auth.path` 等の path 系 field は、`~/` の展開だけ ccgate が行い、それ以外の相対パスは OS にそのまま渡されます。main worktree の config に `log_path: 'logs/ccgate.log'` と書いても、それは main worktree ではなく **current worktree** の cwd 基準で解決されます。worktree に依存しない単一の場所を指したいときは絶対パスか `~/` を使ってください。
+
+**per-worktree で env から切り替える (任意)**: ccgate は本機能用の env var を予約していませんが、global config から `std.native('env')` を使えば任意の env var を読めます:
+
+```jsonnet
+// ~/.claude/ccgate.jsonnet
+// env var の名前は user 側で自由に決める — ccgate は特定 env を予約しない
+{
+  disable_load_main_worktree_local_config:
+    std.native('env')('SKIP_MAIN_WORKTREE_CCGATE') == 'true',
+}
+```
+
+direnv なら `<worktree>/.envrc` に `export SKIP_MAIN_WORKTREE_CCGATE=true` を入れることで、その worktree でだけ継承を切れます。
+
 
 ### layer の合成ルール
 
