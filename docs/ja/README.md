@@ -231,9 +231,10 @@ Claude Code と同じ環境変数を使います — [provider table](#3-api-キ
 |----:|-------------|-----------|
 | 1 | 組み込みデフォルト (常にベースとして適用) | 同じ |
 | 2 | `~/.claude/ccgate.jsonnet` — グローバル (上に重ねる) | `~/.codex/ccgate.jsonnet` — グローバル (同じ) |
-| 3 | `{repo_root}/.claude/ccgate.local.jsonnet` — プロジェクトローカル (Git 未追跡のみ、上に重ねる) | `{repo_root}/.codex/ccgate.local.jsonnet` — プロジェクトローカル (同じ) |
+| 3 | `{main_worktree}/.claude/ccgate.local.jsonnet` — main worktree プロジェクトローカル (Git 未追跡のみ、linked git worktree のときのみ) | `{main_worktree}/.codex/ccgate.local.jsonnet` (同じ) |
+| 4 | `{repo_root}/.claude/ccgate.local.jsonnet` — current worktree プロジェクトローカル (Git 未追跡のみ) | `{repo_root}/.codex/ccgate.local.jsonnet` (同じ) |
 
-3 つの layer はすべて同じ merge ルールで合成されます:
+各 layer はすべて同じ merge ルールで合成されます:
 
 - **list**: `allow` / `deny` / `environment` は値を設定した layer が前の layer から引き継いだ list を **置き換える** (`[]` を書けば空 list に置き換え)。`append_*` 系 (`append_allow` / `append_deny` / `append_environment`) は前の layer の累積 list の **末尾に追加** する。
 - **スカラー**: `log_*` / `metrics_*` / `fallthrough_strategy` はその layer がフィールドを設定していれば per-field で上書き、設定していなければ前の値を保持。
@@ -242,7 +243,7 @@ Claude Code と同じ環境変数を使います — [provider table](#3-api-キ
 `~/.<target>/ccgate.jsonnet` で model だけ変えたい場合でも `provider: {name: 'anthropic', model: 'claude-sonnet-4-6'}` のように block 全体を書き直す必要があります (embedded の `allow` / `deny` はそのまま残ります)。`allow: [...]` を書けば embedded の allow を完全に差し替え (これは v0.6 以前のグローバル設定がすでに行っていた挙動なので、そのまま冪等)。プロジェクトローカル設定は典型的に `append_deny: [...]` / `append_environment: [...]` で追加制限を載せます。
 プロジェクトローカル設定は **Git に追跡されていないファイルのみ** 読み込まれます。
 
-linked git worktree では main worktree 側の `ccgate.local.jsonnet` も読まれます (current worktree より先)。`disable_load_main_worktree_local_config: true` で無効化。詳細は [docs/configuration.md](configuration.md#ccgate-が-config-を探す場所) を参照。
+`disable_load_main_worktree_local_config: true` を (1) または (2) に書けば (3) をスキップします。この flag は (1) / (2) でのみ有効で、(3) / (4) に書いても無視されます。詳細は [docs/configuration.md](configuration.md#ccgate-が-config-を探す場所) を参照。
 
 
 ### 設定項目

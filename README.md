@@ -240,9 +240,10 @@ Same env vars as Claude Code — see the [provider table](#3-api-key).
 |------:|-------------|-----------|
 | 1     | Embedded defaults (always applied as the base) | Embedded defaults (same) |
 | 2     | `~/.claude/ccgate.jsonnet` — global (layered on top) | `~/.codex/ccgate.jsonnet` — global (same) |
-| 3     | `{repo_root}/.claude/ccgate.local.jsonnet` — project-local (untracked only, layered on top) | `{repo_root}/.codex/ccgate.local.jsonnet` — project-local (same) |
+| 3     | `{main_worktree}/.claude/ccgate.local.jsonnet` — main-worktree project-local (untracked only; only when running in a linked git worktree) | `{main_worktree}/.codex/ccgate.local.jsonnet` (same) |
+| 4     | `{repo_root}/.claude/ccgate.local.jsonnet` — current-worktree project-local (untracked only) | `{repo_root}/.codex/ccgate.local.jsonnet` (same) |
 
-All three layers compose with the same rules:
+All layers compose with the same rules:
 
 - **Lists** — `allow` / `deny` / `environment` **replace** the value carried over from earlier layers when the layer sets them (even to `[]`). The `append_*` siblings (`append_allow`, `append_deny`, `append_environment`) **add** entries on top of whatever the earlier layers produced.
 - **Scalars** — `log_*`, `metrics_*`, `fallthrough_strategy` are overwritten per-field when the layer sets them, otherwise the earlier value survives.
@@ -252,7 +253,7 @@ So `~/.<target>/ccgate.jsonnet` that wants to bump just the model still has to r
 
 Project-local configs are loaded only when **not tracked by Git**.
 
-In a linked git worktree, the main worktree's `ccgate.local.jsonnet` is also read, layered before the current worktree's. Disable with `disable_load_main_worktree_local_config: true`. See [docs/configuration.md](docs/configuration.md#where-ccgate-looks-for-config).
+Set `disable_load_main_worktree_local_config: true` in layer (1) or (2) to skip layer (3). The flag is honoured only at those two layers — written into (3) or (4) it is ignored. See [docs/configuration.md](docs/configuration.md#where-ccgate-looks-for-config).
 
 
 ### Config fields

@@ -6,19 +6,24 @@ Cross-target configuration reference. The [root README](../README.md) lists the 
 
 ## Where ccgate looks for config
 
-ccgate evaluates three layers, in order, per target. Every layer composes with the same merge semantics (see "How layers compose" below):
+ccgate evaluates these layers, in order, per target. Every layer composes with the same merge semantics (see "How layers compose" below):
 
 1. **Embedded defaults.** Compiled into the binary. Always applied as the base. Inspect with `ccgate <target> init`.
 2. **Global config**, layered on top of the embedded defaults if present:
    - Claude Code: `~/.claude/ccgate.jsonnet`
    - Codex CLI:   `~/.codex/ccgate.jsonnet`
-3. **Project-local overrides**, layered on top of (1)+(2). Tracked files are ignored (see "Why tracked files are skipped" below):
+3. **Main-worktree project-local**, only when ccgate runs in a linked git worktree (`git worktree add ...`). Tracked files are ignored (see "Why tracked files are skipped" below):
+   - Claude Code: `{main_worktree}/.claude/ccgate.local.jsonnet`
+   - Codex CLI:   `{main_worktree}/.codex/ccgate.local.jsonnet`
+4. **Current-worktree project-local.** Tracked files are ignored:
    - Claude Code: `{repo_root}/.claude/ccgate.local.jsonnet`
    - Codex CLI:   `{repo_root}/.codex/ccgate.local.jsonnet`
 
-   In a linked git worktree (`git worktree add ...`), the main worktree's `ccgate.local.jsonnet` (or `.codex/...`) is read first, then the current worktree's. Set `disable_load_main_worktree_local_config: true` in defaults or global to skip the main-worktree side. Relative paths (`log_path`, `metrics_path`, `auth.path`, …) resolve against the current cwd, not against the config file's directory.
+`{repo_root}` is the git repo root, resolved via `git rev-parse --show-toplevel` from the hook's `cwd`. `{main_worktree}` is the same repo's main worktree root, derived from `git rev-parse --git-common-dir`. Outside a git repo the `cwd` itself is used.
 
-`{repo_root}` is the git repo root, resolved via `git rev-parse --show-toplevel` from the hook's `cwd`. Outside a git repo the `cwd` itself is used.
+Set `disable_load_main_worktree_local_config: true` in layer (1) or (2) to skip layer (3). The flag is honoured **only** at those two layers — written into (3) or (4) it is ignored.
+
+Relative paths in any layer (`log_path`, `metrics_path`, `auth.path`, …) resolve against the current cwd, not against the config file's directory.
 
 
 ### How layers compose
