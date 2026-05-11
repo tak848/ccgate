@@ -16,15 +16,9 @@ ccgate evaluates three layers, in order, per target. Every layer composes with t
    - Claude Code: `{repo_root}/.claude/ccgate.local.jsonnet`
    - Codex CLI:   `{repo_root}/.codex/ccgate.local.jsonnet`
 
+   In a linked git worktree (`git worktree add ...`), the main worktree's `ccgate.local.jsonnet` (or `.codex/...`) is read first, then the current worktree's. Set `disable_load_main_worktree_local_config: true` in defaults or global to skip the main-worktree side. Relative paths (`log_path`, `metrics_path`, `auth.path`, …) resolve against the current cwd, not against the config file's directory.
+
 `{repo_root}` is the git repo root, resolved via `git rev-parse --show-toplevel` from the hook's `cwd`. Outside a git repo the `cwd` itself is used.
-
-### Linked git worktrees
-
-When ccgate runs inside a linked git worktree (`git worktree add ...`), step (3) also reads the main worktree's untracked `ccgate.local.jsonnet` (or `.codex/...`), layered *before* the current worktree's.
-
-Set `disable_load_main_worktree_local_config: true` in defaults or global to skip the main worktree.
-
-Relative paths (`log_path`, `metrics_path`, `auth.path`, …) resolve against the current cwd, not against the file's directory — use absolute or `~/`-prefixed paths if you need a worktree-independent location.
 
 
 ### How layers compose

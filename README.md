@@ -252,7 +252,7 @@ So `~/.<target>/ccgate.jsonnet` that wants to bump just the model still has to r
 
 Project-local configs are loaded only when **not tracked by Git**.
 
-In a linked git worktree, the main worktree's `ccgate.local.jsonnet` is also read, layered before the current worktree's. Disable with `disable_load_main_worktree_local_config: true`. See [docs/configuration.md](docs/configuration.md#linked-git-worktrees).
+In a linked git worktree, the main worktree's `ccgate.local.jsonnet` is also read, layered before the current worktree's. Disable with `disable_load_main_worktree_local_config: true`. See [docs/configuration.md](docs/configuration.md#where-ccgate-looks-for-config).
 
 
 ### Config fields
@@ -271,7 +271,7 @@ In a linked git worktree, the main worktree's `ccgate.local.jsonnet` is also rea
 | `metrics_disabled`       | bool                              | `false`                                                                       | Disable metrics collection entirely                                                                    |
 | `metrics_max_size`       | int                               | `2097152`                                                                     | Max metrics file size in bytes before rotation (default 2MB). `0` = no rotation.                       |
 | `fallthrough_strategy`   | `"ask"` / `"allow"` / `"deny"`    | `"ask"`                                                                       | How to resolve LLM uncertainty (`fallthrough`). See [Unattended automation](#unattended-automation-fallthrough_strategy). |
-| `disable_load_main_worktree_local_config` | bool | `false`                                                                       | In a linked git worktree, skip the main worktree's `ccgate.local.jsonnet`. See [docs/configuration.md](docs/configuration.md#linked-git-worktrees). |
+| `disable_load_main_worktree_local_config` | bool | `false`                                                                       | In a linked git worktree, skip the main worktree's `ccgate.local.jsonnet`. See [docs/configuration.md](docs/configuration.md#where-ccgate-looks-for-config). |
 | `allow`                  | string[]                          | `[]`                                                                          | Allow guidance rules. **Replaces** the value carried over from earlier layers when set.                |
 | `deny`                   | string[]                          | `[]`                                                                          | Deny guidance rules (mandatory). Supports inline `deny_message:` hints. Same replace semantics as `allow`. |
 | `environment`            | string[]                          | `[]`                                                                          | Context strings passed to the LLM (trust level, policies, etc.). Same replace semantics as `allow`.    |

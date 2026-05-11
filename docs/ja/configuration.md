@@ -16,15 +16,9 @@ ccgate は target ごとに 3 つの設定層を順に読み込みます。各�
    - Claude Code: `{repo_root}/.claude/ccgate.local.jsonnet`
    - Codex CLI:   `{repo_root}/.codex/ccgate.local.jsonnet`
 
+   linked git worktree (`git worktree add ...`) の中では、main worktree 側の `ccgate.local.jsonnet` (or `.codex/...`) が先に読まれ、続いて current worktree 側が読まれます。`disable_load_main_worktree_local_config: true` を defaults / global に書けば main 側をスキップします。相対パス (`log_path` / `metrics_path` / `auth.path` 等) は config file の置き場所ではなく **current cwd** 基準で解決されます。
+
 `{repo_root}` は git repo root で、hook の `cwd` から `git rev-parse --show-toplevel` で解決します。git repo 外では `cwd` 自体が使われます。
-
-### linked git worktree でのふるまい
-
-ccgate が linked git worktree (`git worktree add ...`) の中で動作するとき、上記 (3) は main worktree 側の untracked な `ccgate.local.jsonnet` (or `.codex/...`) も読みます。順序は main 側 → current worktree 側。
-
-`disable_load_main_worktree_local_config: true` を defaults / global に書けば main 側をスキップします。
-
-相対パス (`log_path` / `metrics_path` / `auth.path` 等) は file の置き場所ではなく **current cwd** 基準で解決されます。worktree に依存しない単一の場所を指したいときは絶対パスか `~/` を使ってください。
 
 
 ### layer の合成ルール
