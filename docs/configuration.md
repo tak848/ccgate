@@ -20,33 +20,11 @@ ccgate evaluates three layers, in order, per target. Every layer composes with t
 
 ### Linked git worktrees
 
-When ccgate runs inside a linked git worktree (`git worktree add ...`), step (3) gains an extra sub-layer: the **main worktree's** untracked `ccgate.local.jsonnet` is read *before* the current worktree's. The intent is to keep the personal rules from your main checkout active in temporary worktrees (PR reviews, parallel branches) without copying or symlinking the file.
+When ccgate runs inside a linked git worktree (`git worktree add ...`), step (3) also reads the main worktree's untracked `ccgate.local.jsonnet` (or `.codex/...`), layered *before* the current worktree's.
 
-| Sub-layer (in merge order, within step 3) | Behavior |
-|---|---|
-| 3a. Main-worktree project-local: `{main_worktree}/.claude/ccgate.local.jsonnet` (or `.codex/...`) | **New.** Read only when ccgate is inside a linked worktree and the file is untracked. |
-| 3b. Current-worktree project-local | Same as before. |
+Set `disable_load_main_worktree_local_config: true` in defaults or global to skip the main worktree.
 
-This is a ccgate-specific convenience — Claude Code and Codex CLI themselves do not inherit their own project-local config files from the main worktree.
-
-**Turning the inherit off.** Set `disable_load_main_worktree_local_config: true` in the embedded defaults or in your global config. The flag is evaluated at the embed+global layer only; writing it into either project-local layer is **ignored** (ccgate would have to read the main config to decide whether to read the main config). A debug dump can therefore show `disable_load_main_worktree_local_config: true` while the runtime keeps reading the main layer, if the `true` was set in project-local.
-
-**`append_*` carries across both sub-layers.** Entries appended in main-worktree local stack onto the current worktree's appends as you'd expect. Removing a single appended rule from the current worktree alone is not possible; this is the same constraint that applies between any two layers (see "Known limitations").
-
-**Relative paths use the current cwd.** `log_path` / `metrics_path` / `auth.path` and other path fields are handed to the OS verbatim once `~/` has been expanded — there is no rewriting of relative paths against the file's directory. A `log_path: 'logs/ccgate.log'` written in the main-worktree config will resolve under the current worktree's cwd, not the main worktree's. Use absolute or `~/`-prefixed paths if you want a single, worktree-independent location.
-
-**Per-worktree env switch (optional).** ccgate does not reserve any env var for this option, but the global config can read your own env vars through `std.native('env')`:
-
-```jsonnet
-// ~/.claude/ccgate.jsonnet
-// Env var name is YOUR choice — ccgate doesn't read a specific one.
-{
-  disable_load_main_worktree_local_config:
-    std.native('env')('SKIP_MAIN_WORKTREE_CCGATE') == 'true',
-}
-```
-
-With direnv, put `export SKIP_MAIN_WORKTREE_CCGATE=true` in `<worktree>/.envrc` to disable inheriting only for that worktree.
+Relative paths (`log_path`, `metrics_path`, `auth.path`, …) resolve against the current cwd, not against the file's directory — use absolute or `~/`-prefixed paths if you need a worktree-independent location.
 
 
 ### How layers compose

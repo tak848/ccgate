@@ -242,7 +242,7 @@ Claude Code と同じ環境変数を使います — [provider table](#3-api-キ
 `~/.<target>/ccgate.jsonnet` で model だけ変えたい場合でも `provider: {name: 'anthropic', model: 'claude-sonnet-4-6'}` のように block 全体を書き直す必要があります (embedded の `allow` / `deny` はそのまま残ります)。`allow: [...]` を書けば embedded の allow を完全に差し替え (これは v0.6 以前のグローバル設定がすでに行っていた挙動なので、そのまま冪等)。プロジェクトローカル設定は典型的に `append_deny: [...]` / `append_environment: [...]` で追加制限を載せます。
 プロジェクトローカル設定は **Git に追跡されていないファイルのみ** 読み込まれます。
 
-linked git worktree (`git worktree add ...`) の中で動作する場合、ccgate は current worktree の前に **main worktree** 側の untracked な `ccgate.local.jsonnet` も読みます。main checkout に置いた個人ルールが一時 worktree でもそのまま効くようにするためです。default / global 層に `disable_load_main_worktree_local_config: true` を書けば opt-out 可能。詳細は [docs/configuration.md#linked-git-worktrees](configuration.md#linked-git-worktree-でのふるまい) を参照。
+linked git worktree では main worktree 側の `ccgate.local.jsonnet` も読まれます (current worktree より先)。`disable_load_main_worktree_local_config: true` で無効化。詳細は [docs/configuration.md](configuration.md#linked-git-worktree-でのふるまい) を参照。
 
 
 ### 設定項目
