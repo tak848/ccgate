@@ -170,6 +170,31 @@ func TestMainWorktreeRoot(t *testing.T) {
 	}
 }
 
+func TestMainWorktreeRootBareRepo(t *testing.T) {
+	t.Parallel()
+
+	// A bare repo plus a linked worktree must surface as no-op
+	// (empty string), matching the project's "bare repo / submodule /
+	// custom $GIT_DIR -> empty" invariant.
+	parent := t.TempDir()
+	bare := filepath.Join(parent, "repo.git")
+	gitRun(t, parent, "init", "--bare", "repo.git")
+
+	seed := filepath.Join(parent, "seed")
+	gitRun(t, parent, "clone", bare, "seed")
+	gitRun(t, seed, "config", "user.email", "test@test.com")
+	gitRun(t, seed, "config", "user.name", "test")
+	gitRun(t, seed, "commit", "--allow-empty", "-m", "init")
+	gitRun(t, seed, "push", "origin", "HEAD:refs/heads/main")
+
+	wt := filepath.Join(parent, "wt")
+	gitRun(t, bare, "worktree", "add", wt, "main")
+
+	if got := MainWorktreeRoot(wt); got != "" {
+		t.Fatalf("bare repo linked worktree: got %q, want empty", got)
+	}
+}
+
 func initGit(t *testing.T, dir string) {
 	t.Helper()
 	gitRun(t, dir, "init")
