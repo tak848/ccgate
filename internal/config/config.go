@@ -479,13 +479,15 @@ func Load(opts LoadOptions, cwd string) (LoadResult, error) {
 		source = SourceGlobalConfig
 	}
 
-	// In a linked git worktree, layer the main worktree's untracked
-	// project-local config before the current worktree's. The flag is
-	// evaluated at this point so it can only be set by embedded
-	// defaults or the global config; writing it into project-local
-	// config would create a chicken-and-egg loop (we'd need to read
-	// the main worktree's config to decide whether to read the main
-	// worktree's config) and is intentionally ignored.
+	// Freeze the main-worktree kill switch before project-local
+	// merges start. Reading the main worktree's config to decide
+	// whether to read the main worktree's config would loop, so only
+	// the embed and global layers can flip this field. The frozen
+	// value is restored after the project-local merges so the field
+	// surfaced through the returned Config also reflects the
+	// authoritative decision and doesn't track a stray override from
+	// (3) or (4).
+	frozenDisableLoadMain := cfg.DisableLoadMainWorktreeLocalConfig
 	if cfg.ShouldLoadMainWorktreeLocalConfig() {
 		for _, path := range safeMainWorktreeLocalConfigPaths(cwd, opts.ProjectLocalRelativePaths) {
 			if err := mergeConfigFile(path, &cfg); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -499,6 +501,7 @@ func Load(opts LoadOptions, cwd string) (LoadResult, error) {
 			return LoadResult{Config: cfg}, fmt.Errorf("local config %s: %w", path, err)
 		}
 	}
+	cfg.DisableLoadMainWorktreeLocalConfig = frozenDisableLoadMain
 
 	// Apply target-specific log/metrics defaults only when the user
 	// did not set explicit paths in any of the merged configs. This
