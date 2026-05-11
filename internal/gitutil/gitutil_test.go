@@ -175,23 +175,44 @@ func TestMainWorktreeRootBareRepo(t *testing.T) {
 
 	// A bare repo plus a linked worktree must surface as no-op
 	// (empty string), matching the project's "bare repo / submodule /
-	// custom $GIT_DIR -> empty" invariant.
-	parent := t.TempDir()
-	bare := filepath.Join(parent, "repo.git")
-	gitRun(t, parent, "init", "--bare", "repo.git")
+	// custom $GIT_DIR -> empty" invariant. Two naming shapes:
+	//   - `repo.git`     : the conventional bare-repo name
+	//   - `holder/.git`  : a hostile shape whose suffix happens to
+	//                      match the non-bare `.git` heuristic
+	cases := map[string]struct {
+		bareName string // path of the bare repo relative to parent
+	}{
+		"conventional <name>.git": {bareName: "repo.git"},
+		"hostile <dir>/.git":      {bareName: "holder/.git"},
+	}
 
-	seed := filepath.Join(parent, "seed")
-	gitRun(t, parent, "clone", bare, "seed")
-	gitRun(t, seed, "config", "user.email", "test@test.com")
-	gitRun(t, seed, "config", "user.name", "test")
-	gitRun(t, seed, "commit", "--allow-empty", "-m", "init")
-	gitRun(t, seed, "push", "origin", "HEAD:refs/heads/main")
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 
-	wt := filepath.Join(parent, "wt")
-	gitRun(t, bare, "worktree", "add", wt, "main")
+			parent := t.TempDir()
+			bare := filepath.Join(parent, tc.bareName)
+			if dir := filepath.Dir(bare); dir != parent {
+				if err := os.MkdirAll(dir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			gitRun(t, parent, "init", "--bare", tc.bareName)
 
-	if got := MainWorktreeRoot(wt); got != "" {
-		t.Fatalf("bare repo linked worktree: got %q, want empty", got)
+			seed := filepath.Join(parent, "seed")
+			gitRun(t, parent, "clone", bare, "seed")
+			gitRun(t, seed, "config", "user.email", "test@test.com")
+			gitRun(t, seed, "config", "user.name", "test")
+			gitRun(t, seed, "commit", "--allow-empty", "-m", "init")
+			gitRun(t, seed, "push", "origin", "HEAD:refs/heads/main")
+
+			wt := filepath.Join(parent, "wt")
+			gitRun(t, bare, "worktree", "add", wt, "main")
+
+			if got := MainWorktreeRoot(wt); got != "" {
+				t.Fatalf("bare repo linked worktree (%s): got %q, want empty", tc.bareName, got)
+			}
+		})
 	}
 }
 
