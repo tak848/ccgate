@@ -706,6 +706,137 @@ func TestLoadLayerSemantics(t *testing.T) {
 	}
 }
 
+func TestLoadInheritsMainWorktreeLocalConfig(t *testing.T) {
+	// fakeLoadOptions seeds embed defaults with deny=["default-deny"]
+	// and points ProjectLocalRelativePaths at ".fake/ccgate.local.jsonnet".
+	// Each case sets up a main repo (always) and optionally a linked
+	// worktree, then runs Load from the worktree (or main itself for
+	// the no-worktree case) and checks the merged Deny list.
+	type want struct {
+		deny           []string
+		shouldLoadMain bool // expected lr.Config.ShouldLoadMainWorktreeLocalConfig()
+	}
+	cases := map[string]struct {
+		mainLocal   string // jsonnet for <main>/.fake/ccgate.local.jsonnet
+		wtLocal     string // jsonnet for <wt>/.fake/ccgate.local.jsonnet
+		globalCfg   string // jsonnet for <home>/.fake/ccgate.jsonnet
+		mainTracked bool   // git add the main local before loading
+		nonWorktree bool   // skip the worktree add and load from main itself
+		expectErr   bool
+		want        want
+	}{
+		"main + wt append_deny stack in order": {
+			mainLocal: `{ append_deny: ['from-main'] }`,
+			wtLocal:   `{ append_deny: ['from-wt'] }`,
+			want:      want{deny: []string{"default-deny", "from-main", "from-wt"}, shouldLoadMain: true},
+		},
+		"main-only local is read": {
+			mainLocal: `{ append_deny: ['from-main'] }`,
+			want:      want{deny: []string{"default-deny", "from-main"}, shouldLoadMain: true},
+		},
+		"global disable=true skips the main worktree": {
+			globalCfg: `{ disable_load_main_worktree_local_config: true }`,
+			mainLocal: `{ append_deny: ['from-main'] }`,
+			wtLocal:   `{ append_deny: ['from-wt'] }`,
+			want:      want{deny: []string{"default-deny", "from-wt"}, shouldLoadMain: false},
+		},
+		"disable=true written into project-local layers is ignored": {
+			mainLocal: `{ disable_load_main_worktree_local_config: true, append_deny: ['from-main'] }`,
+			wtLocal:   `{ disable_load_main_worktree_local_config: true, append_deny: ['from-wt'] }`,
+			// The field is restored to its global-layer value after
+			// project-local merges, so a caller inspecting cfg can't
+			// be misled into thinking the main worktree was skipped.
+			want: want{deny: []string{"default-deny", "from-main", "from-wt"}, shouldLoadMain: true},
+		},
+		"tracked main-local is skipped (untracked-only policy)": {
+			mainLocal:   `{ append_deny: ['from-main'] }`,
+			wtLocal:     `{ append_deny: ['from-wt'] }`,
+			mainTracked: true,
+			want:        want{deny: []string{"default-deny", "from-wt"}, shouldLoadMain: true},
+		},
+		"non-worktree run: main path is a no-op": {
+			mainLocal:   `{ append_deny: ['from-main'] }`,
+			nonWorktree: true,
+			want:        want{deny: []string{"default-deny", "from-main"}, shouldLoadMain: true},
+		},
+		"syntax error in main-local surfaces": {
+			mainLocal: `{ invalid jsonnet`,
+			expectErr: true,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			// t.Setenv is incompatible with t.Parallel.
+			home := t.TempDir()
+			setHomeEnv(t, home)
+
+			main := filepath.Join(t.TempDir(), "main")
+			if err := os.MkdirAll(main, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			gitRun(t, main, "init")
+			gitRun(t, main, "config", "user.email", "test@test.com")
+			gitRun(t, main, "config", "user.name", "test")
+			gitRun(t, main, "commit", "--allow-empty", "-m", "init")
+
+			if tc.mainLocal != "" {
+				writeProjectLocal(t, main, tc.mainLocal)
+				if tc.mainTracked {
+					gitRun(t, main, "add", "-f", filepath.Join(".fake", LocalConfigName))
+				}
+			}
+
+			if tc.globalCfg != "" {
+				globalFake := filepath.Join(home, ".fake")
+				if err := os.MkdirAll(globalFake, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(globalFake, BaseConfigName), []byte(tc.globalCfg), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			target := main
+			if !tc.nonWorktree {
+				wt := filepath.Join(t.TempDir(), "wt")
+				gitRun(t, main, "worktree", "add", "--detach", wt)
+				if tc.wtLocal != "" {
+					writeProjectLocal(t, wt, tc.wtLocal)
+				}
+				target = wt
+			}
+
+			lr, err := Load(fakeLoadOptions(home), target)
+			if tc.expectErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(lr.Config.Deny, tc.want.deny) {
+				t.Errorf("deny = %v, want %v", lr.Config.Deny, tc.want.deny)
+			}
+			if got := lr.Config.ShouldLoadMainWorktreeLocalConfig(); got != tc.want.shouldLoadMain {
+				t.Errorf("ShouldLoadMainWorktreeLocalConfig() = %v, want %v", got, tc.want.shouldLoadMain)
+			}
+		})
+	}
+}
+
+func writeProjectLocal(t *testing.T, root, body string) {
+	t.Helper()
+	dir := filepath.Join(root, ".fake")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, LocalConfigName), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func gitRun(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", args...)

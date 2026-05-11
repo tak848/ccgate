@@ -27,6 +27,34 @@ func RepoRoot(dir string) (string, error) {
 	return Output(dir, "rev-parse", "--show-toplevel")
 }
 
+// MainWorktreeRoot returns the root of the main worktree when dir is
+// inside a linked git worktree. Returns "" otherwise — main worktree
+// itself, non-git directory, bare repo, or anywhere the detection is
+// ambiguous. Never errors.
+func MainWorktreeRoot(dir string) string {
+	ctx := BuildContext(dir)
+	if !ctx.IsWorktree || ctx.PrimaryCheckoutRoot == "" {
+		return ""
+	}
+	// `worktree list --porcelain` emits the main worktree as the
+	// first record; if that record carries a `bare` line, the main
+	// has no real working tree and PrimaryCheckoutRoot is just the
+	// bare repo's parent directory — not somewhere we should read
+	// a `ccgate.local.jsonnet` from. Surface the bare case as the
+	// "" no-op contract the project promises.
+	if out, err := Output(dir, "worktree", "list", "--porcelain"); err == nil {
+		for line := range strings.SplitSeq(out, "\n") {
+			if line == "" {
+				break
+			}
+			if line == "bare" {
+				return ""
+			}
+		}
+	}
+	return ctx.PrimaryCheckoutRoot
+}
+
 // IsTracked reports whether the file at path is tracked by git in the given repo root.
 // Returns (false, nil) if the file does not exist.
 // Returns (false, error) on git errors (fail-closed).

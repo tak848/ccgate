@@ -141,6 +141,9 @@
     "fallthrough_strategy": {
       "type": "string"
     },
+    "disable_load_main_worktree_local_config": {
+      "type": "boolean"
+    },
     "allow": {
       "items": {
         "type": "string"

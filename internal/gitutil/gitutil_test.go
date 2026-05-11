@@ -118,6 +118,104 @@ func TestIsTrackedEmptyRoot(t *testing.T) {
 	}
 }
 
+func TestMainWorktreeRoot(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		isGit        bool
+		makeWorktree bool
+	}{
+		"main repo":       {isGit: true, makeWorktree: false},
+		"linked worktree": {isGit: true, makeWorktree: true},
+		"non-git dir":     {isGit: false, makeWorktree: false},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			main := t.TempDir()
+			if tc.isGit {
+				initGit(t, main)
+			}
+
+			target := main
+			var wantMain string
+			if tc.makeWorktree {
+				gitRun(t, main, "commit", "--allow-empty", "-m", "init")
+				wt := filepath.Join(filepath.Dir(main), filepath.Base(main)+"-wt")
+				t.Cleanup(func() { _ = os.RemoveAll(wt) })
+				gitRun(t, main, "worktree", "add", "--detach", wt)
+				target = wt
+				wantMain, _ = filepath.EvalSymlinks(main)
+			}
+
+			got := MainWorktreeRoot(target)
+
+			if wantMain == "" {
+				if got != "" {
+					t.Fatalf("got %q, want empty", got)
+				}
+				return
+			}
+
+			gotResolved, err := filepath.EvalSymlinks(got)
+			if err != nil {
+				t.Fatalf("EvalSymlinks(%q): %v", got, err)
+			}
+			if gotResolved != wantMain {
+				t.Fatalf("got %q, want %q", gotResolved, wantMain)
+			}
+		})
+	}
+}
+
+func TestMainWorktreeRootBareRepo(t *testing.T) {
+	t.Parallel()
+
+	// A bare repo plus a linked worktree must surface as no-op
+	// (empty string), matching the project's "bare repo / submodule /
+	// custom $GIT_DIR -> empty" invariant. Two naming shapes:
+	//   - `repo.git`     : the conventional bare-repo name
+	//   - `holder/.git`  : a hostile shape whose suffix happens to
+	//                      match the non-bare `.git` heuristic
+	cases := map[string]struct {
+		bareName string // path of the bare repo relative to parent
+	}{
+		"conventional <name>.git": {bareName: "repo.git"},
+		"hostile <dir>/.git":      {bareName: "holder/.git"},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			parent := t.TempDir()
+			bare := filepath.Join(parent, tc.bareName)
+			if dir := filepath.Dir(bare); dir != parent {
+				if err := os.MkdirAll(dir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			gitRun(t, parent, "init", "--bare", tc.bareName)
+
+			seed := filepath.Join(parent, "seed")
+			gitRun(t, parent, "clone", bare, "seed")
+			gitRun(t, seed, "config", "user.email", "test@test.com")
+			gitRun(t, seed, "config", "user.name", "test")
+			gitRun(t, seed, "commit", "--allow-empty", "-m", "init")
+			gitRun(t, seed, "push", "origin", "HEAD:refs/heads/main")
+
+			wt := filepath.Join(parent, "wt")
+			gitRun(t, bare, "worktree", "add", wt, "main")
+
+			if got := MainWorktreeRoot(wt); got != "" {
+				t.Fatalf("bare repo linked worktree (%s): got %q, want empty", tc.bareName, got)
+			}
+		})
+	}
+}
+
 func initGit(t *testing.T, dir string) {
 	t.Helper()
 	gitRun(t, dir, "init")

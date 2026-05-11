@@ -240,9 +240,10 @@ Same env vars as Claude Code — see the [provider table](#3-api-key).
 |------:|-------------|-----------|
 | 1     | Embedded defaults (always applied as the base) | Embedded defaults (same) |
 | 2     | `~/.claude/ccgate.jsonnet` — global (layered on top) | `~/.codex/ccgate.jsonnet` — global (same) |
-| 3     | `{repo_root}/.claude/ccgate.local.jsonnet` — project-local (untracked only, layered on top) | `{repo_root}/.codex/ccgate.local.jsonnet` — project-local (same) |
+| 3     | `{main_worktree}/.claude/ccgate.local.jsonnet` — main-worktree project-local (untracked only; only when running in a linked git worktree) | `{main_worktree}/.codex/ccgate.local.jsonnet` (same) |
+| 4     | `{repo_root}/.claude/ccgate.local.jsonnet` — current-worktree project-local (untracked only) | `{repo_root}/.codex/ccgate.local.jsonnet` (same) |
 
-All three layers compose with the same rules:
+All layers compose with the same rules:
 
 - **Lists** — `allow` / `deny` / `environment` **replace** the value carried over from earlier layers when the layer sets them (even to `[]`). The `append_*` siblings (`append_allow`, `append_deny`, `append_environment`) **add** entries on top of whatever the earlier layers produced.
 - **Scalars** — `log_*`, `metrics_*`, `fallthrough_strategy` are overwritten per-field when the layer sets them, otherwise the earlier value survives.
@@ -251,6 +252,8 @@ All three layers compose with the same rules:
 So `~/.<target>/ccgate.jsonnet` that wants to bump just the model still has to restate the whole `provider` block (e.g. `provider: {name: 'anthropic', model: 'claude-sonnet-4-6'}`). A `~/.<target>/ccgate.jsonnet` that writes `allow: [...]` swaps the embedded allow list for its own (this is what most pre-v0.6 global configs already did, so it stays idempotent). Project-local configs typically use `append_deny: [...]` / `append_environment: [...]` to add restrictions on top of the inherited base.
 
 Project-local configs are loaded only when **not tracked by Git**.
+
+Set `disable_load_main_worktree_local_config: true` in layer (1) or (2) to skip layer (3). The flag is honoured only at those two layers — written into (3) or (4) it is ignored. See [docs/configuration.md](docs/configuration.md#where-ccgate-looks-for-config).
 
 
 ### Config fields
@@ -269,6 +272,7 @@ Project-local configs are loaded only when **not tracked by Git**.
 | `metrics_disabled`       | bool                              | `false`                                                                       | Disable metrics collection entirely                                                                    |
 | `metrics_max_size`       | int                               | `2097152`                                                                     | Max metrics file size in bytes before rotation (default 2MB). `0` = no rotation.                       |
 | `fallthrough_strategy`   | `"ask"` / `"allow"` / `"deny"`    | `"ask"`                                                                       | How to resolve LLM uncertainty (`fallthrough`). See [Unattended automation](#unattended-automation-fallthrough_strategy). |
+| `disable_load_main_worktree_local_config` | bool | `false`                                                                       | In a linked git worktree, skip the main worktree's `ccgate.local.jsonnet`. See [docs/configuration.md](docs/configuration.md#where-ccgate-looks-for-config). |
 | `allow`                  | string[]                          | `[]`                                                                          | Allow guidance rules. **Replaces** the value carried over from earlier layers when set.                |
 | `deny`                   | string[]                          | `[]`                                                                          | Deny guidance rules (mandatory). Supports inline `deny_message:` hints. Same replace semantics as `allow`. |
 | `environment`            | string[]                          | `[]`                                                                          | Context strings passed to the LLM (trust level, policies, etc.). Same replace semantics as `allow`.    |

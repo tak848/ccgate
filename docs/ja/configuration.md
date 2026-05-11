@@ -6,17 +6,24 @@
 
 ## ccgate が config を探す場所
 
-ccgate は target ごとに 3 つの設定層を順に読み込みます。各層は同じルールで合成されます (詳細は後述の「layer の合成ルール」):
+ccgate は target ごとに以下の層を順に読み込みます。各層は同じルールで合成されます (詳細は後述の「layer の合成ルール」):
 
 1. **埋込デフォルト**: バイナリに同梱。常にベースとして適用。`ccgate <target> init` で確認可能
 2. **グローバル設定**: 存在すれば埋込デフォルトの上に重ねる:
    - Claude Code: `~/.claude/ccgate.jsonnet`
    - Codex CLI:   `~/.codex/ccgate.jsonnet`
-3. **プロジェクトローカル**: (1)+(2) の上に重ねる。tracked file は無視される (後述「tracked file が無視される理由」):
+3. **main worktree のプロジェクトローカル**: ccgate が linked git worktree (`git worktree add ...`) の中で動作するときのみ。tracked file は無視される (後述「tracked file が無視される理由」):
+   - Claude Code: `{main_worktree}/.claude/ccgate.local.jsonnet`
+   - Codex CLI:   `{main_worktree}/.codex/ccgate.local.jsonnet`
+4. **current worktree のプロジェクトローカル**: tracked file は無視される:
    - Claude Code: `{repo_root}/.claude/ccgate.local.jsonnet`
    - Codex CLI:   `{repo_root}/.codex/ccgate.local.jsonnet`
 
-`{repo_root}` は git repo root で、hook の `cwd` から `git rev-parse --show-toplevel` で解決します。git repo 外では `cwd` 自体が使われます。
+`{repo_root}` は git repo root で、hook の `cwd` から `git rev-parse --show-toplevel` で解決します。`{main_worktree}` は同じ repo の main worktree の root で、`git rev-parse --git-common-dir` から求めます。git repo 外では `cwd` 自体が使われます。
+
+`disable_load_main_worktree_local_config: true` を (1) 埋込デフォルト もしくは (2) グローバル設定 に書けば (3) をスキップします。この flag は (1) / (2) でのみ有効で、(3) / (4) に書いても **無視** されます。
+
+相対パス (`log_path` / `metrics_path` / `auth.path` 等) は config file の置き場所ではなく **current cwd** 基準で解決されます。
 
 
 ### layer の合成ルール
