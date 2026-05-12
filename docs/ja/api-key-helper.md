@@ -210,12 +210,12 @@ cache fingerprint には **カレントディレクトリもホスト名も含�
 
 provider が認証情報を拒否した場合、HTTP status のみで挙動が決まります。
 
-| HTTP status         | `auth.type=exec`                                  | `auth.type=file`                          | `auth.type=profile`                                                 | env var      |
-|---------------------|---------------------------------------------------|-------------------------------------------|---------------------------------------------------------------------|--------------|
-| 401 / 403           | `provider_auth`、**キャッシュ削除して fallthrough** | `provider_auth`、fallthrough のみ (cache 無し) | `provider_auth`、fallthrough (SDK の refresh-token loop が credential を保有、ccgate cache 無し) | **exit 1**   |
-| 5xx / 429 / network | exit 1 (従来通り)                                  | exit 1                                    | exit 1                                                              | exit 1       |
+| HTTP status         | `auth.type=exec`              | `auth.type=file`               | `auth.type=profile`            | env var |
+|---------------------|-------------------------------|--------------------------------|--------------------------------|---------|
+| 401 / 403           | cache を invalidate、 fallthrough | fallthrough (cache なし)        | fallthrough                    | exit 1  |
+| 5xx / 429 / network | exit 1                        | exit 1                         | exit 1                         | exit 1  |
 
-env 経路で 401 / 403 を exit 1 にしているのは、ccgate 側で env を rotate する手段がないためです。黙って飲み込むとユーザー側の設定ミスを隠してしまいます。
+`auth.type=profile` では SDK の refresh-token loop が credential を保有しているため、 ccgate に invalidate する cache はありません。 env 経路は 401 / 403 で exit 1 になります — ccgate 側で env を rotate する手段がなく、 黙って飲み込むとユーザー側の設定ミスを隠してしまうため。
 
 キャッシュさせたくない場合は `expires_at` を含めない JSON (または plain string) を返せば、helper は毎 fire 再実行されます。
 

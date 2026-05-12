@@ -33,7 +33,9 @@ ccgate は target ごとに以下の層を順に読み込みます。各層は�
 | list: `allow` / `deny` / `environment` | 値を設定した layer が前の layer から引き継いだ list を **置き換える** (`[]` でも置換)。設定していない layer は前の値を保持 | embedded `allow: ["A","B"]` + global `allow: ["X"]` → 最終 `allow: ["X"]` |
 | list: `append_allow` / `append_deny` / `append_environment` | 値を設定した layer が前の layer の累積 list の **末尾に追加** | embedded `deny: ["A"]` + project `append_deny: ["P"]` → 最終 `deny: ["A","P"]` |
 | スカラー: `log_*` / `metrics_*` / `fallthrough_strategy` | 各 layer が値を設定していれば per-field で **overwrite**、設定していなければ前の値を保持 | embedded `log_max_size: 5MB` + global `log_max_size: 10MB` → 最終 `log_max_size: 10MB` |
-| ブロック: `provider` (`provider.*` の全 field — `name` / `model` / `base_url` / `auth` / `timeout_ms`) | `provider` を書いた layer は **block 全体を置換**、書かなかった layer はそのまま継承。per-field merge にすると、下位 layer の proxy 用 `base_url` や helper 用 `auth.command` が `name` を切り替えただけの上位 layer に残る等の不整合が起きるため | embedded `provider: {name: anthropic, model: claude-haiku-4-5}` + global `provider: {name: openai, model: gpt-4o-mini}` → 最終 `provider: {name: openai, model: gpt-4o-mini}`。model だけ変えたい場合は `provider: {name: anthropic, model: claude-sonnet-4-6}` のように block 全体を書き直す。global で `auth` を設定している場合、project-local 側で `provider` を上書きするときも `auth` ブロック全体を忘れずに書き写すこと (書き漏らすと当該プロジェクトで helper 設定が静かに消える) |
+| ブロック: `provider` (`name` / `model` / `base_url` / `auth` / `timeout_ms`) | `provider` を書いた layer は **block 全体を置換**。 | embedded `provider: {name: anthropic, model: claude-haiku-4-5}` + global `provider: {name: openai, model: gpt-4o-mini}` → 最終 `provider: {name: openai, model: gpt-4o-mini}`。 |
+
+`provider` を block 全体で置換するのは、 下位 layer の proxy 用 `base_url` や helper 用 `auth.command` が `name` を切り替えただけの上位 layer に残らないようにするためです。 model だけ変えたい場合は `provider: {name: anthropic, model: claude-sonnet-4-6}` のように block 全体を書き直してください。 global で `auth` を設定している場合、 project-local 側で `provider` を上書きするときも `auth` ブロック全体を書き写す必要があります (書き漏らすと当該プロジェクトで helper 設定が silent に消えます)。
 
 `allow` と `append_allow` (他 list も同じ) は同じ layer に共存可能 — 先に置換、その結果に対して append が積まれる。embedded の list を厳選版に **差し替えつつ** プロジェクト固有のルールを **追加** したいときに使います: `{ allow: ['only this base'], append_allow: ['plus this project rule'] }`。
 
@@ -178,11 +180,15 @@ ccgate codex  metrics --days 7         # codex 側も同 shape
 | `output_too_large`      | helper の stdout が 64 KiB 上限超過                                                                  |
 | `lock_timeout`          | flock retry budget 切れ (peer が refresh 中)                                                         |
 | `lock_error`            | flock syscall が EWOULDBLOCK 以外で失敗 (lock 系が壊れている → helper exec はスキップ)               |
-| `cache_unavailable`     | cache dir を作成 / `chmod` できない。隣接 lock file も作れず concurrent helper の race を防げないため fail-fast (helper exec せずに fallthrough) |
-| `provider_auth`         | provider が **HTTP 401 または 403** で credential を拒否。`auth.type=exec` は cache を invalidate して次回 hook 発火時に helper を再実行、`auth.type=file` は内部 cache がないため fallthrough のみ、`auth.type=profile` も fallthrough (SDK の refresh-token loop が credential を保有)、env var 経路は **意図的にこの経路に乗せず exit 1** (ccgate からは rotate できず、握り潰すと user 側の設定ミスを隠してしまうため) |
-| `profile_load`          | `auth.type=profile` で credential を SDK に渡す前に失敗 (profile config 不在 / parse error / profile 名不正、credentials file の preflight 失敗 = 不在 / 読めない)。slog の `error_class` で具体的な分類が得られる。詳細は [docs/ja/api-key-helper.md の障害時の復旧チェックリスト](api-key-helper.md#障害時の復旧チェックリスト) を参照 |
+| `cache_unavailable`     | cache dir を作成 / `chmod` できない。 fail-fast (helper exec せずに fallthrough)。 |
+| `provider_auth`         | provider が HTTP 401 または 403 で credential を拒否。 |
+| `profile_load`          | `auth.type=profile` で credential を SDK に渡す前に失敗。 |
 
-`credential_unavailable` は単に「credential 解決に失敗した」だけでなく、「provider が credential を受け取った上で拒否した」(401 / 403) ケースも含みます。
+`cache_unavailable` が fail-fast なのは、 隣接 lock file も作れず concurrent helper の race を防げないためです。
+
+`provider_auth` の `auth.type` 別挙動: `exec` は cache を invalidate して次回 hook 発火時に helper を再実行、 `file` は内部 cache がないため fallthrough のみ、 `profile` も fallthrough (SDK の refresh-token loop が credential を保有)。 env var 経路は意図的にこの経路に乗せず exit 1 (ccgate からは rotate できず、 握り潰すと user 側の設定ミスを隠してしまうため)。 したがって `credential_unavailable` は「credential 解決に失敗した」だけでなく「provider が credential を受け取った上で拒否した」 (401 / 403) ケースも含みます。
+
+`profile_load` の具体的な原因は slog の `error_class` で narrow できます (profile config 不在 / parse error / profile 名不正、 credentials file の preflight 失敗 = 不在 / 読めない、 など)。 完全なラベルと triage 手順は [docs/ja/api-key-helper.md の障害時の復旧チェックリスト](api-key-helper.md#障害時の復旧チェックリスト) を参照。
 
 #### log のみで出る credential 警告 (metrics には乗らない)
 
@@ -221,4 +227,4 @@ cache 層の失敗は fallthrough せずに自動回復するので、`slog.Warn
 
 - **Plan mode (Claude のみ) はプロンプト依存**: `permission_mode == "plan"` では (a) 実装系 write を拒絶する判定と (b) 明示的な allow guidance なしの read-only クエリ許可 を、LLM とシステムプロンプトの指示文に委ねています。どちらの方向にも誤判定の余地あり
 - **embedded default の特定ルールだけを部分削除する手段なし**: layer は list を **完全置換** (`allow: [...]`) するか **末尾追加** (`append_allow: [...]`) するかのどちらかで、embedded の中の 1 ルールだけ消したい場合は残り全部を `allow:` / `deny:` に書き直すしかない
-- ccgate は hook payload と ccgate の設定からのみ判定する。Codex hooks は `[features] codex_hooks = true` flag が必要 (schema 詳細は [OpenAI Codex hooks docs](https://developers.openai.com/codex/hooks) を参照)。 ccgate は Codex の `~/.codex/config.toml` (`approval_policy`, `sandbox_mode`, `prefix_rules`) を読まない
+- ccgate は hook payload と ccgate の設定からのみ判定する。 Codex 側は `[features] codex_hooks = true` の設定が必要 (schema 詳細は [OpenAI Codex hooks docs](https://developers.openai.com/codex/hooks) を参照)。

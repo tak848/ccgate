@@ -4,7 +4,7 @@
 
 Codex-CLI-specific notes for the `ccgate codex` hook.
 
-## Status
+## Requirements
 
 - Codex hooks require `[features] codex_hooks = true`. See [OpenAI's Codex hooks docs](https://developers.openai.com/codex/hooks) for the upstream payload schema.
 - **Tool-agnostic.** Codex hooks fire for Bash, `apply_patch`, MCP tool calls, and other surfaces. ccgate classifies by `tool_name` + the full `tool_input` JSON, not by tool kind alone.

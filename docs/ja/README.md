@@ -142,7 +142,7 @@ lookup 順序、 project-local overlay、 in-tree dev build 用の `go run` レ�
 
 ### 2. API キー
 
-Claude Code と同じ環境変数を使います — [docs/ja/providers.md#api-キー](providers.md#api-キー) を参照。
+provider の API キーを export してください — [docs/ja/providers.md#api-キー](providers.md#api-キー) を参照。
 
 ここまでで ccgate は組み込みデフォルトで動き始めます。allow / deny を自分で書きたい場合は [docs/ja/rule-tuning.md](rule-tuning.md) を、ルールの仕組みを先に押さえたい場合は [コンセプト](#コンセプト) を参照してください。
 

@@ -33,7 +33,9 @@ Relative paths in any layer (`log_path`, `metrics_path`, `auth.path`, …) resol
 | Lists: `allow`, `deny`, `environment` | A layer that sets the field **replaces** the carried-over list (even with `[]`). A layer that omits the field leaves the carried-over list untouched. | Embedded `allow: ["A","B"]` + global `allow: ["X"]` → final `allow: ["X"]`. |
 | Lists: `append_allow`, `append_deny`, `append_environment` | A layer that sets the field **appends** its entries to whatever the previous layers produced. | Embedded `deny: ["A"]` + project `append_deny: ["P"]` → final `deny: ["A","P"]`. |
 | Scalars: `log_*`, `metrics_*`, `fallthrough_strategy` | A layer **overwrites** the value per-field when it sets it; layers that omit a field leave the previous value untouched. | Embedded `log_max_size: 5MB` + global `log_max_size: 10MB` → final `log_max_size: 10MB`. |
-| Block: `provider` (every `provider.*` field, including `name` / `model` / `base_url` / `auth` / `timeout_ms`) | A layer that writes `provider` **replaces the entire block**; layers that omit `provider` leave it untouched. Per-field merge would let stale fields from a lower layer (e.g. a proxy `base_url`, or a helper `auth.command`) leak into a different provider when a higher layer switches `name`. | Embedded `provider: {name: anthropic, model: claude-haiku-4-5}` + global `provider: {name: openai, model: gpt-4o-mini}` → final `provider: {name: openai, model: gpt-4o-mini}`. To bump only the model, restate the whole block: `provider: {name: anthropic, model: claude-sonnet-4-6}`. When a global layer sets `auth`, any project-local `provider` override must repeat the whole `auth` block or the helper is silently dropped on that project. |
+| Block: `provider` (`name` / `model` / `base_url` / `auth` / `timeout_ms`) | A layer that writes `provider` **replaces the entire block**. | Embedded `provider: {name: anthropic, model: claude-haiku-4-5}` + global `provider: {name: openai, model: gpt-4o-mini}` → final `provider: {name: openai, model: gpt-4o-mini}`. |
+
+`provider` is replaced as a unit so that fields from a lower layer (e.g. a proxy `base_url`, or a helper `auth.command`) cannot leak into a different provider when a higher layer switches `name`. To bump only the model, restate the whole block: `provider: {name: anthropic, model: claude-sonnet-4-6}`. When a global layer sets `auth`, any project-local `provider` override must repeat the whole `auth` block or the helper is silently dropped on that project.
 
 `allow` and `append_allow` (same for the other lists) can coexist in the same layer: the replace runs first, then the append stacks onto the result. Use the pattern when you want to **swap** the embedded list for a curated one and **also** add a couple of project-specific extras: `{ allow: ['only this base'], append_allow: ['plus this project rule'] }`.
 
@@ -178,11 +180,15 @@ The `reason` field meaning depends on `ft_kind`:
 | `output_too_large`      | Helper stdout exceeded the 64 KiB limit.                                                               |
 | `lock_timeout`          | flock retry budget exhausted while peers were refreshing.                                              |
 | `lock_error`            | flock syscall returned a non-EWOULDBLOCK error (broken lock subsystem; helper exec is skipped).        |
-| `cache_unavailable`     | Cache directory cannot be created / `chmod`'d. Treated as fail-fast (helper exec is skipped) because without the sibling lock file we cannot prevent concurrent helpers from racing the broker. |
-| `provider_auth`         | Provider rejected the credential with **HTTP 401 or 403**. `auth.type=exec` invalidates the cache so the next fire re-runs the helper; `auth.type=file` falls through (no cache to clear); `auth.type=profile` falls through (the SDK's refresh-token loop owns the credential); env-var keys are **not** routed here because ccgate cannot rotate env vars and swallowing the rejection would hide user-side misconfiguration. |
-| `profile_load`          | `auth.type=profile` could not produce a usable credential before the SDK ran: profile config missing / parse error, profile name invalid, or credentials file missing / unreadable at preflight. The slog `error_class` field narrows the cause; see [docs/api-key-helper.md Recovery checklist](api-key-helper.md#recovery-checklist) for the full label list and triage steps. |
+| `cache_unavailable`     | Cache directory cannot be created or `chmod`'d. Fail-fast (helper exec is skipped). |
+| `provider_auth`         | Provider rejected the credential with HTTP 401 or 403. |
+| `profile_load`          | `auth.type=profile` could not produce a usable credential before the SDK ran. |
 
-`credential_unavailable` is therefore wider than just "credential resolution failed": it also covers "provider received and rejected the credential" (401 / 403).
+`cache_unavailable` is fail-fast because without the sibling lock file ccgate cannot serialise concurrent helpers and would let them race the broker.
+
+`provider_auth` reaction by `auth.type`: `exec` invalidates the cache so the next fire re-runs the helper, `file` falls through (no cache to clear), `profile` falls through (the SDK's refresh-token loop owns the credential). Env-var keys are not routed here because ccgate cannot rotate env vars and swallowing the rejection would hide user-side misconfiguration. So `credential_unavailable` covers both "credential resolution failed" and "provider received and rejected the credential" (401 / 403).
+
+`profile_load` cause is narrowed by the slog `error_class` field; see the [Recovery checklist in docs/api-key-helper.md](api-key-helper.md#recovery-checklist) for the full label list and triage steps.
 
 #### Log-only credential warnings (not in metrics)
 
@@ -221,4 +227,4 @@ The same fields exist for the log file (`log_path`, `log_disabled`, `log_max_siz
 
 - **Plan mode (Claude only) is prompt-only.** Under `permission_mode == "plan"`, ccgate relies on the LLM plus prose in the system prompt to (a) reject implementation-side writes and (b) allow read-only queries without an explicit allow-guidance match. Either side can misfire.
 - **No surgical reset for a single embedded default rule.** A layer either replaces a list wholesale or appends to it; removing one specific embedded entry while keeping the rest requires re-stating the whole list under `allow` / `deny` minus that one entry.
-- ccgate decides from the hook payload + ccgate config. Codex hooks require the `[features] codex_hooks = true` flag (see the [OpenAI Codex hooks docs](https://developers.openai.com/codex/hooks) for schema details), and ccgate does not consume Codex `~/.codex/config.toml` (`approval_policy`, `sandbox_mode`, `prefix_rules`).
+- ccgate decides from the hook payload + ccgate config. The Codex side requires `[features] codex_hooks = true` (see the [OpenAI Codex hooks docs](https://developers.openai.com/codex/hooks) for schema details).

@@ -4,7 +4,7 @@
 
 `ccgate codex` フック専用のドキュメント。
 
-## ステータス
+## 前提
 
 - Codex hooks は `[features] codex_hooks = true` の設定が必要です。 upstream の payload schema は [OpenAI Codex hooks docs](https://developers.openai.com/codex/hooks) を参照。
 - **Tool-agnostic**: Codex hooks は Bash、 `apply_patch`、 MCP tool 呼び出しなど複数の surface で発火します。 ccgate は `tool_name` + `tool_input` JSON 全体で分類。

@@ -210,12 +210,12 @@ ccgate emits a `slog.Warn` when `auth.path` *or* the cache file is readable by a
 
 When the provider rejects the credential ccgate just used, the HTTP status alone determines the reaction.
 
-| HTTP status         | `auth.type=exec`                          | `auth.type=file`                         | `auth.type=profile`                                                    | env var      |
-|---------------------|-------------------------------------------|------------------------------------------|------------------------------------------------------------------------|--------------|
-| 401 / 403           | `provider_auth`, **invalidate cache + fallthrough** | `provider_auth`, fallthrough only (no cache) | `provider_auth`, fallthrough (SDK refresh-token loop owns the credential, no ccgate cache) | **exit 1**   |
-| 5xx / 429 / network | exit 1 (existing behaviour)               | exit 1                                   | exit 1                                                                 | exit 1       |
+| HTTP status         | `auth.type=exec`                  | `auth.type=file`               | `auth.type=profile`            | env var |
+|---------------------|-----------------------------------|--------------------------------|--------------------------------|---------|
+| 401 / 403           | invalidate cache, fallthrough     | fallthrough (no cache)         | fallthrough                    | exit 1  |
+| 5xx / 429 / network | exit 1                            | exit 1                         | exit 1                         | exit 1  |
 
-The env-var path keeps the existing exit-1 behaviour on 401/403 because ccgate cannot rotate env vars; swallowing the rejection would hide a user-side configuration error.
+On `auth.type=profile`, the SDK refresh-token loop owns the credential, so ccgate has no cache to invalidate. The env-var path exits 1 on 401/403 because ccgate cannot rotate env vars; swallowing the rejection would hide a user-side configuration error.
 
 To opt out of caching, return JSON without `expires_at` (or plain string) and the helper re-runs every fire.
 

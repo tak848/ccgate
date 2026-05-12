@@ -142,7 +142,7 @@ See [docs/codex.md](docs/codex.md) for the full lookup order, project-local over
 
 ### 2. API key
 
-Same env vars as Claude Code — see [docs/providers.md#api-keys](docs/providers.md#api-keys).
+Export the provider API key — see [docs/providers.md#api-keys](docs/providers.md#api-keys).
 
 That's it — ccgate is now running with its embedded defaults. To customize what is allowed or denied, see [docs/rule-tuning.md](docs/rule-tuning.md); for background on how rules work, see [Concepts](#concepts).
 
