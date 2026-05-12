@@ -83,7 +83,7 @@ go install github.com/tak848/ccgate@latest
 }
 ```
 
-`"command": "ccgate"` (subcommand なし) でも永続的に動作します。bare `ccgate` は Claude Code hook の正規呼び出し方法です。
+`"command": "ccgate"` (subcommand なし) が Claude Code hook の正規呼び出し方法です。 `ccgate claude` はその明示形。
 
 `ccgate` が PATH に通っていない場合は、hook の `command` を等価な呼び出し (例: `mise exec aqua:tak848/ccgate -- ccgate claude`) または絶対パスに書き換えてください。
 
@@ -91,7 +91,7 @@ go install github.com/tak848/ccgate@latest
 
 ccgate は default で Anthropic の Claude Haiku を呼びます。 `CCGATE_ANTHROPIC_API_KEY` (`ANTHROPIC_API_KEY` でも可) を export してください。 OpenAI / Gemini に切り替える場合や、 各 provider の発行ページと環境変数の解決順は [docs/ja/providers.md#api-キー](providers.md#api-キー) を参照。
 
-ここまでで ccgate は組み込みデフォルトで動き始めます。allow / deny を自分で書きたい場合は [ルールチューニング](#ルールチューニング) を、ルールの仕組みを先に押さえたい場合は [コンセプト](#コンセプト) を参照してください。
+ここまでで ccgate は組み込みデフォルトで動き始めます。allow / deny を自分で書きたい場合は [docs/ja/rule-tuning.md](rule-tuning.md) を、ルールの仕組みを先に押さえたい場合は [コンセプト](#コンセプト) を参照してください。
 
 ## クイックスタート — Codex CLI
 
@@ -144,7 +144,7 @@ lookup 順序、 project-local overlay、 in-tree dev build 用の `go run` レ�
 
 Claude Code と同じ環境変数を使います — [docs/ja/providers.md#api-キー](providers.md#api-キー) を参照。
 
-ここまでで ccgate は組み込みデフォルトで動き始めます。allow / deny を自分で書きたい場合は [ルールチューニング](#ルールチューニング) を、ルールの仕組みを先に押さえたい場合は [コンセプト](#コンセプト) を参照してください。
+ここまでで ccgate は組み込みデフォルトで動き始めます。allow / deny を自分で書きたい場合は [docs/ja/rule-tuning.md](rule-tuning.md) を、ルールの仕組みを先に押さえたい場合は [コンセプト](#コンセプト) を参照してください。
 
 ## コンセプト
 
@@ -264,13 +264,13 @@ ccgate codex  metrics --json          # JSON 出力 (機械可読)
 ## CLI リファレンス
 
 ```
-ccgate                         stdin から HookInput JSON を読み込む (Claude Code hook)。`ccgate claude` と等価。
-ccgate claude                  bare ccgate と等価 (新規ユーザー向け推奨表記)
-ccgate claude init [-p|-o|-f]  Claude Code 用の埋込デフォルトを出力
-ccgate claude metrics [...]    Claude Code のメトリクス集計
-ccgate codex                   stdin から HookInput JSON を読み込む (Codex CLI hook)
-ccgate codex init [-o|-f]      Codex CLI 用の埋込デフォルトを出力
-ccgate codex metrics [...]     Codex CLI のメトリクス集計
+ccgate                                       stdin から HookInput JSON を読み込む (Claude Code hook)。`ccgate claude` と等価。
+ccgate claude                                bare ccgate と等価 (新規ユーザー向け推奨表記)
+ccgate claude init [-p] [-o FILE] [-f]       Claude Code 用の埋込デフォルトを出力
+ccgate claude metrics [...]                  Claude Code のメトリクス集計
+ccgate codex                                 stdin から HookInput JSON を読み込む (Codex CLI hook)
+ccgate codex init [-p] [-o FILE] [-f]        Codex CLI 用の埋込デフォルトを出力
+ccgate codex metrics [...]                   Codex CLI のメトリクス集計
 ```
 
 top-level の `ccgate init` / `ccgate metrics` は実 subcommand ではなく、 per-target 形式への 1 行案内を出して exit `2` します。

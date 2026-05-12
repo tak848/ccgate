@@ -84,7 +84,7 @@ ccgate は helper の env に `CCGATE_API_KEY_RESOLUTION=1` を入れるので�
 
 ### 初回ブラウザ認証
 
-`gcloud auth print-access-token`、`aws sso login`、社内 SSO 経由の key broker など、初回起動時にブラウザが開いて OAuth / SAML 認証 → 完了後 stdout に認証情報を出すタイプの helper も使えます。2 回目以降はローカルにキャッシュされた refresh token が使われ、サイレントに完了します。
+`gcloud auth print-access-token`、 `aws sso login`、 社内 SSO 経由の key broker など、 初回起動時にブラウザが開いて OAuth / SAML 認証 → 完了後 stdout に認証情報を出すタイプの helper も使えます。 2 回目以降はローカルにキャッシュされた refresh token が使われ、 silent に完了します。
 
 既定の `auth.timeout_ms` (`30000`) は非対話的な helper の大半をカバーします。ブラウザでユーザーが同意画面を操作するタイプは `120000` 程度まで上げてください。一定時間アイドル後の最初の Permission Request がブラウザ操作の完了まで待つ形になりますが、`reason=timeout` で fallthrough しなくなります。
 
@@ -95,7 +95,8 @@ Anthropic provider 専用です。公式 `ant` CLI (`ant auth login` でブラ�
 ### Quick start
 
 ```sh
-mise use -g aqua:anthropics/anthropic-cli   # または `aqua g -i anthropics/anthropic-cli`。binary は `ant`
+# `ant` CLI を任意の方法で入れる (例: `mise use -g aqua:anthropics/anthropic-cli`、
+# `aqua g -i anthropics/anthropic-cli`、 upstream の release ページから直接 download など)。
 ant auth login --profile ccgate         # ブラウザが開き ~/.config/anthropic/credentials/ccgate.json を書き出す
 # ccgate.jsonnet に追記:
 #   provider: { ..., auth: { type: 'profile', profile: 'ccgate' } }
@@ -201,7 +202,7 @@ cache fingerprint には **カレントディレクトリもホスト名も含�
 
 ## ファイル経路の注意点
 
-`auth.path` の読み取りも exec 経路と同じく `auth.timeout_ms` (default 30000) で上限が決まります — 応答しない mount では `reason=timeout` で fallthrough します (hook はブロックしません)。とはいえ NFS / SMB / FUSE / keychain mount に置くと毎 fire `timeout_ms` 分待つコストが発生するので、user 専用のローカル path を強く推奨します。
+`auth.path` の読み取りも exec 経路と同じく `auth.timeout_ms` (default 30000) で上限が決まります — 応答しない file source では `reason=timeout` で fallthrough します (hook はブロックしません)。 ネットワーク経由や仮想 file source に置くと毎 fire `timeout_ms` 分待つコストが発生するので、 user 専用のローカル path を強く推奨します。
 
 `auth.path` か cache file が現在の user 以外でも読める / 所有者が違う場合、ccgate は `slog.Warn` を出します (拒否はしません)。これは security nudge であり policy enforcement ではなく、ファイルシステムから取得できる "world-readable" 指標だけを確認し、effective access の計算は行いません。推奨は user 専用に読めるファイルを user 専用に読めるディレクトリ配下に置く構成です。
 

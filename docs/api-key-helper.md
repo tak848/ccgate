@@ -95,7 +95,8 @@ Anthropic provider only. The official `ant` CLI (`ant auth login` for browser-ba
 ### Quick start
 
 ```sh
-mise use -g aqua:anthropics/anthropic-cli   # or `aqua g -i anthropics/anthropic-cli`; binary lands as `ant`
+# Install the `ant` CLI by your preferred method (e.g. `mise use -g aqua:anthropics/anthropic-cli`,
+# `aqua g -i anthropics/anthropic-cli`, or a direct download from the upstream release page).
 ant auth login --profile ccgate         # opens a browser, writes ~/.config/anthropic/credentials/ccgate.json
 # add to ccgate.jsonnet:
 #   provider: { ..., auth: { type: 'profile', profile: 'ccgate' } }
@@ -201,7 +202,7 @@ Leaving `cache_key` empty is the explicit "share with anything that has the same
 
 ## File mode notes
 
-`auth.path` reads are bounded by `auth.timeout_ms` (default 30000) just like the exec branch — a stalled mount surfaces as `reason=timeout` instead of blocking the hook. Local regular files are still strongly recommended (NFS / SMB / FUSE / keychain mounts will time out reliably but each fire pays a `timeout_ms` wait); a per-user local path is the cheapest path.
+`auth.path` reads are bounded by `auth.timeout_ms` (default 30000) just like the exec branch — a stalled file source surfaces as `reason=timeout` instead of blocking the hook. Local regular files are still strongly recommended (network or virtual file sources will time out reliably but each fire pays a `timeout_ms` wait); a per-user local path is the cheapest option.
 
 ccgate emits a `slog.Warn` when `auth.path` *or* the cache file is readable by anyone other than the current user, or is owned by a different user. The check is a best-effort security nudge, not policy enforcement: it inspects only the well-known "world-readable" indicators reachable from the filesystem and does not compute effective access. Keep the file user-only readable inside a user-only directory.
 

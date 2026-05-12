@@ -29,7 +29,7 @@
     //   name: 'openai',  model: 'gpt-4o-mini',        (env: OPENAI_API_KEY)
     //   name: 'gemini',  model: 'gemini-2.0-flash',    (env: GEMINI_API_KEY)
     // base_url:  route through an OpenAI-/Anthropic-compatible proxy.
-    //            See https://github.com/tak848/ccgate#routing-through-a-compatible-proxy.
+    //            See https://github.com/tak848/ccgate/blob/main/docs/providers.md#base_url-and-compatible-proxies
     // timeout_ms: API timeout in ms, default 20000.
     // auth: short-lived / rotating credentials. Discriminated
     //   by auth.type:

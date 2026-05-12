@@ -83,7 +83,7 @@ Download a binary from [Releases](https://github.com/tak848/ccgate/releases) and
 }
 ```
 
-`"command": "ccgate"` (no subcommand) is also accepted and will keep working forever — bare `ccgate` is the canonical Claude Code hook invocation.
+`"command": "ccgate"` (no subcommand) is the canonical Claude Code hook invocation; `ccgate claude` is the explicit form.
 
 If `ccgate` is not on your `PATH` (e.g. when relying on `mise exec` instead of a global install), set the hook `command` to the equivalent invocation, or use an absolute path to the binary.
 
@@ -91,7 +91,7 @@ If `ccgate` is not on your `PATH` (e.g. when relying on `mise exec` instead of a
 
 ccgate calls Anthropic's Claude Haiku by default. Export `CCGATE_ANTHROPIC_API_KEY` (or `ANTHROPIC_API_KEY` as fallback). For OpenAI / Gemini and the resolution order, see [docs/providers.md#api-keys](docs/providers.md#api-keys).
 
-That's it — ccgate is now running with its embedded defaults. To customize what is allowed or denied, see [Rule tuning](#rule-tuning); for background on how rules work, see [Concepts](#concepts).
+That's it — ccgate is now running with its embedded defaults. To customize what is allowed or denied, see [docs/rule-tuning.md](docs/rule-tuning.md); for background on how rules work, see [Concepts](#concepts).
 
 ## Quick start — Codex CLI
 
@@ -144,7 +144,7 @@ See [docs/codex.md](docs/codex.md) for the full lookup order, project-local over
 
 Same env vars as Claude Code — see [docs/providers.md#api-keys](docs/providers.md#api-keys).
 
-That's it — ccgate is now running with its embedded defaults. To customize what is allowed or denied, see [Rule tuning](#rule-tuning); for background on how rules work, see [Concepts](#concepts).
+That's it — ccgate is now running with its embedded defaults. To customize what is allowed or denied, see [docs/rule-tuning.md](docs/rule-tuning.md); for background on how rules work, see [Concepts](#concepts).
 
 ## Concepts
 
@@ -266,13 +266,13 @@ Column meanings, the JSON entry schema, and the credential-failure aggregation a
 ## CLI reference
 
 ```
-ccgate                         Read HookInput JSON from stdin (Claude Code hook). Equivalent to `ccgate claude`.
-ccgate claude                  Same as bare ccgate, explicit form (recommended for new users).
-ccgate claude init [-p|-o|-f]  Output the embedded Claude Code defaults.
-ccgate claude metrics [...]    Show Claude Code usage metrics.
-ccgate codex                   Read HookInput JSON from stdin (Codex CLI hook).
-ccgate codex init [-o|-f]      Output the embedded Codex CLI defaults.
-ccgate codex metrics [...]     Show Codex CLI usage metrics.
+ccgate                                       Read HookInput JSON from stdin (Claude Code hook). Equivalent to `ccgate claude`.
+ccgate claude                                Same as bare ccgate, explicit form (recommended for new users).
+ccgate claude init [-p] [-o FILE] [-f]       Output the embedded Claude Code defaults.
+ccgate claude metrics [...]                  Show Claude Code usage metrics.
+ccgate codex                                 Read HookInput JSON from stdin (Codex CLI hook).
+ccgate codex init [-p] [-o FILE] [-f]        Output the embedded Codex CLI defaults.
+ccgate codex metrics [...]                   Show Codex CLI usage metrics.
 ```
 
 Top-level `ccgate init` and `ccgate metrics` are not real subcommands — they print a one-line pointer to the per-target form and exit `2`.

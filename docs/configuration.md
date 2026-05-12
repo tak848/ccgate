@@ -60,9 +60,9 @@ If you want repo-wide policy that everyone gets, ship it in your own fork's embe
 | `metrics_max_size`       | int                               | `2097152`                                                                     | Max metrics file size in bytes before rotation (default 2MB). `0` = no rotation.                       |
 | `fallthrough_strategy`   | `"ask"` / `"allow"` / `"deny"`    | `"ask"`                                                                       | How to resolve LLM uncertainty (`fallthrough`). See [fallthrough_strategy](#fallthrough_strategy----choosing-what-to-do-on-llm-uncertainty). |
 | `disable_load_main_worktree_local_config` | bool | `false`                                                                       | In a linked git worktree, skip the main worktree's `ccgate.local.jsonnet`. See [Where ccgate looks for config](#where-ccgate-looks-for-config). |
-| `allow`                  | string[]                          | `[]`                                                                          | Allow guidance rules. **Replaces** the value carried over from earlier layers when set.                |
-| `deny`                   | string[]                          | `[]`                                                                          | Deny guidance rules (mandatory). Supports inline `deny_message:` hints. Same replace semantics as `allow`. |
-| `environment`            | string[]                          | `[]`                                                                          | Context strings passed to the LLM (trust level, policies, etc.). Same replace semantics as `allow`.    |
+| `allow`                  | string[]                          | embedded list (inspect with `ccgate <target> init`)                            | Allow guidance rules. **Replaces** the value carried over from earlier layers when set.                |
+| `deny`                   | string[]                          | embedded list (inspect with `ccgate <target> init`)                            | Deny guidance rules (mandatory). Supports inline `deny_message:` hints. Same replace semantics as `allow`. |
+| `environment`            | string[]                          | embedded list (inspect with `ccgate <target> init`)                            | Context strings passed to the LLM (trust level, policies, etc.). Same replace semantics as `allow`.    |
 | `append_allow`           | string[]                          | `[]`                                                                          | Allow guidance rules **appended** on top of the carried-over list. See [docs/rule-tuning.md](rule-tuning.md). |
 | `append_deny`            | string[]                          | `[]`                                                                          | Deny guidance rules appended on top of the carried-over list.                                          |
 | `append_environment`     | string[]                          | `[]`                                                                          | Environment context appended on top of the carried-over list.                                          |
@@ -81,7 +81,7 @@ The LLM returns one of: `allow`, `deny`, `fallthrough`. `fallthrough` is the LLM
 | `deny`    | Auto-deny. The deny message tells the AI not to re-ask and not to attempt workarounds.              | Unattended runs that should fail safely instead of waiting for approval.  |
 | `allow`   | Auto-allow.                                                                                         | Fully autonomous runs where you accept the risk that the LLM was unsure.  |
 
-**`allow` is riskier than it looks.** The hook spec on both Claude Code and Codex CLI only delivers `decision.message` to the AI when behavior is `deny`. Forced-allow messages are silently dropped, so the AI never sees a "ccgate auto-approved this; proceed with care" warning. Pick `allow` only when that trade-off is acceptable.
+**`allow` is riskier than it looks.** The hook spec only delivers `decision.message` to the AI when behavior is `deny`. Forced-allow messages are silently dropped, so the AI never sees a "ccgate auto-approved this; proceed with care" warning. Pick `allow` only when that trade-off is acceptable.
 
 ### What `fallthrough_strategy` does NOT cover
 
@@ -196,7 +196,7 @@ The cache layer recovers from these without falling through, so they are emitted
 
 `ccgate <target> metrics` adds three sections by default:
 
-- **Top fallthrough commands** -- the most frequent operations that the LLM was unsure about. These are good candidates for a project-local allow / deny rule that lets ccgate skip the LLM round-trip entirely.
+- **Top fallthrough commands** -- the most frequent operations that the LLM was unsure about. These are candidates for a project-local allow / deny rule that nudges the LLM toward a clear verdict instead of falling through to the upstream prompt.
 - **Top deny commands** -- the most frequent operations the LLM denied. Useful when an automated job keeps trying the same blocked thing -- often a sign that the AI's plan needs a different shape.
 - **Credential failures** -- aggregated from `ft_kind=credential_unavailable` entries, grouped by `(source, reason)`. Tool input is intentionally ignored here (every fire during a credential outage carries the same source/reason regardless of the tool the user invoked). Cache-layer warnings do not appear here; check `ccgate.log` for those.
 

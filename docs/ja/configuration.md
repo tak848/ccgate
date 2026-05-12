@@ -60,9 +60,9 @@ repo 全体に効くポリシーが必要なら、自前 fork の埋込デフォ
 | `metrics_max_size`       | int                               | `2097152`                                                                       | ローテーション閾値 (bytes, デフォルト 2MB)。`0` = ローテーションなし。                                     |
 | `fallthrough_strategy`   | `"ask"` / `"allow"` / `"deny"`    | `"ask"`                                                                         | LLM が判定に迷った (`fallthrough`) 際の扱い。[fallthrough_strategy](#fallthrough_strategy----llm-判定迷い時の挙動) 参照。 |
 | `disable_load_main_worktree_local_config` | bool | `false`                                                                         | linked git worktree で main worktree 側の `ccgate.local.jsonnet` を読むのをスキップ。[ccgate が config を探す場所](#ccgate-が-config-を探す場所) 参照。 |
-| `allow`                  | string[]                          | `[]`                                                                            | 許可ルール。設定すると前の layer から引き継いだ list を **完全置換**。                                     |
-| `deny`                   | string[]                          | `[]`                                                                            | 拒否ルール (mandatory)。`deny_message:` ヒント対応。`allow` と同じく置換。                                 |
-| `environment`            | string[]                          | `[]`                                                                            | LLM に渡すコンテキスト (信頼レベル、ポリシー等)。`allow` と同じく置換。                                     |
+| `allow`                  | string[]                          | embedded list (`ccgate <target> init` で確認)                                    | 許可ルール。設定すると前の layer から引き継いだ list を **完全置換**。                                     |
+| `deny`                   | string[]                          | embedded list (`ccgate <target> init` で確認)                                    | 拒否ルール (mandatory)。`deny_message:` ヒント対応。`allow` と同じく置換。                                 |
+| `environment`            | string[]                          | embedded list (`ccgate <target> init` で確認)                                    | LLM に渡すコンテキスト (信頼レベル、ポリシー等)。`allow` と同じく置換。                                     |
 | `append_allow`           | string[]                          | `[]`                                                                            | 引き継いだ list の末尾に **追加**。[docs/ja/rule-tuning.md](rule-tuning.md) を参照。                       |
 | `append_deny`            | string[]                          | `[]`                                                                            | 引き継いだ deny list の末尾に追加。                                                                        |
 | `append_environment`     | string[]                          | `[]`                                                                            | 引き継いだ environment list の末尾に追加。                                                                 |
@@ -81,7 +81,7 @@ LLM は `allow` / `deny` / `fallthrough` のいずれかを返します。`fallt
 | `deny`    | 自動拒否。deny メッセージが「user に聞くな、別コマンドで回避するな」と AI に指示する                    | 無人実行で「許可待ちで止まる」より「失敗で抜ける」を選びたいとき                    |
 | `allow`   | 自動許可                                                                                              | 完全自律実行で「LLM が迷ったケースも進めたい」リスクを受容できるとき                |
 
-**`allow` は見た目より危険です**。Claude Code / Codex とも、hook 仕様上 `decision.message` は `behavior=deny` のときしか AI に届きません。強制 allow のメッセージは silent に drop されるので、AI には「ccgate が auto approve した、注意して進めて」のような警告が見えません。このトレードオフを理解した上で選択してください。
+**`allow` は見た目より危険です**。 hook 仕様上 `decision.message` は `behavior=deny` のときしか AI に届きません。 強制 allow のメッセージは silent に drop されるので、 AI には「ccgate が auto approve した、 注意して進めて」のような警告が見えません。 このトレードオフを理解した上で選択してください。
 
 ### `fallthrough_strategy` の対象**外**
 
@@ -196,7 +196,7 @@ cache 層の失敗は fallthrough せずに自動回復するので、`slog.Warn
 
 `ccgate <target> metrics` はデフォルトで 3 つのセクションを追加します:
 
-- **Top fallthrough commands**: LLM が判断に迷った頻度上位の操作。プロジェクトローカルで allow / deny ルールを追加すれば LLM 往復を省略できる候補
+- **Top fallthrough commands**: LLM が判断に迷った頻度上位の操作。プロジェクトローカルで allow / deny ルールを追加すれば、 LLM が明確な判定に寄りやすくなり上流 prompt への fallthrough を減らせる候補
 - **Top deny commands**: LLM が deny した頻度上位の操作。同じブロックされた操作を自動 job が繰り返してる場合、AI 側のプラン形を変えるべきサインであることが多い
 - **Credential failures**: `ft_kind=credential_unavailable` を `(source, reason)` で集計。tool input は意図的に無視 (credential 障害中は同じ source/reason が全 tool で出るため)。cache 層 warning はここには出ないので `ccgate.log` で確認
 
