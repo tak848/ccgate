@@ -43,12 +43,6 @@ aqua i
 
 For a [global aqua config](https://aquaproj.github.io/docs/tutorial/global-config), follow aqua's own tutorial.
 
-### Homebrew
-
-```bash
-brew install tak848/tap/ccgate
-```
-
 ### go install
 
 ```bash
@@ -58,6 +52,12 @@ go install github.com/tak848/ccgate@latest
 ### GitHub Releases
 
 Download a binary from [Releases](https://github.com/tak848/ccgate/releases) and place it on your `PATH`.
+
+### Homebrew
+
+```bash
+brew install tak848/tap/ccgate
+```
 
 ## Quick start — Claude Code
 
@@ -221,7 +221,13 @@ Export the matching API key — see [docs/providers.md#api-keys](docs/providers.
 
 Provider switching, model selection constraints, API key resolution order, and compatible-proxy setup are all consolidated in [docs/providers.md](docs/providers.md).
 
-**Refreshable credentials** (AWS STS, Vertex ADC, OpenAI-compatible gateways with virtual keys, internal key brokers — anything a static env var cannot keep up with) are handled via `provider.auth`, a discriminated union over three shapes (`type=exec` / `type=file` / `type=profile`). The full helper contract, caching, 401/403 behaviour, and the recovery checklist live in [docs/api-key-helper.md](docs/api-key-helper.md).
+**Refreshable credentials** (AWS STS, Vertex ADC, OpenAI-compatible gateways with virtual keys, internal key brokers — anything a static env var cannot keep up with) are handled via `provider.auth`. Three shapes are supported:
+
+- `type=exec` — ccgate runs a **credential helper** command and uses its stdout as the credential, with caching keyed on `expires_at`.
+- `type=file` — ccgate reads a credential file written by an external rotator.
+- `type=profile` — Anthropic-only; ccgate hands an `ant auth login` profile to the SDK and the SDK refresh-token loop owns the credential.
+
+The full helper contract, caching, 401/403 behaviour, and the recovery checklist live in [docs/api-key-helper.md](docs/api-key-helper.md).
 
 ## Fallthrough strategy
 

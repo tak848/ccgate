@@ -43,12 +43,6 @@ aqua i
 
 [グローバル aqua 設定](https://aquaproj.github.io/docs/tutorial/global-config) に入れる場合は aqua 公式チュートリアルに従ってください。
 
-### Homebrew
-
-```bash
-brew install tak848/tap/ccgate
-```
-
 ### go install
 
 ```bash
@@ -58,6 +52,12 @@ go install github.com/tak848/ccgate@latest
 ### GitHub Releases
 
 [Releases](https://github.com/tak848/ccgate/releases) からバイナリをダウンロードし、PATH の通った場所に配置してください。
+
+### Homebrew
+
+```bash
+brew install tak848/tap/ccgate
+```
 
 ## クイックスタート — Claude Code
 
@@ -219,7 +219,13 @@ provider と hook の登録が済んでから、自分の `allow` / `deny` / `ap
 
 provider の切替手順、 モデル選定時の確認事項、 API キーの解決順、 互換 proxy 経由での利用は [docs/ja/providers.md](providers.md) にまとめてあります。
 
-**Refresh される credential** (AWS STS / Vertex ADC / OpenAI 互換 gateway の virtual key / 社内 key broker など、 静的 env では追従できないケース) を扱いたいときは `provider.auth` を設定します。 3 形式の discriminated union (`type=exec` / `type=file` / `type=profile`) で、 helper 契約・キャッシュ・401/403 挙動・復旧手順を含む完全な仕様は [docs/ja/api-key-helper.md](api-key-helper.md) を参照。
+**Refresh される credential** (AWS STS / Vertex ADC / OpenAI 互換 gateway の virtual key / 社内 key broker など、 静的 env では追従できないケース) を扱いたいときは `provider.auth` を設定します。 3 形式から選びます:
+
+- `type=exec` — ccgate が **credential helper** コマンドを実行し、 stdout を credential として使う (`expires_at` を keyed cache)。
+- `type=file` — 外部 rotator が書いた credential file を ccgate が読む。
+- `type=profile` — Anthropic 専用。 `ant auth login` の profile を SDK に渡し、 SDK の refresh-token loop が credential を保有する。
+
+helper 契約・キャッシュ・401/403 挙動・復旧手順を含む完全な仕様は [docs/ja/api-key-helper.md](api-key-helper.md) を参照。
 
 ## Fallthrough strategy
 
