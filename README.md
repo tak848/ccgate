@@ -152,16 +152,17 @@ ccgate's `allow` / `deny` / `environment` lists are **strings of natural-languag
 
 Evaluation flow:
 
-```
-AI tool issues a PermissionRequest
-  │
-  │  stdin: HookInput JSON
-  ▼
-ccgate
-  ├── Load jsonnet config (embedded defaults + your global + project-local)
-  ├── Build context (git repo info, referenced paths, recent transcript [Claude only])
-  ├── Call the configured LLM (default: Claude Haiku) with structured output
-  └── stdout: allow / deny / fallthrough
+```mermaid
+flowchart TD
+  A["Claude Code / Codex CLI"] --> B{"Resolved by the upstream tool's static rules?"}
+  B -->|Yes| C["Run / refuse upstream"]
+  B -->|No| D["PermissionRequest hook"]
+  D --> E["ccgate"]
+  E --> F["tool_input / git context / jsonnet rules"]
+  F --> G{"LLM (default: Haiku) judges"}
+  G -->|allow| H["Run"]
+  G -->|deny| I["Refuse with reason"]
+  G -->|fallthrough| J["Back to user confirmation"]
 ```
 
 What ccgate puts in front of the LLM (representative fields):

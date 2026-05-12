@@ -152,16 +152,17 @@ ccgate の `allow` / `deny` / `environment` はいずれも **自然言語の文
 
 評価フロー:
 
-```
-AI ツールが PermissionRequest を発火
-  │
-  │  stdin: HookInput JSON
-  ▼
-ccgate
-  ├── jsonnet config を読み込む (embedded defaults + global + project-local)
-  ├── context を組み立て (git repo info, referenced paths, recent transcript [Claude のみ])
-  ├── 設定済みの LLM (default: Claude Haiku) を structured output で呼ぶ
-  └── stdout: allow / deny / fallthrough
+```mermaid
+flowchart TD
+  A["Claude Code / Codex CLI"] --> B{"上流側の静的ルールで解決できる?"}
+  B -->|Yes| C["そのまま実行 / 拒否"]
+  B -->|No| D["PermissionRequest hook"]
+  D --> E["ccgate"]
+  E --> F["tool_input / git context / jsonnet rules"]
+  F --> G{"LLM (default: Haiku) が判定"}
+  G -->|allow| H["実行"]
+  G -->|deny| I["理由付きで拒否"]
+  G -->|fallthrough| J["ユーザー確認へ戻す"]
 ```
 
 ccgate が LLM に渡す情報 (代表項目):
