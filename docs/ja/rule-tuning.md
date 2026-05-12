@@ -113,5 +113,5 @@ metrics の列の意味、JSON 出力の schema、credential failure の集計�
 
 - [設定リファレンス (configuration.md)](configuration.md) — Layer / merge / 設定全フィールド / metrics / Fallthrough strategy
 - [Refresh される credential (api-key-helper.md)](api-key-helper.md) — `provider.auth` の helper 契約、 401/403 挙動、復旧手順
-- [Claude Code 固有 (claude.md)](claude.md) — Claude Code の HookInput
-- [Codex CLI 固有 (codex.md)](codex.md) — Codex CLI の HookInput
+- [Claude Code 固有 (claude-code.md)](claude-code.md) — Claude Code の HookInput
+- [Codex CLI 固有 (codex-cli.md)](codex-cli.md) — Codex CLI の HookInput

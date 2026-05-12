@@ -96,7 +96,7 @@ That's it — ccgate is now running with its embedded defaults. To customize wha
 ## Quick start — Codex CLI
 
 > [!NOTE]
-> Codex hooks require `[features] codex_hooks = true` in `~/.codex/config.toml`. See [docs/codex.md](docs/codex.md) for details.
+> Codex hooks require `[features] codex_hooks = true` in `~/.codex/config.toml`. See [docs/codex-cli.md](docs/codex-cli.md) for details.
 
 ### 1. Register as a Codex hook
 
@@ -138,7 +138,7 @@ command = "ccgate codex"
 statusMessage = "ccgate evaluating request"
 ```
 
-See [docs/codex.md](docs/codex.md) for the full lookup order, project-local overlays, and a `go run` recipe for in-tree dev builds.
+See [docs/codex-cli.md](docs/codex-cli.md) for the full lookup order, project-local overlays, and a `go run` recipe for in-tree dev builds.
 
 ### 2. API key
 
@@ -174,7 +174,7 @@ What ccgate puts in front of the LLM (representative fields):
 - `referenced_paths` — paths extracted from `tool_input` on a best-effort basis. Supported tools: `Read`, `Write`, `Edit`, `MultiEdit`, `Glob`, `Grep`, `Bash`. For `apply_patch` (Codex) and MCP tools, `referenced_paths` is empty; the LLM reads `tool_input_raw` directly to see hunk targets or call arguments.
 - Claude-only: `permission_mode` (switches the prompt to plan-mode rules when `"plan"`), `permission_suggestions`, `recent_transcript`, and `settings_permissions` (treated as a hint, not a whitelist).
 
-For the complete input list per target, see [docs/claude.md](docs/claude.md) and [docs/codex.md](docs/codex.md).
+For the complete input list per target, see [docs/claude-code.md](docs/claude-code.md) and [docs/codex-cli.md](docs/codex-cli.md).
 
 ## Configuration
 
@@ -268,8 +268,8 @@ Column meanings, the JSON entry schema, and the credential-failure aggregation a
 - [docs/rule-tuning.md](docs/rule-tuning.md) — Rule tuning entry point (defaults inspection, append vs replace, three example patterns, iteration workflow)
 - [docs/configuration.md](docs/configuration.md) — Config layering, full field reference, fallthrough_strategy details, metrics output
 - [docs/api-key-helper.md](docs/api-key-helper.md) — `provider.auth` reference (helper contract, caching, 401/403 behaviour, recovery checklist)
-- [docs/claude.md](docs/claude.md) — Claude Code-specific HookInput
-- [docs/codex.md](docs/codex.md) — Codex CLI-specific HookInput
+- [docs/claude-code.md](docs/claude-code.md) — Claude Code-specific HookInput
+- [docs/codex-cli.md](docs/codex-cli.md) — Codex CLI-specific HookInput
 - [日本語ドキュメント (docs/ja/)](docs/ja/README.md)
 
 ## CLI reference

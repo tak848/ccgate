@@ -1,6 +1,6 @@
 # ccgate -- OpenAI Codex CLI
 
-[日本語版 (docs/ja/codex.md)](ja/codex.md)
+[日本語版 (docs/ja/codex-cli.md)](ja/codex-cli.md)
 
 Codex-CLI-specific notes for the `ccgate codex` hook.
 
