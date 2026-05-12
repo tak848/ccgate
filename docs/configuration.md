@@ -2,7 +2,7 @@
 
 [日本語版 (docs/ja/configuration.md)](ja/configuration.md)
 
-Cross-target configuration reference. The [root README](../README.md) lists the field table and quick-start; this page goes into the layering rules, the fallthrough decision tree, and the metrics output schema.
+Cross-target configuration reference: layering rules, the full config field table, fallthrough_strategy, and the metrics output schema. The [README](../README.md) covers Quick start; this page is for the details.
 
 ## Where ccgate looks for config
 
@@ -33,7 +33,7 @@ Relative paths in any layer (`log_path`, `metrics_path`, `auth.path`, …) resol
 | Lists: `allow`, `deny`, `environment` | A layer that sets the field **replaces** the carried-over list (even with `[]`). A layer that omits the field leaves the carried-over list untouched. | Embedded `allow: ["A","B"]` + global `allow: ["X"]` → final `allow: ["X"]`. |
 | Lists: `append_allow`, `append_deny`, `append_environment` | A layer that sets the field **appends** its entries to whatever the previous layers produced. | Embedded `deny: ["A"]` + project `append_deny: ["P"]` → final `deny: ["A","P"]`. |
 | Scalars: `log_*`, `metrics_*`, `fallthrough_strategy` | A layer **overwrites** the value per-field when it sets it; layers that omit a field leave the previous value untouched. | Embedded `log_max_size: 5MB` + global `log_max_size: 10MB` → final `log_max_size: 10MB`. |
-| Block: `provider` (every `provider.*` field, including `name` / `model` / `base_url` / `auth` / `timeout_ms`) | A layer that writes `provider` **replaces the entire block**; layers that omit `provider` leave it untouched. Per-field merge would let stale fields from a lower layer (e.g. a proxy `base_url`, or a helper `auth.command`) leak into a different provider when a higher layer switches `name`. | Embedded `provider: {name: anthropic, model: haiku}` + global `provider: {name: openai, model: gpt-5.4-nano-2026-03-17}` → final `provider: {name: openai, model: gpt-5.4-nano-2026-03-17}`. To bump only the model, restate the whole block: `provider: {name: anthropic, model: claude-sonnet-4-6}`. When a global layer sets `auth`, any project-local `provider` override must repeat the whole `auth` block or the helper is silently dropped on that project. |
+| Block: `provider` (every `provider.*` field, including `name` / `model` / `base_url` / `auth` / `timeout_ms`) | A layer that writes `provider` **replaces the entire block**; layers that omit `provider` leave it untouched. Per-field merge would let stale fields from a lower layer (e.g. a proxy `base_url`, or a helper `auth.command`) leak into a different provider when a higher layer switches `name`. | Embedded `provider: {name: anthropic, model: claude-haiku-4-5}` + global `provider: {name: openai, model: gpt-4o-mini}` → final `provider: {name: openai, model: gpt-4o-mini}`. To bump only the model, restate the whole block: `provider: {name: anthropic, model: claude-sonnet-4-6}`. When a global layer sets `auth`, any project-local `provider` override must repeat the whole `auth` block or the helper is silently dropped on that project. |
 
 `allow` and `append_allow` (same for the other lists) can coexist in the same layer: the replace runs first, then the append stacks onto the result. Use the pattern when you want to **swap** the embedded list for a curated one and **also** add a couple of project-specific extras: `{ allow: ['only this base'], append_allow: ['plus this project rule'] }`.
 
@@ -42,6 +42,32 @@ Relative paths in any layer (`log_path`, `metrics_path`, `auth.path`, …) resol
 Project-local configs intentionally **only load when they are not tracked by git**. The intent is to let individual contributors layer their own restrictions on top of an ergonomic shared baseline without sneaking team-wide policy into the repo via the local-config path.
 
 If you want repo-wide policy that everyone gets, ship it in your own fork's embedded defaults, in your team's `~/.claude/ccgate.jsonnet` distribution (e.g. via a dotfiles bootstrap), or push individual contributors to add the same `.local.jsonnet` themselves.
+
+## Config fields
+
+| Field                    | Type                              | Default                                                                       | Description                                                                                            |
+|--------------------------|-----------------------------------|-------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------|
+| `provider.name`          | string                            | `"anthropic"`                                                                 | Provider name. One of `"anthropic"` / `"openai"` / `"gemini"`. See [docs/providers.md](providers.md).   |
+| `provider.model`         | string                            | `"claude-haiku-4-5"`                                                          | Model name. See [docs/providers.md](providers.md#model-selection) for selection guidance.              |
+| `provider.base_url`      | string                            | `""`                                                                          | API base URL override. Empty = SDK default. See [docs/providers.md#base_url-and-compatible-proxies](providers.md#base_url-and-compatible-proxies). |
+| `provider.auth`          | object (`{type, ...}`)            | (omit = env var)                                                              | Discriminated union for refreshable credentials. `type=exec` / `type=file` / `type=profile`. See [docs/api-key-helper.md](api-key-helper.md). |
+| `provider.timeout_ms`    | int                               | `20000`                                                                       | API timeout (ms). `0` = no timeout.                                                                    |
+| `log_path`               | string                            | `$XDG_STATE_HOME/ccgate/<target>/ccgate.log`                                  | Log file path. Supports `~` for home directory.                                                        |
+| `log_disabled`           | bool                              | `false`                                                                       | Disable logging entirely.                                                                              |
+| `log_max_size`           | int                               | `5242880`                                                                     | Max log file size in bytes before rotation (default 5MB). `0` = no rotation.                           |
+| `metrics_path`           | string                            | `$XDG_STATE_HOME/ccgate/<target>/metrics.jsonl`                               | Metrics JSONL file path.                                                                               |
+| `metrics_disabled`       | bool                              | `false`                                                                       | Disable metrics collection entirely.                                                                   |
+| `metrics_max_size`       | int                               | `2097152`                                                                     | Max metrics file size in bytes before rotation (default 2MB). `0` = no rotation.                       |
+| `fallthrough_strategy`   | `"ask"` / `"allow"` / `"deny"`    | `"ask"`                                                                       | How to resolve LLM uncertainty (`fallthrough`). See [fallthrough_strategy](#fallthrough_strategy----choosing-what-to-do-on-llm-uncertainty). |
+| `disable_load_main_worktree_local_config` | bool | `false`                                                                       | In a linked git worktree, skip the main worktree's `ccgate.local.jsonnet`. See [Where ccgate looks for config](#where-ccgate-looks-for-config). |
+| `allow`                  | string[]                          | `[]`                                                                          | Allow guidance rules. **Replaces** the value carried over from earlier layers when set.                |
+| `deny`                   | string[]                          | `[]`                                                                          | Deny guidance rules (mandatory). Supports inline `deny_message:` hints. Same replace semantics as `allow`. |
+| `environment`            | string[]                          | `[]`                                                                          | Context strings passed to the LLM (trust level, policies, etc.). Same replace semantics as `allow`.    |
+| `append_allow`           | string[]                          | `[]`                                                                          | Allow guidance rules **appended** on top of the carried-over list. See [docs/rule-tuning.md](rule-tuning.md). |
+| `append_deny`            | string[]                          | `[]`                                                                          | Deny guidance rules appended on top of the carried-over list.                                          |
+| `append_environment`     | string[]                          | `[]`                                                                          | Environment context appended on top of the carried-over list.                                          |
+
+`<target>` is `claude` or `codex` depending on which hook is invoked. When `XDG_STATE_HOME` is unset, ccgate falls back to `~/.local/state/ccgate/<target>/...`.
 
 ## `fallthrough_strategy` -- choosing what to do on LLM uncertainty
 
@@ -129,7 +155,7 @@ ccgate codex  metrics --days 7         # same shape, codex side
 
 `ft_kind` is filled when the LLM returned (or the runtime forced) a fallthrough; the value tells you which fallback path fired (`llm`, `api_unusable`, `no_apikey`, `credential_unavailable`, `unknown_provider`, `bypass`, `dontask`, `user_interaction`). `forced=true` means `fallthrough_strategy` promoted an LLM `fallthrough` into the recorded `decision`.
 
-`credential_source` is set only when `ft_kind=credential_unavailable`. It carries the credential stage that produced (or failed to produce) the credential — currently `exec` / `file` / `cache` / `lock` (matching the keystore-managed `auth.type=exec` / `auth.type=file` paths) plus `profile` (Anthropic-only `auth.type=profile`, which delegates resolution to anthropic-sdk-go and never touches the keystore). The set is open: future credential paths may add new values, so consumers parsing this field should treat it as a free-form short string and tolerate unknown values rather than enum-validate it.
+`credential_source` is set only when `ft_kind=credential_unavailable`. It carries the credential stage that produced (or failed to produce) the credential — `exec` / `file` / `cache` / `lock` (matching the keystore-managed `auth.type=exec` / `auth.type=file` paths) plus `profile` (Anthropic-only `auth.type=profile`, which delegates resolution to anthropic-sdk-go and never touches the keystore). The set is open and consumers parsing this field should treat it as a free-form short string and tolerate unknown values rather than enum-validate it.
 
 The `reason` field meaning depends on `ft_kind`:
 
@@ -196,4 +222,4 @@ The same fields exist for the log file (`log_path`, `log_disabled`, `log_max_siz
 - **Plan mode (Claude only) is prompt-only.** Under `permission_mode == "plan"`, ccgate relies on the LLM plus prose in the system prompt to (a) reject implementation-side writes and (b) allow read-only queries without an explicit allow-guidance match. Either side can misfire. Tracked in [#37](https://github.com/tak848/ccgate/issues/37).
 - **No surgical reset for a single embedded default rule.** A layer either replaces a list wholesale or appends to it; removing one specific embedded entry while keeping the rest requires re-stating the whole list under `allow` / `deny` minus that one entry.
 - **Codex hook schema is upstream-driven.** Codex hooks live behind upstream's `[features] codex_hooks = true` flag; treat the [OpenAI Codex hooks docs](https://developers.openai.com/codex/hooks) as the source of truth.
-- **Codex `~/.codex/config.toml` ingestion** (`approval_policy`, `sandbox_mode`, `prefix_rules`) is not done. ccgate decides purely from the hook payload + ccgate config; if Codex's own settings would have rejected something, that signal does not reach the LLM.
+- **Codex `~/.codex/config.toml` ingestion** (`approval_policy`, `sandbox_mode`, `prefix_rules`) is out of scope. ccgate decides purely from the hook payload + ccgate config; Codex's own settings do not reach the LLM.

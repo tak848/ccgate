@@ -1,0 +1,102 @@
+# ccgate -- Providers
+
+[English version (docs/providers.md)](../providers.md)
+
+ccgate は各 PermissionRequest を provider LLM (default: Claude Haiku) に投げて分類します。本ページは、対応 provider・切り替え方・API キーの解決順・互換 proxy 経由での利用を扱います。Refresh される credential (`provider.auth`) については [docs/ja/api-key-helper.md](api-key-helper.md) を参照。
+
+## 対応 provider
+
+| `provider.name` | underlying SDK | 既定モデル                          |
+|-----------------|----------------|-------------------------------------|
+| `anthropic`     | `anthropic-sdk-go` | `claude-haiku-4-5`               |
+| `openai`        | `openai-go`        | (`provider.model` で明示指定が必要) |
+| `gemini`        | Gemini の OpenAI 互換 endpoint 経由で `openai-go` | (同じく明示指定が必要) |
+
+## Provider の切り替え
+
+任意の layer で `provider.name` (必要なら `provider.model` も) を書き換えます:
+
+```jsonnet
+{
+  provider: {
+    name: 'openai',
+    model: 'gpt-4o-mini',
+  },
+}
+```
+
+対応する API キー (下の [API キー](#api-キー) 参照) を export してください。キーが見つからない場合 ccgate は上流ツールの確認画面に fallthrough するので、 provider 切替で hook が壊れることはありません。
+
+## API キー
+
+`CCGATE_*_API_KEY` が優先され bare 変数を上書きします。 AI ツール本体の API キーと ccgate 用キーを分けられます。
+
+| `provider.name` | 優先                       | フォールバック        | API キー発行ページ |
+|-----------------|----------------------------|-----------------------|--------------------|
+| `anthropic`     | `CCGATE_ANTHROPIC_API_KEY` | `ANTHROPIC_API_KEY`   | <https://platform.claude.com/settings/keys> |
+| `openai`        | `CCGATE_OPENAI_API_KEY`    | `OPENAI_API_KEY`      | <https://platform.openai.com/api-keys>      |
+| `gemini`        | `CCGATE_GEMINI_API_KEY`    | `GEMINI_API_KEY`      | <https://aistudio.google.com/app/api-keys>  |
+
+全体の解決順: `provider.auth` (設定済み) → `CCGATE_*_API_KEY` → `*_API_KEY`。`provider.auth` を設定した状態で失敗しても env var に silent に fallback はせず、 `kind=credential_unavailable` で fallthrough します。 helper の契約と復旧手順は [docs/ja/api-key-helper.md](api-key-helper.md) を参照。
+
+## モデル選択
+
+ccgate は structured output と `temperature=0` (決定論的な分類) でリクエストを送ります。どちらにも対応するモデルを選んでください。
+
+> [!WARNING]
+> reasoning model は `temperature=0` を拒否するため全リクエストが失敗し、分類タスクには不要な chain-of-thought に数秒かかります。現時点で該当することが知られているのは OpenAI の `gpt-5` reasoning 系列 (`gpt-5`, `gpt-5-mini`, `gpt-5-nano`, `gpt-5-chat`) と `o1*` / `o3*` / `o4-mini` 系。同じファミリーの chat 系モデルを使ってください。
+
+各 provider のモデル一覧は提供側で頻繁に更新されるので、選定時に確認:
+
+- Anthropic: <https://docs.anthropic.com/en/docs/about-claude/models/overview>
+- OpenAI: <https://platform.openai.com/docs/models>
+- Gemini: <https://ai.google.dev/gemini-api/docs/models>
+
+## `base_url` と互換 proxy
+
+ccgate は各 provider SDK の標準 chat / messages エンドポイントを使うので、**OpenAI 互換 / Anthropic 互換** の任意の endpoint — [LiteLLM proxy](https://docs.litellm.ai/docs/proxy/quick_start) / Azure OpenAI / オンプレ gateway / 地域別 endpoint など — に `provider.base_url` を向ければ動きます。
+
+`provider.base_url` は underlying SDK の `WithBaseURL` にそのまま渡されるので、書く path は **その SDK の慣習** に従います (ccgate 側で正規化しません):
+
+| `provider.name` | SDK default base URL                                       | `base_url` に書く形                                    |
+|-----------------|------------------------------------------------------------|--------------------------------------------------------|
+| `openai`        | `https://api.openai.com/v1/`                               | host **+ `/v1`** (SDK が `chat/completions` を追加)    |
+| `anthropic`     | `https://api.anthropic.com/`                               | host root のみ (SDK が `/v1/messages` を追加)          |
+| `gemini`        | `https://generativelanguage.googleapis.com/v1beta/openai/` | override するなら host **+ `/v1beta/openai`**          |
+
+### OpenAI 互換 endpoint
+
+`/v1/chat/completions` を expose する proxy (LiteLLM proxy / Azure OpenAI の OpenAI 互換モード 等):
+
+```jsonnet
+{
+  provider: {
+    name: 'openai',
+    model: 'anthropic/claude-haiku-4-5', // proxy が公開している名前
+    base_url: 'https://your-proxy.example/v1',
+  },
+}
+```
+
+proxy の API キーを `CCGATE_OPENAI_API_KEY` で export。OpenAI SDK は base URL に `/chat/completions` を直接 append するので、末尾の `/v1` が必要。
+
+### Anthropic 互換 endpoint
+
+`/v1/messages` を expose する proxy:
+
+```jsonnet
+{
+  provider: {
+    name: 'anthropic',
+    model: 'claude-haiku-4-5',
+    base_url: 'https://your-proxy.example',
+  },
+}
+```
+
+proxy の API キーを `CCGATE_ANTHROPIC_API_KEY` で export。 Anthropic SDK が `/v1/messages` を自分で append するので、base URL は host root で止めます。
+
+## 関連
+
+- [docs/ja/api-key-helper.md](api-key-helper.md) — `provider.auth` (refresh される credential、 helper 契約、 401/403 挙動、 障害復旧)
+- [docs/ja/configuration.md](configuration.md) — 設定 layering、 全フィールドリファレンス、 fallthrough_strategy、 metrics

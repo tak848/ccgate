@@ -90,7 +90,7 @@ This pattern is supported. The default `auth.timeout_ms` (`30000`) covers most n
 
 ## Profile-based authentication (Anthropic only)
 
-Anthropic provider only. The official `ant` CLI (`ant auth login` for browser-based OAuth, `ant profile activate <name>` to switch the active profile) writes credentials to `<config_dir>/credentials/<name>.json` (mode 0600). `<config_dir>` defaults to `~/.config/anthropic`. The Anthropic profile resolution chain (`$ANTHROPIC_PROFILE` → `<config_dir>/active_config` → `"default"`) is shared between the Go SDK, Claude Code, and the Claude Agent SDK ([wif-reference doc](https://platform.claude.com/docs/en/api/authentication/wif-reference)). The Anthropic SDK refreshes the access token itself using the stored refresh token; ccgate stays out of the credential path entirely and only disables the SDK's static-credential env autoload (`ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN`) so a leftover env var does not silently shadow your declared profile. Workload Identity Federation is supported only via a profile config that declares `authentication.type=oidc_federation`; env-only WIF (no profile) is out of scope today.
+Anthropic provider only. The official `ant` CLI (`ant auth login` for browser-based OAuth, `ant profile activate <name>` to switch the active profile) writes credentials to `<config_dir>/credentials/<name>.json` (mode 0600). `<config_dir>` defaults to `~/.config/anthropic`. The Anthropic profile resolution chain (`$ANTHROPIC_PROFILE` → `<config_dir>/active_config` → `"default"`) is shared between the Go SDK, Claude Code, and the Claude Agent SDK ([wif-reference doc](https://platform.claude.com/docs/en/api/authentication/wif-reference)). The Anthropic SDK refreshes the access token itself using the stored refresh token; ccgate stays out of the credential path entirely and only disables the SDK's static-credential env autoload (`ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN`) so a leftover env var does not silently shadow your declared profile. Workload Identity Federation is supported only via a profile config that declares `authentication.type=oidc_federation`.
 
 ### Quick start
 
@@ -138,9 +138,11 @@ When a real broker mints time-limited credentials, wrap the response in `{key, e
 ```sh
 #!/bin/sh
 # ~/bin/ccgate-key-broker.sh
+# Print a JSON line: {"key": "...", "expires_at": "<RFC3339>"}
+# Substitute the RFC3339 formatter your platform provides for `<rfc3339-now-plus-50m>`.
 set -eu
 TOKEN=$(my-key-broker --provider anthropic)
-EXP=$(date -u -v+50M +%FT%TZ 2>/dev/null || date -u -d '+50 minutes' +%FT%TZ)
+EXP=<rfc3339-now-plus-50m>
 jq -nc --arg key "$TOKEN" --arg expires_at "$EXP" '{key:$key, expires_at:$expires_at}'
 ```
 
@@ -152,24 +154,11 @@ Test the script standalone first (`~/bin/ccgate-key-broker.sh | jq .` should pri
 
 ### External rotator (no helper exec on the hook path)
 
-When you want zero exec cost on the hook, schedule an external rotator (cron / launchd / systemd-timer) to write the same JSON shape atomically:
-
-```sh
-#!/bin/sh
-set -eu
-TOKEN=$(my-key-broker --provider anthropic)
-EXP=$(date -u -v+1H +%FT%TZ 2>/dev/null || date -u -d '+1 hour' +%FT%TZ)
-TMP=$(mktemp ~/.config/my-broker/anthropic.json.XXXXXX)
-jq -nc --arg key "$TOKEN" --arg expires_at "$EXP" '{key:$key, expires_at:$expires_at}' > "$TMP"
-chmod 0600 "$TMP"
-mv "$TMP" ~/.config/my-broker/anthropic.json
-```
+When you want zero exec cost on the hook, schedule an external rotator to write the same JSON shape and have it land at `auth.path` via an **atomic replace** (`write tmp` → `chmod 0600 tmp` → `rename tmp <auth.path>`). The rotator owns the refresh schedule; ccgate just reads the file on each hook invocation.
 
 ```jsonnet
 auth: { type: 'file', path: '~/.config/my-broker/anthropic.json' }
 ```
-
-The rotator owns refresh; ccgate just reads the file on each hook invocation.
 
 ## Caching
 

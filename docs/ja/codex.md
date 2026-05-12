@@ -103,7 +103,7 @@ upstream Codex docs に記載があり ccgate が利用するフィールド:
 - `tool_input_raw` (元の JSON payload をそのまま LLM に転送 — `apply_patch` の hunk や MCP 引数を見るときの主経路)
 - `referenced_paths` (`tool_input` から best-effort で抽出した path リスト。Codex では `Bash` のみ対応。`apply_patch` と MCP は `tool_input_raw` を LLM が直接読む)
 
-Codex は Claude の `permission_mode` / `permission_suggestions` / `recent_transcript` / `settings_permissions` を deliver しません。system prompt は LLM に `tool_name` + `tool_input` + `tool_input_raw` + `cwd` のみで判断するよう指示し、存在しない context を捏造しないようにしています。
+Codex 側の system prompt は LLM に `tool_name` + `tool_input` + `tool_input_raw` + `cwd` で判断するよう指示し、 HookInput に存在しない context を捏造しないようにしています。
 
 ## Codex 固有の state リファレンス
 

@@ -138,9 +138,11 @@ plain string の出力はキャッシュされず、hook 起動のたびに help
 ```sh
 #!/bin/sh
 # ~/bin/ccgate-key-broker.sh
+# 出力: {"key": "...", "expires_at": "<RFC3339>"} の 1 行 JSON。
+# `<rfc3339-now-plus-50m>` は実行環境で利用できる RFC3339 フォーマッタに置き換えてください。
 set -eu
 TOKEN=$(my-key-broker --provider anthropic)
-EXP=$(date -u -v+50M +%FT%TZ 2>/dev/null || date -u -d '+50 minutes' +%FT%TZ)
+EXP=<rfc3339-now-plus-50m>
 jq -nc --arg key "$TOKEN" --arg expires_at "$EXP" '{key:$key, expires_at:$expires_at}'
 ```
 
@@ -152,24 +154,11 @@ ccgate に渡す前に `~/bin/ccgate-key-broker.sh | jq .` 等で単体動作を
 
 ### 外部ローテーター (hook 経路で helper を回さない)
 
-hook の hot path で helper を回したくない場合は、cron / launchd / systemd-timer などの外部ローテーターから同じ JSON 形をファイルに atomic rename で書き出します。
-
-```sh
-#!/bin/sh
-set -eu
-TOKEN=$(my-key-broker --provider anthropic)
-EXP=$(date -u -v+1H +%FT%TZ 2>/dev/null || date -u -d '+1 hour' +%FT%TZ)
-TMP=$(mktemp ~/.config/my-broker/anthropic.json.XXXXXX)
-jq -nc --arg key "$TOKEN" --arg expires_at "$EXP" '{key:$key, expires_at:$expires_at}' > "$TMP"
-chmod 0600 "$TMP"
-mv "$TMP" ~/.config/my-broker/anthropic.json
-```
+hook の hot path で helper を回したくない場合は、外部ローテーターから同じ JSON 形を **atomic replace** (`tmp に書き込み` → `chmod 0600 tmp` → `rename tmp <auth.path>`) で `auth.path` に置きます。ローテートはローテーター側で担当し、 ccgate は hook 起動のたびに file を読むだけです。
 
 ```jsonnet
 auth: { type: 'file', path: '~/.config/my-broker/anthropic.json' }
 ```
-
-ローテートはローテーターが担い、ccgate は hook 起動のたびにファイルを読むだけです。
 
 ## キャッシュ
 

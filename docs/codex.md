@@ -103,7 +103,7 @@ Fields the upstream Codex docs declare and ccgate uses:
 - `tool_input_raw` (the original JSON payload, forwarded verbatim — the primary surface for inspecting `apply_patch` hunks and MCP arguments)
 - `referenced_paths` (best-effort path extraction from `tool_input`. Supported for `Bash`; `apply_patch` and MCP fall back to reading `tool_input_raw` directly.)
 
-Codex does not deliver Claude's `permission_mode`, `permission_suggestions`, `recent_transcript`, or `settings_permissions`. The system prompt tells the LLM to judge from `tool_name` + `tool_input` + `tool_input_raw` + `cwd` alone, so it does not invent context that isn't there.
+The Codex system prompt tells the LLM to judge from `tool_name` + `tool_input` + `tool_input_raw` + `cwd`, so it does not invent context that isn't present in the HookInput.
 
 ## Codex-specific state reference
 

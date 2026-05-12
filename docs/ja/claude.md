@@ -60,7 +60,7 @@ Claude Code は標準 PermissionRequest payload を流します ([upstream hooks
 
 allow guidance は plan mode で write 操作を allow に promote しません。deny guidance は依然として有効で、read-only 操作も override できます。
 
-完全に prompt-driven なので hard guarantee なし。[#37](https://github.com/tak848/ccgate/issues/37) で追跡。
+完全に prompt-driven なので hard guarantee なし。
 
 ## `recent_transcript` の使われ方
 
@@ -93,10 +93,8 @@ allow guidance は plan mode で write 操作を allow に promote しません�
 | State path                        | `$XDG_STATE_HOME/ccgate/claude/` (未設定なら `~/.local/state/ccgate/claude/`)                                                              |
 | Project-local config              | `{repo_root}/.claude/ccgate.local.jsonnet` (Git 未追跡のみ)                                                                                |
 
-Codex 側の同等項目は [codex.md](codex.md) を参照。
+## 制約
 
-## 既知の制約
-
-- **Plan mode はプロンプト依存** ([#37](https://github.com/tak848/ccgate/issues/37))
+- **Plan mode は prompt-only**: `permission_mode == "plan"` では (a) 実装系 write を拒絶する判定と (b) 明示的な allow guidance なしの read-only クエリ許可の両方を、LLM とシステムプロンプトの指示文に委ねている。どちらの方向にも誤判定の余地あり
 - **embedded default の特定ルールだけを部分削除する手段なし**: layer は list を **完全置換** (`allow: [...]`) するか **末尾追加** (`append_allow: [...]`) するかのどちらかで、embedded の中の 1 ルールだけ消したい場合は残り全部を `allow:` / `deny:` に書き直すしかない
-- **`settings.json` の deny パターンに対する deterministic short-circuit なし**: ccgate はすべての Claude Code PermissionRequest を LLM に通します。literal な `settings.json` deny match で ccgate を early exit する経路はありません
+- **`settings.json` の deny パターンに対する deterministic short-circuit なし**: ccgate はすべての Claude Code PermissionRequest を LLM に通す。literal な `settings.json` deny match で ccgate を early exit する経路はない

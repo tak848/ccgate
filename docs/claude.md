@@ -60,7 +60,7 @@ Claude Code delivers the standard PermissionRequest payload (see the upstream [h
 
 Allow guidance does NOT promote write operations to allow in plan mode. The deny guidance still applies and can override read-only operations too.
 
-This is purely prompt-driven, so there is no hard guarantee. Tracked in [#37](https://github.com/tak848/ccgate/issues/37).
+This is purely prompt-driven, so there is no hard guarantee.
 
 ## How `recent_transcript` is used
 
@@ -93,10 +93,8 @@ Treating `settings_permissions.allow` as a whitelist requirement therefore break
 | State path                  | `$XDG_STATE_HOME/ccgate/claude/` (falls back to `~/.local/state/ccgate/claude/` when unset). |
 | Project-local config        | `{repo_root}/.claude/ccgate.local.jsonnet` (untracked-only). |
 
-See [docs/codex.md](codex.md) for the Codex equivalents.
+## Limitations
 
-## Known limitations
-
-- **Plan mode is prompt-only** ([#37](https://github.com/tak848/ccgate/issues/37)).
+- **Plan mode is prompt-only.** Under `permission_mode == "plan"`, ccgate relies on the LLM plus prose in the system prompt to (a) reject implementation-side writes and (b) allow read-only queries without requiring an allow-guidance match. Either side can misfire.
 - **No surgical reset for a single embedded default rule.** A layer either replaces a list wholesale (`allow: [...]`) or appends to it (`append_allow: [...]`); removing one specific embedded entry while keeping the rest requires re-stating the whole list under `allow` / `deny` minus that one entry.
 - **No deterministic short-circuit on `settings.json` deny patterns.** ccgate routes every Claude Code PermissionRequest through the LLM; literal `settings.json` deny matches do not exit ccgate early.

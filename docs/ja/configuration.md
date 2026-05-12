@@ -2,7 +2,7 @@
 
 [English version (docs/configuration.md)](../configuration.md)
 
-本ページは layering ルール、fallthrough の決定木、メトリクス出力スキーマを扱います。field 一覧とクイックスタートは [README](README.md) にあります。
+target 横断の設定リファレンス: layering ルール、全フィールド表、fallthrough_strategy、メトリクス出力スキーマ。 quick start は [README](README.md) を参照。
 
 ## ccgate が config を探す場所
 
@@ -42,6 +42,32 @@ ccgate は target ごとに以下の層を順に読み込みます。各層は�
 プロジェクトローカル設定は意図的に **git で tracked されていない場合のみ load** します。これは「個人 contributor が共有ベースラインの上に自分の制限を重ねる」用途を想定しているためで、ローカル設定経由でチーム全体ポリシーを repo に密かに混入させない狙いです。
 
 repo 全体に効くポリシーが必要なら、自前 fork の埋込デフォルトに含める / チームで `~/.claude/ccgate.jsonnet` を dotfiles bootstrap で配布する / 個別に各 contributor が `.local.jsonnet` を作る、いずれかを選んでください。
+
+## 設定フィールド
+
+| フィールド               | 型                                | デフォルト                                                                       | 説明                                                                                                       |
+|--------------------------|-----------------------------------|---------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------|
+| `provider.name`          | string                            | `"anthropic"`                                                                   | プロバイダー名。`"anthropic"` / `"openai"` / `"gemini"`。詳細は [docs/ja/providers.md](providers.md)。      |
+| `provider.model`         | string                            | `"claude-haiku-4-5"`                                                            | モデル名。選定指針は [docs/ja/providers.md](providers.md#モデル選択) を参照。                              |
+| `provider.base_url`      | string                            | `""`                                                                            | API base URL の上書き。空文字列 (default) で SDK の既定 endpoint を使用。詳細は [docs/ja/providers.md#base_url-と互換-proxy](providers.md#base_url-と互換-proxy)。 |
+| `provider.auth`          | object (`{type, ...}`)            | (省略時は env var)                                                              | refresh される credential を扱う discriminated union。`type=exec` / `type=file` / `type=profile`。詳細は [docs/ja/api-key-helper.md](api-key-helper.md)。 |
+| `provider.timeout_ms`    | int                               | `20000`                                                                         | API タイムアウト (ms)。`0` = タイムアウトなし。                                                            |
+| `log_path`               | string                            | `$XDG_STATE_HOME/ccgate/<target>/ccgate.log`                                    | ログファイルパス。`~` でホームディレクトリ展開。                                                           |
+| `log_disabled`           | bool                              | `false`                                                                         | ログ出力を完全に無効化。                                                                                   |
+| `log_max_size`           | int                               | `5242880`                                                                       | ローテーション閾値 (bytes, デフォルト 5MB)。`0` = ローテーションなし。                                     |
+| `metrics_path`           | string                            | `$XDG_STATE_HOME/ccgate/<target>/metrics.jsonl`                                 | メトリクス JSONL のパス。                                                                                  |
+| `metrics_disabled`       | bool                              | `false`                                                                         | メトリクス収集を完全に無効化。                                                                             |
+| `metrics_max_size`       | int                               | `2097152`                                                                       | ローテーション閾値 (bytes, デフォルト 2MB)。`0` = ローテーションなし。                                     |
+| `fallthrough_strategy`   | `"ask"` / `"allow"` / `"deny"`    | `"ask"`                                                                         | LLM が判定に迷った (`fallthrough`) 際の扱い。[fallthrough_strategy](#fallthrough_strategy----llm-判定迷い時の挙動) 参照。 |
+| `disable_load_main_worktree_local_config` | bool | `false`                                                                         | linked git worktree で main worktree 側の `ccgate.local.jsonnet` を読むのをスキップ。[ccgate が config を探す場所](#ccgate-が-config-を探す場所) 参照。 |
+| `allow`                  | string[]                          | `[]`                                                                            | 許可ルール。設定すると前の layer から引き継いだ list を **完全置換**。                                     |
+| `deny`                   | string[]                          | `[]`                                                                            | 拒否ルール (mandatory)。`deny_message:` ヒント対応。`allow` と同じく置換。                                 |
+| `environment`            | string[]                          | `[]`                                                                            | LLM に渡すコンテキスト (信頼レベル、ポリシー等)。`allow` と同じく置換。                                     |
+| `append_allow`           | string[]                          | `[]`                                                                            | 引き継いだ list の末尾に **追加**。[docs/ja/rule-tuning.md](rule-tuning.md) を参照。                       |
+| `append_deny`            | string[]                          | `[]`                                                                            | 引き継いだ deny list の末尾に追加。                                                                        |
+| `append_environment`     | string[]                          | `[]`                                                                            | 引き継いだ environment list の末尾に追加。                                                                 |
+
+`<target>` は Claude / Codex どちらの hook が呼ばれたかで `claude` / `codex` になります。`XDG_STATE_HOME` が未設定の場合は `~/.local/state/ccgate/<target>/...` が fallback として使われます。
 
 ## `fallthrough_strategy` -- LLM 判定迷い時の挙動
 
@@ -129,7 +155,7 @@ ccgate codex  metrics --days 7         # codex 側も同 shape
 
 `ft_kind` は LLM (またはランタイム) が fallthrough を返したときに埋まり、どの fallback path が発火したかを示します (`llm`, `api_unusable`, `no_apikey`, `credential_unavailable`, `unknown_provider`, `bypass`, `dontask`, `user_interaction`)。`forced=true` は `fallthrough_strategy` が LLM `fallthrough` を `decision` に promote したことを意味します。
 
-`credential_source` は `ft_kind=credential_unavailable` のときだけ埋まります。credential 解決のどの段階で起きた / 失敗したかを示し、現状は `exec` / `file` / `cache` / `lock` (keystore 経由の `auth.type=exec` / `auth.type=file`) に加え `profile` (Anthropic 専用 `auth.type=profile`、解決は anthropic-sdk-go に委譲し keystore は通らない) を取ります。値の集合は open: 新しい credential 経路が追加されれば値も増えうるので、この field を parse する側は固定 enum で validation せず、未知の短い文字列を許容してください。
+`credential_source` は `ft_kind=credential_unavailable` のときだけ埋まります。credential 解決のどの段階で起きた / 失敗したかを示し、 `exec` / `file` / `cache` / `lock` (keystore 経由の `auth.type=exec` / `auth.type=file`)、 `profile` (Anthropic 専用 `auth.type=profile`、解決は anthropic-sdk-go に委譲し keystore は通らない) を取ります。値の集合は open で、この field を parse する側は固定 enum で validation せず、未知の短い文字列を許容してください。
 
 `reason` の意味は `ft_kind` で文脈が変わります:
 
@@ -196,4 +222,4 @@ cache 層の失敗は fallthrough せずに自動回復するので、`slog.Warn
 - **Plan mode (Claude のみ) はプロンプト依存**: `permission_mode == "plan"` では (a) 実装系 write を拒絶する判定と (b) 明示的な allow guidance なしの read-only クエリ許可 を、LLM とシステムプロンプトの指示文に委ねています。どちらの方向にも誤判定の余地あり。[#37](https://github.com/tak848/ccgate/issues/37) で追跡
 - **embedded default の特定ルールだけを部分削除する手段なし**: layer は list を **完全置換** (`allow: [...]`) するか **末尾追加** (`append_allow: [...]`) するかのどちらかで、embedded の中の 1 ルールだけ消したい場合は残り全部を `allow:` / `deny:` に書き直すしかない
 - **Codex hook の schema は upstream-driven**: Codex hooks は upstream の `[features] codex_hooks = true` flag 配下にあり、[OpenAI Codex hooks docs](https://developers.openai.com/codex/hooks) を一次情報として扱う
-- **Codex `~/.codex/config.toml` 取り込みは未対応** (`approval_policy`, `sandbox_mode`, `prefix_rules`): ccgate は hook payload + ccgate config だけで判定するため、Codex 自身の設定が拒絶するはずだった操作のシグナルは LLM に届かない
+- **Codex `~/.codex/config.toml` 取り込みは out of scope** (`approval_policy`, `sandbox_mode`, `prefix_rules`): ccgate は hook payload + ccgate config だけで判定するため、Codex 自身の設定が拒絶する操作のシグナルは LLM に届かない
