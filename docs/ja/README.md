@@ -217,7 +217,7 @@ target ごとの完全な入力一覧は [docs/claude.md](claude.md) / [docs/cod
 | `metrics_path`           | string                            | `$XDG_STATE_HOME/ccgate/<target>/metrics.jsonl`                                 | メトリクス JSONL のパス                                                                                    |
 | `metrics_disabled`       | bool                              | `false`                                                                         | メトリクス収集を完全に無効化                                                                               |
 | `metrics_max_size`       | int                               | `2097152`                                                                         | ローテーション閾値 (bytes, デフォルト 2MB)。`0` = ローテーションなし                                       |
-| `fallthrough_strategy`   | `"ask"` / `"allow"` / `"deny"`    | `"ask"`                                                                         | LLM が判定に迷った (`fallthrough`) 際の扱い。[Fallthrough 戦略](#fallthrough-戦略) 参照 |
+| `fallthrough_strategy`   | `"ask"` / `"allow"` / `"deny"`    | `"ask"`                                                                         | LLM が判定に迷った (`fallthrough`) 際の扱い。[Fallthrough strategy](#fallthrough-strategy) 参照 |
 | `disable_load_main_worktree_local_config` | bool | `false`                                                                         | linked git worktree で main worktree 側の `ccgate.local.jsonnet` を読むのをスキップ。詳細は [docs/configuration.md](configuration.md#where-ccgate-looks-for-config) |
 | `allow`                  | string[]                          | `[]`                                                                            | 許可ルール。設定すると前の layer から引き継いだ list を **完全置換**                                       |
 | `deny`                   | string[]                          | `[]`                                                                            | 拒否ルール (mandatory)。`deny_message:` ヒント対応。`allow` と同じく置換                                   |
@@ -436,7 +436,7 @@ helper / file の中身は次のいずれかを書きます。
 
 helper の完全な仕様 (動かせる例 / `auth.cache_key` によるアカウント別キャッシュ / 初回ブラウザ認証 / 401/403 の挙動マトリクス / 障害復旧チェックリスト) は [api-key-helper.md](api-key-helper.md) を参照してください。
 
-## Fallthrough 戦略
+## Fallthrough strategy
 
 デフォルトでは、LLM が判定に自信を持てない場合 ccgate は `fallthrough` を返し、上流ツール (Claude Code / Codex CLI) のインタラクティブ確認画面にフォールバックします。対話セッションでは妥当ですが、スケジューラやボットなど人間が「許可」を押せない環境では処理が止まります。
 

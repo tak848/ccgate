@@ -17,8 +17,8 @@
 //   - <repo>/.codex/ccgate.local.jsonnet (project-local, untracked-only)
 // and at either layer use append_* to add on top of what's inherited
 // (picks up future ccgate quality updates automatically), or allow /
-// deny / environment to replace the inherited list wholesale. See the
-// README "Rule tuning" section for examples.
+// deny / environment to replace the inherited list wholesale.
+// See https://github.com/tak848/ccgate#rule-tuning for examples.
 
 {
   ['$schema']: 'https://raw.githubusercontent.com/tak848/ccgate/main/schemas/codex.schema.json',
@@ -30,7 +30,7 @@
     //   name: 'openai',  model: 'gpt-4o-mini',        (env: OPENAI_API_KEY)
     //   name: 'gemini',  model: 'gemini-2.0-flash',    (env: GEMINI_API_KEY)
     // base_url:  route through an OpenAI-/Anthropic-compatible proxy.
-    //            See README "Routing through a compatible proxy".
+    //            See https://github.com/tak848/ccgate#routing-through-a-compatible-proxy.
     // timeout_ms: API timeout in ms, default 20000.
     // auth: short-lived / rotating credentials. Discriminated
     //   by auth.type:
@@ -39,8 +39,8 @@
     //     auth: { type: 'profile', profile: 'ccgate' }                           // anthropic-only; reads `ant auth login --profile ccgate` credentials, SDK refreshes
     //   The provider block is replaced atomically across config layers,
     //   so a project-local config that restates `provider` must repeat
-    //   the auth block. See docs/api-key-helper.md for the full helper
-    //   contract, examples, and recovery checklist.
+    //   the auth block. See https://github.com/tak848/ccgate/blob/main/docs/api-key-helper.md
+    //   for the full helper contract, examples, and recovery checklist.
   },
 
   // What to do when the LLM is uncertain (returns "fallthrough"):
