@@ -8,9 +8,8 @@
   // To customize, write either:
   //   - ~/.claude/ccgate.jsonnet (global), or
   //   - <repo>/.claude/ccgate.local.jsonnet (project-local, untracked-only)
-  // and at either layer use append_* to add on top of what's
-  // inherited (picks up future ccgate quality updates automatically),
-  // or allow / deny / environment to replace the inherited list
+  // and at either layer use append_* to add entries on top of the
+  // embedded list, or allow / deny / environment to replace the list
   // wholesale. See https://github.com/tak848/ccgate#rule-tuning for examples.
 
   provider: {

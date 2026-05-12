@@ -198,7 +198,7 @@ provider と hook の登録が済んでから、自分の `allow` / `deny` / `ap
 
 - **defaults を確認**: `ccgate claude init | less` / `ccgate codex init | less` (`-p` 付きで `.local.jsonnet` の雛形も出せる)。
 - **どこに書く**: グローバル `~/.<target>/ccgate.jsonnet`、プロジェクトローカル `<repo>/.<target>/ccgate.local.jsonnet` (Git 未追跡のみ)。
-- **置換 vs 追加**: 基本は `append_allow` / `append_deny` / `append_environment` (defaults を残して追加、upgrade 時に新 defaults を自動取り込み)。 `allow:` / `deny:` は完全置換で defaults を捨てる選択肢。
+- **置換 vs 追加**: 基本は `append_allow` / `append_deny` / `append_environment` (embedded defaults を残して自分のエントリを追加)。 `allow:` / `deny:` は完全置換 (defaults を捨てて自分の list だけが有効)。
 
 書き方の典型例 (Claude / Codex 別の append_allow / append_deny / 完全置換)、`deny_message:` ヒントの形式、`std.native('env')` / `must_env` で env を埋め込む方法、`ccgate <target> metrics --details N` を使った iteration workflow、`fallthrough_strategy` を含むその他の細部は [docs/rule-tuning.md](rule-tuning.md) に集約してあります。
 

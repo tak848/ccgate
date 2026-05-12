@@ -29,7 +29,7 @@ For layer composition see [docs/configuration.md](configuration.md#where-ccgate-
 | `append_allow` / `append_deny` / `append_environment` | Embedded defaults from the running binary are kept; your entries are appended. |
 | `allow:` / `deny:` / `environment:` | Embedded defaults from the running binary are dropped; only your list is in effect. |
 
-If you replace wholesale, run `ccgate <target> init` whenever you bring in a different ccgate build to see the current embedded list, and reconcile manually.
+If you replace wholesale, use `ccgate <target> init` as the current embedded-list reference and reconcile manually.
 
 There is no surgical "remove one specific embedded rule" path. `append_*` only adds; to omit one embedded entry, restate the whole list under `allow:` / `deny:` minus that one entry.
 
@@ -81,7 +81,7 @@ Codex (the LLM reads `apply_patch` hunk targets from `tool_input_raw`):
 
 ```jsonnet
 {
-  // You take ownership of the full lists; new embedded defaults will not flow in automatically.
+  // You own the full lists; the embedded defaults are not in effect.
   allow: [
     'Read-only filesystem inspection inside the repository.',
     'Local development commands using project scripts (build, test, lint).',

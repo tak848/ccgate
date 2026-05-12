@@ -15,10 +15,9 @@
 // To customize, write either:
 //   - ~/.codex/ccgate.jsonnet (global), or
 //   - <repo>/.codex/ccgate.local.jsonnet (project-local, untracked-only)
-// and at either layer use append_* to add on top of what's inherited
-// (picks up future ccgate quality updates automatically), or allow /
-// deny / environment to replace the inherited list wholesale.
-// See https://github.com/tak848/ccgate#rule-tuning for examples.
+// and at either layer use append_* to add entries on top of the
+// embedded list, or allow / deny / environment to replace the list
+// wholesale. See https://github.com/tak848/ccgate#rule-tuning for examples.
 
 {
   ['$schema']: 'https://raw.githubusercontent.com/tak848/ccgate/main/schemas/codex.schema.json',

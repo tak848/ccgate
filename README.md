@@ -200,11 +200,11 @@ Once provider setup is done, this is the entry point for `allow` / `deny` / `app
 
 - **Inspect defaults**: `ccgate claude init | less` / `ccgate codex init | less` (`-p` writes a `.local.jsonnet` skeleton).
 - **Where to put it**: global `~/.<target>/ccgate.jsonnet`, project-local `<repo>/.<target>/ccgate.local.jsonnet` (untracked-only).
-- **Replace vs append**: `append_allow` / `append_deny` / `append_environment` keep defaults and add (new defaults flow in on upgrade). `allow:` / `deny:` replaces wholesale (you re-check against `ccgate <target> init` on each release).
+- **Replace vs append**: `append_allow` / `append_deny` / `append_environment` keep the embedded defaults and add your entries. `allow:` / `deny:` replaces the list wholesale (only your entries are in effect).
 
 The full guide — rule-writing patterns for Claude / Codex (`append_allow`, `append_deny`, full replace), `deny_message:` hints, `std.native('env')` / `must_env` for env-derived values, the `ccgate <target> metrics --details N` iteration workflow — lives in [docs/rule-tuning.md](docs/rule-tuning.md).
 
-## Provider と credential
+## Providers and credentials
 
 Switch providers by setting `provider.name` (and `provider.model` if needed) in any layer:
 

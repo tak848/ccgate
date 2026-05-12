@@ -29,7 +29,7 @@ layer の合成順は [設定リファレンス](configuration.md#ccgate-が-con
 | `append_allow` / `append_deny` / `append_environment` | embedded defaults を残し、 自分のエントリを末尾に追加 |
 | `allow:` / `deny:` / `environment:` | embedded defaults を捨てて、 自分の list だけが有効になる |
 
-完全置換側を使っている場合は、 別の ccgate build に切り替えるたびに `ccgate <target> init` で当時の embedded list を確認し、 手で反映してください。
+完全置換側を使っている場合は、 `ccgate <target> init` を現時点の embedded list の参照源として使い、 手で反映してください。
 
 「default を 1 件だけ消したい」を append で実現する経路はありません (append は **足す** だけ)。1 件除外したい場合は `allow:` / `deny:` で残り全部を書き直すしかありません。
 
@@ -81,7 +81,7 @@ Codex (`apply_patch` の hunk target を `tool_input_raw` から LLM が読む):
 
 ```jsonnet
 {
-  // 引き継いだ defaults を全部捨てて自分で list を書く。新 defaults は自動で流れ込まない。
+  // embedded defaults を採用せず自分で list を書く形 (defaults は effect しない)。
   allow: [
     'Read-only filesystem inspection inside the repository.',
     'Local development commands using project scripts (build, test, lint).',
