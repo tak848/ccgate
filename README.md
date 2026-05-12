@@ -3,7 +3,7 @@
 [![CI](https://github.com/tak848/ccgate/actions/workflows/ci.yml/badge.svg)](https://github.com/tak848/ccgate/actions/workflows/ci.yml)
 [![release](https://github.com/tak848/ccgate/actions/workflows/release.yml/badge.svg)](https://github.com/tak848/ccgate/releases)
 
-A **PermissionRequest** hook for AI coding tools. It delegates each tool-execution permission decision to an LLM (Claude Haiku) using rules written in a jsonnet configuration file. Rules are **natural-language guidance read by the LLM** — not deterministic jsonnet policy code — so the typical workflow is to describe what should be allowed or denied in prose and let the LLM classify the actual request.
+A **PermissionRequest** hook for AI coding tools. It delegates each tool-execution permission decision to an LLM (Claude Haiku) using rules written in a jsonnet configuration file.
 
 ccgate ships with built-in default rules, so it works out of the box without any configuration.
 

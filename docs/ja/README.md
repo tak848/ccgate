@@ -3,7 +3,7 @@
 [![CI](https://github.com/tak848/ccgate/actions/workflows/ci.yml/badge.svg)](https://github.com/tak848/ccgate/actions/workflows/ci.yml)
 [![release](https://github.com/tak848/ccgate/actions/workflows/release.yml/badge.svg)](https://github.com/tak848/ccgate/releases)
 
-AI コーディングツール向けの **PermissionRequest** フックです。ツール実行の許可判定を LLM (Claude Haiku) に委任し、jsonnet 設定に書いたルールに基づいて allow / deny / fallthrough を返します。ルールは **LLM への自然言語 guidance** であって、jsonnet による条件分岐ポリシーコードではありません。「何を許可し何を拒否したいか」を散文で書き、実際のリクエストの分類は LLM に任せる、という運用です。
+AI コーディングツール向けの **PermissionRequest** フックです。ツール実行の許可判定を LLM (Claude Haiku) に委任し、jsonnet 設定に書いたルールに基づいて allow / deny / fallthrough を返します。
 
 ccgate は組み込みのデフォルトルールを持っているので、設定ファイルなしでも動きます。
 
