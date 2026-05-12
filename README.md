@@ -262,6 +262,29 @@ Column meanings, the JSON entry schema, and the credential-failure aggregation a
 - **No surgical reset for a single embedded default rule.** A layer can either **replace** a list wholesale (`allow: [...]`) or **append** to it (`append_allow: [...]`). Removing one specific embedded `allow` / `deny` rule while keeping the rest requires re-stating the whole list minus that one entry.
 - **No runtime conditional logic in jsonnet.** jsonnet evaluation happens once per hook invocation, at config-load time, **before ccgate sees `tool_input`**. Rules cannot branch on `tool_input` / git working-tree state / external command output. Runtime classification is the LLM's job. Config-time env reads via `std.native('env')(name)` / `std.native('must_env')(name)` are available for things like embedding a host name into a rule string.
 
+## Claude Code plugin
+
+ccgate ships a Claude Code plugin in this repo so the docs above can drive AI-assisted workflows directly from Claude Code.
+
+Install:
+
+```text
+/plugin marketplace add tak848/ccgate
+/plugin install ccgate@tak848-ccgate
+```
+
+Skills (auto-dispatched by Claude, also invocable manually):
+
+| Skill | What it does |
+|---|---|
+| `/ccgate:setup`  | Walks first-time install, PermissionRequest hook registration, and provider configuration. |
+| `/ccgate:tune`   | Drives `append_allow` / `append_deny` edits from recent `ccgate <target> metrics --details N`. |
+| `/ccgate:debug`  | Explains why ccgate produced a specific decision (deny / fallthrough / 401 / plan-mode). |
+| `/ccgate:doctor` | Read-only audit of binary, version, hook registration, config layers, and provider sanity. |
+
+> [!NOTE]
+> Skills that edit dotfiles (`setup`, `tune`) stop at a diff while Claude Code is in plan mode. Apply the writes after leaving plan mode.
+
 ## Documentation
 
 - [docs/providers.md](docs/providers.md) — Provider switching, API keys, base_url, compatible proxies

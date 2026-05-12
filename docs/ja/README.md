@@ -260,6 +260,29 @@ ccgate codex  metrics --json          # JSON 出力 (機械可読)
 - **embedded default の特定ルールだけの部分削除は不可**: layer は list を **完全置換** (`allow: [...]`) するか **末尾追加** (`append_allow: [...]`) するかのどちらかで、1 件除外したい場合は残りを `allow:` / `deny:` に書き直す。
 - **jsonnet 側に runtime conditional logic なし**: jsonnet 評価は hook 発火ごとの config load 時に、 ccgate が `tool_input` を見る前に実行される。 `tool_input` / git working tree state に基づく runtime 分岐は書けない (分類は LLM の仕事)。 config 評価時の env 読み込みのみ `std.native('env')(name)` / `std.native('must_env')(name)` で可能。
 
+## Claude Code plugin
+
+ccgate は本リポジトリに Claude Code plugin を同梱しています。上のドキュメントを背景に、 Claude Code から AI に作業を任せられます。
+
+インストール:
+
+```text
+/plugin marketplace add tak848/ccgate
+/plugin install ccgate@tak848-ccgate
+```
+
+Skills (Claude が auto-dispatch する。 manual invocation も可):
+
+| Skill | 役割 |
+|---|---|
+| `/ccgate:setup`  | 初回 install、 PermissionRequest hook 登録、 provider 設定の対話的ガイド。 |
+| `/ccgate:tune`   | 直近の `ccgate <target> metrics --details N` から `append_allow` / `append_deny` 編集を提案。 |
+| `/ccgate:debug`  | ccgate の判定 (deny / fallthrough / 401 / plan-mode) の root cause を説明。 |
+| `/ccgate:doctor` | binary、 version、 hook 登録、 config layer、 provider 設定の read-only audit。 |
+
+> [!NOTE]
+> dotfile を編集する skill (`setup`、 `tune`) は Claude Code が plan mode の間は diff の提示までで停止します。 plan mode を抜けてから write を実行してください。
+
 ## ドキュメント
 
 - [providers.md](providers.md) — Provider 切替、 API キー、 base_url、 互換 proxy
