@@ -292,6 +292,11 @@ mise run vet      # Run go vet
 mise run schema   # Regenerate schemas/{claude,codex}.schema.json
 ```
 
+## Articles
+
+- English (dev.to): <https://dev.to/tak848/ccgate-delegate-claude-code-codex-cli-permission-prompts-to-an-llm-274c>
+- 日本語 (Zenn): <https://zenn.dev/layerx/articles/20260428-ccgate>
+
 ## License
 
 MIT

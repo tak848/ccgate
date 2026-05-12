@@ -290,6 +290,11 @@ mise run vet      # go vet
 mise run schema   # schemas/{claude,codex}.schema.json を再生成
 ```
 
+## 関連記事
+
+- 日本語 (Zenn): <https://zenn.dev/layerx/articles/20260428-ccgate>
+- English (dev.to): <https://dev.to/tak848/ccgate-delegate-claude-code-codex-cli-permission-prompts-to-an-llm-274c>
+
 ## ライセンス
 
 MIT
