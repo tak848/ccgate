@@ -1,10 +1,10 @@
 // ccgate defaults for the OpenAI Codex CLI PermissionRequest hook.
 //
-// Same shape and philosophy as the Claude Code defaults: the LLM is the
-// primary judge; the allow/deny rules below are guidance, not strict
-// matchers. Fall through to Codex's own approval prompt when uncertain
-// (set fallthrough_strategy=allow|deny in your overrides for fully
-// unattended runs -- at your own risk).
+// These rules are natural-language guidance for the LLM, not deterministic matchers.
+// The LLM is the primary judge; allow/deny lists shape its decision boundary.
+// Fall through to Codex's own approval prompt when uncertain (set
+// fallthrough_strategy=allow|deny in your overrides for fully unattended
+// runs -- at your own risk).
 //
 // Codex hooks fire for Bash, apply_patch, MCP tool calls, and any other
 // surface Codex exposes via PermissionRequest. The rules below are
@@ -18,7 +18,7 @@
 // and at either layer use append_* to add on top of what's inherited
 // (picks up future ccgate quality updates automatically), or allow /
 // deny / environment to replace the inherited list wholesale. See the
-// README "Setup -- Codex CLI" for examples.
+// README "Rule tuning" section for examples.
 
 {
   ['$schema']: 'https://raw.githubusercontent.com/tak848/ccgate/main/schemas/codex.schema.json',
@@ -60,7 +60,7 @@
 
   allow: [
     'Read-only operations: Bash inspection commands (ls, cat, head, tail, less, file, stat, find/grep without -exec/--delete, git status/log/diff/show/branch/remote -v), or any tool whose tool_input shape implies pure read (no writes, no network calls with side effects).',
-    'Local writes inside the workspace: apply_patch hunks whose target paths are all under cwd / repo_root, edits to project files for editing/refactoring/scaffolding the AI is currently doing. Same bar as Claude Code Edit/Write through ccgate.',
+    'Local writes inside the workspace: apply_patch hunks whose target paths are all under cwd / repo_root, edits to project files for editing/refactoring/scaffolding the AI is currently doing. Workspace-internal writes for the active coding task are in scope; writes that escape cwd / repo_root or that match a deny rule are not.',
     'Local build/test against project-defined scripts: make, just, mise run, pnpm test, go test, cargo test, etc.',
     'Package install confined to this repo: pnpm/cargo/go install with no global flags.',
     'Git feature-branch operations on non-protected branches.',
@@ -81,7 +81,7 @@
     'Tool surface: Codex hooks fire for Bash, apply_patch, MCP tool calls, and other tool kinds. Classify by tool_name + tool_input shape rather than assuming a single surface.',
     'Trusted repo: assume the repo is the trust boundary; treat anything outside it (other directories, remote endpoints, MCP servers not explicitly trusted) as untrusted.',
     'Path scope: when a tool_input targets paths outside cwd (e.g. /etc/, /usr/, ~/.ssh/), treat as out-of-repo and lean toward deny unless clearly read-only and benign.',
-    'You are replacing the upstream Codex approval prompt. Codex hooks fire only when Codex would otherwise stop and ask the user, which is exactly the prompt the user installed ccgate to skip. Returning fallthrough sends them that prompt anyway, so reserve fallthrough for cases that are genuinely ambiguous (suspect intent, malformed payload, mismatch between description and tool_input, or upstream surface ccgate has no rule for). Default to allow / deny instead -- same bar Claude Code parity asks for.',
+    'You are replacing the upstream Codex approval prompt. Codex hooks fire only when Codex would otherwise stop and ask the user, which is exactly the prompt the user installed ccgate to skip. Returning fallthrough sends them that prompt anyway, so reserve fallthrough for cases that are genuinely ambiguous (suspect intent, malformed payload, mismatch between description and tool_input, or upstream surface ccgate has no rule for). Default to allow / deny when guidance clearly applies; reserve fallthrough for genuinely ambiguous cases.',
     'Codex has no recent_transcript field today. Decide from tool_name + tool_input + cwd alone; if intent is ambiguous, return fallthrough (do NOT invent transcript context).',
   ],
 }

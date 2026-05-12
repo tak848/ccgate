@@ -1,15 +1,18 @@
-# 期限付き・自動更新される API キー
+# Refresh される credential
 
 [English version (docs/api-key-helper.md)](../api-key-helper.md)
 
-provider に渡す認証情報が静的な環境変数では追いつかない頻度で入れ替わる場合 (AWS STS セッション、Vertex ADC、OpenAI 互換 gateway の virtual key、社内 key broker など) は、`*_API_KEY` の代わりに `provider.auth` で取得します。
+provider に渡す credential が静的な環境変数では追いつかない頻度で入れ替わる場合 (AWS STS セッション、Vertex ADC、OpenAI 互換 gateway の virtual key、社内 key broker など) は、`*_API_KEY` の代わりに `provider.auth` で取得します。
 
-`provider.auth` には 2 つのモードがあります。
+`provider.auth` には 3 つのモードがあります。
 
-- **`type: 'exec'`**: ccgate がシェルコマンドを実行し、その stdout を認証情報として使います。
-- **`type: 'file'`**: 外部のローテーター (cron / launchd など) が書いたファイルを ccgate が読みます。
+- **`type: 'exec'`**: ccgate がシェルコマンドを実行し、その stdout を credential として使う。
+- **`type: 'file'`**: 外部のローテーター (cron / launchd など) が書いたファイルを ccgate が読む。
+- **`type: 'profile'`**: Anthropic 専用。`ant auth login` の profile を anthropic-sdk-go に渡し、refresh は SDK 自身が担当する。[Profile ベース認証](#profile-ベース認証-anthropic-のみ) を参照。
 
-Linux / macOS / *BSD / Windows に対応します。helper コマンドを動かすシェルは `auth.shell` で選択 (default `bash`)。bash が入っていない Windows では `shell: 'powershell'` を指定してください。
+(`*_API_KEY` env var は `provider.auth` が省略されている場合の別経路。`auth` のモードではありません。)
+
+`exec` の helper を動かすシェルは `auth.shell` で選択 (default `bash`)。詳細は [helper の契約](#helper-の契約) を参照。
 
 ## 設定
 
@@ -47,7 +50,7 @@ Linux / macOS / *BSD / Windows に対応します。helper コマンドを動か
 |---|---|---|---|
 | `auth.type` | `"exec"` / `"file"` / `"profile"` | (`auth` を書くなら必須) | 取得モード。`profile` は Anthropic 専用、[Profile ベース認証](#profile-ベース認証-anthropic-のみ) を参照 |
 | `auth.command` | string | `""` | (`exec` 専用、必須) シェルコマンド。stdout が認証情報 |
-| `auth.shell` | `"bash"` / `"powershell"` | `"bash"` | (`exec` 専用) `powershell` は `pwsh` を優先解決、無ければ `powershell` に fallback |
+| `auth.shell` | `"bash"` / `"powershell"` | `"bash"` | (`exec` 専用) `auth.command` を実行するシェル。`powershell` は `pwsh` を優先解決、無ければ `powershell` に fallback |
 | `auth.path` | string | `$XDG_STATE_HOME/ccgate/<target>/auth_key.json` | (`file` 専用) 認証情報ファイルのパス。省略でデフォルトを使用 |
 | `auth.profile` | string | `""` | (`profile` 専用) Anthropic profile 名 (`ant auth login --profile <name>` が `<config_dir>/credentials/<name>.json` に書く値)。空 / 省略時は SDK が `$ANTHROPIC_PROFILE` → `<config_dir>/active_config` → `"default"` を解決 |
 | `auth.refresh_margin_ms` | int (ms) | `60000` | `expires_at` の何 ms 前で期限切れ扱いにするか。`0` で無効。(`exec` / `file` 専用 — `profile` は SDK が refresh を担当するので無視) |
@@ -108,7 +111,6 @@ ant auth login --profile ccgate         # ブラウザが開き ~/.config/anthro
 >   - `rm <config_dir>/active_config` で参照先を完全に消す (SDK は `default` 解決に戻る)
 >   - 普段使う profile があれば `ant profile activate <previous-profile-name>`
 > - 同じ profile を別 org / workspace に紐づけ直したい場合: ant は既に紐づいた profile への再 login を拒否するので、`<config_dir>/configs/<name>.json` を削除して `ant auth login --profile <name>` を再実行する。
-> - upstream の `--no-activate` flag (upstream PR [anthropics/anthropic-cli#45](https://github.com/anthropics/anthropic-cli/pull/45)) がマージされれば、`ant auth login --profile <name> --no-activate` で書き換え自体を回避できるようになる。
 
 ## 例
 

@@ -2,14 +2,16 @@
   ['$schema']: 'https://raw.githubusercontent.com/tak848/ccgate/main/schemas/claude.schema.json',
 
   // Default safety rules for ccgate.
-  // Inspired by Claude Code Auto Mode defaults.
+  // These rules are natural-language guidance for the LLM, not deterministic matchers.
+  // The LLM is the primary judge; allow/deny lists shape its decision boundary.
+  //
   // To customize, write either:
   //   - ~/.claude/ccgate.jsonnet (global), or
   //   - <repo>/.claude/ccgate.local.jsonnet (project-local, untracked-only)
   // and at either layer use append_* to add on top of what's
   // inherited (picks up future ccgate quality updates automatically),
   // or allow / deny / environment to replace the inherited list
-  // wholesale. See the README "Setup -- Claude Code" for examples.
+  // wholesale. See the README "Rule tuning" section for examples.
 
   provider: {
     name: 'anthropic',

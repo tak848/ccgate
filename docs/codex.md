@@ -6,7 +6,7 @@ Codex-CLI-specific notes for the `ccgate codex` hook.
 
 ## Status
 
-- **Hook schema may change.** Codex hooks themselves are still evolving upstream and live behind the `features.codex_hooks = true` flag. Treat the OpenAI [Codex hooks docs](https://developers.openai.com/codex/hooks) as the source of truth and re-check before relying on a specific field.
+- **Upstream schema is the source of truth.** Codex hooks live behind the `[features] codex_hooks = true` flag. Treat the OpenAI [Codex hooks docs](https://developers.openai.com/codex/hooks) as authoritative and re-check before relying on a specific field.
 - **Tool-agnostic.** Codex hooks fire for Bash, `apply_patch`, MCP tool calls, and other surfaces. ccgate classifies by `tool_name` + the full `tool_input` JSON, not by tool kind alone.
 
 ## Hook registration
@@ -49,7 +49,7 @@ If you want to keep hooks alongside the rest of your Codex config:
 
 ```toml
 [features]
-codex_hooks = true   # required: Codex hooks live behind this feature flag
+codex_hooks = true   # Codex hooks live behind this feature flag; keep it set for compatibility.
 
 [[hooks.PermissionRequest]]
 matcher = ""
@@ -99,21 +99,26 @@ Fields the upstream Codex docs declare and ccgate uses:
 - `model` (the AI side's model, e.g. `gpt-5`)
 - `turn_id`
 - `tool_name` (`Bash`, `apply_patch`, `mcp__<server>__<tool>`, ...)
-- `tool_input` (typed view + raw forwarding)
+- `tool_input` (typed view)
+- `tool_input_raw` (the original JSON payload, forwarded verbatim — the primary surface for inspecting `apply_patch` hunks and MCP arguments)
+- `referenced_paths` (best-effort path extraction from `tool_input`. Supported for `Bash`; `apply_patch` and MCP fall back to reading `tool_input_raw` directly.)
 
-Codex does not deliver Claude's `permission_mode`, `permission_suggestions`, `recent_transcript`, or `settings_permissions` today. The system prompt explicitly tells the LLM "no recent_transcript here -- judge from `tool_name` + `tool_input` + `cwd` alone" so it does not invent context that isn't there.
+Codex does not deliver Claude's `permission_mode`, `permission_suggestions`, `recent_transcript`, or `settings_permissions`. The system prompt tells the LLM to judge from `tool_name` + `tool_input` + `tool_input_raw` + `cwd` alone, so it does not invent context that isn't there.
+
+## Codex-specific state reference
+
+| Aspect                      | Value |
+|-----------------------------|-------|
+| Tool surface                | `Bash`, `apply_patch`, MCP (`mcp__<server>__<tool>`). Codex hooks fire for every PermissionRequest event regardless of tool kind. |
+| State path                  | `$XDG_STATE_HOME/ccgate/codex/` (falls back to `~/.local/state/ccgate/codex/` when unset). |
+| Project-local config        | `{repo_root}/.codex/ccgate.local.jsonnet` (untracked-only, project-trust required). |
 
 ## Defaults snapshot
 
-ccgate ships an embedded Codex defaults file (`internal/cmd/codex/defaults.jsonnet`) that mirrors the Claude side's allow + deny + environment shape. Notable Codex-specific entries:
+The embedded Codex defaults file (`internal/cmd/codex/defaults.jsonnet`) ships allow / deny / environment guidance tuned to the Codex tool surface. Notable entries:
 
 - `allow`: read-only Bash inspection, in-workspace writes (`apply_patch` hunks under cwd / repo_root, project file edits the AI is doing right now), project-script build/test, repo-confined package install, feature-branch git, MCP tools on user-trusted servers whose side effects stay within the user-authorized scope.
 - `deny`: pipe-to-shell of remote content, one-shot remote package execution (`npx` / `pnpx` / `bunx` against unfamiliar packages), `sudo`, out-of-workspace `rm -rf` / `mv` / `apply_patch` hunks, destructive git on protected branches, unrestricted network out (`nc` / `ssh` / `scp` / `ftp` to non-allowlisted hosts), MCP tools advertising destructive side effects without an explicit per-rule allow.
-- `environment`: heterogeneous tool surface, trusted-repo boundary, path scope rule, **ccgate replaces the upstream prompt** -- fallthrough only when genuinely ambiguous, otherwise default to allow / deny -- `recent_transcript` is absent.
+- `environment`: heterogeneous tool surface, trusted-repo boundary, path scope rule. ccgate replaces the upstream approval prompt, so the guidance defaults to allow / deny when it applies and reserves fallthrough for genuinely ambiguous cases. `recent_transcript` is not delivered to Codex hooks, so the prompt tells the LLM not to assume one.
 
-In-workspace `apply_patch` is in `allow` on purpose: this is the same bar Claude Code edits go through, and the user installed ccgate specifically to avoid being prompted for routine in-repo edits. Out-of-workspace patch hunks are denied via the existing deny rule. If you want to be more conservative, add a project-local rule that narrows the apply_patch allow scope (e.g. only specific subtrees).
-
-## Differences from Claude Code
-
-See [docs/claude.md](claude.md) for the full table.
-
+In-workspace `apply_patch` is in `allow` because the user installed ccgate specifically to avoid being prompted for routine in-repo edits; out-of-workspace patch hunks are denied via the existing deny rule. If you want to be more conservative, add a project-local rule that narrows the apply_patch allow scope (e.g. only specific subtrees).

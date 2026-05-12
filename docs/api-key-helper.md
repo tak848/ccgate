@@ -1,15 +1,18 @@
-# Short-lived / rotating API keys
+# Refreshable credentials
 
 [日本語版 (docs/ja/api-key-helper.md)](ja/api-key-helper.md)
 
 When the credential the provider needs rotates faster than a static env var can keep up — AWS STS sessions, Vertex ADC, OpenAI-compatible gateway virtual keys, internal key brokers — ccgate resolves it through `provider.auth` instead of `*_API_KEY`.
 
-`provider.auth` has two modes:
+`provider.auth` has three modes:
 
 - **`type: 'exec'`**: ccgate runs a shell command and uses its stdout as the credential.
 - **`type: 'file'`**: ccgate reads a file written by an external rotator.
+- **`type: 'profile'`**: Anthropic only. ccgate hands an `ant auth login` profile to anthropic-sdk-go and the SDK owns the refresh loop. See [Profile-based authentication](#profile-based-authentication-anthropic-only).
 
-Linux, macOS, *BSD, and Windows are supported. The shell that runs the helper command is selected per-config via `auth.shell` (default `bash`); set `shell: 'powershell'` on Windows boxes that don't have bash.
+(`*_API_KEY` env var is a separate path used when `provider.auth` is omitted — it's not one of the `auth` modes.)
+
+The shell that runs an `exec` helper is selected per-config via `auth.shell` (default `bash`); see [Helper contract](#helper-contract) for the shells ccgate currently spawns.
 
 ## Config
 
@@ -47,7 +50,7 @@ Linux, macOS, *BSD, and Windows are supported. The shell that runs the helper co
 |---|---|---|---|
 | `auth.type` | `"exec"` / `"file"` / `"profile"` | (required when `auth` is set) | Resolution mode. `profile` is Anthropic-only; see [Profile-based authentication](#profile-based-authentication-anthropic-only). |
 | `auth.command` | string | `""` | (`exec` only, required) Shell command; stdout is the credential. |
-| `auth.shell` | `"bash"` / `"powershell"` | `"bash"` | (`exec` only) Shell. `powershell` tries `pwsh` first, falls back to `powershell`. |
+| `auth.shell` | `"bash"` / `"powershell"` | `"bash"` | (`exec` only) Shell used to run `auth.command`. `powershell` tries `pwsh` first, falls back to `powershell`. |
 | `auth.path` | string | `$XDG_STATE_HOME/ccgate/<target>/auth_key.json` | (`file` only) Credential file path. Omit to use the default. |
 | `auth.profile` | string | `""` | (`profile` only) Anthropic profile name (the value `ant auth login --profile <name>` writes to `<config_dir>/credentials/<name>.json`). Empty/omitted lets the SDK resolve `$ANTHROPIC_PROFILE` → `<config_dir>/active_config` → `"default"`. |
 | `auth.refresh_margin_ms` | int (ms) | `60000` | Treat credentials as expired this many ms before `expires_at`. `0` disables. (`exec` / `file` only — `profile` delegates refresh to the SDK.) |
@@ -108,7 +111,6 @@ ant auth login --profile ccgate         # opens a browser, writes ~/.config/anth
 >   - `rm <config_dir>/active_config` to clear the pointer entirely (the SDK then resolves to `default`).
 >   - `ant profile activate <previous-profile-name>` if you have a profile you actively use.
 > - To bind a profile to a different org / workspace, ant rejects re-login on a profile that already has one bound. Delete `<config_dir>/configs/<name>.json` and run `ant auth login --profile <name>` again.
-> - An upstream `--no-activate` flag (upstream PR [anthropics/anthropic-cli#45](https://github.com/anthropics/anthropic-cli/pull/45)) would let `ant auth login --profile <name> --no-activate` skip the retarget once it lands.
 
 ## Examples
 

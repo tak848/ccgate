@@ -37,8 +37,6 @@ ccgate は target ごとに以下の層を順に読み込みます。各層は�
 
 `allow` と `append_allow` (他 list も同じ) は同じ layer に共存可能 — 先に置換、その結果に対して append が積まれる。embedded の list を厳選版に **差し替えつつ** プロジェクト固有のルールを **追加** したいときに使います: `{ allow: ['only this base'], append_allow: ['plus this project rule'] }`。
 
-> v0.6 以前の ccgate はグローバル設定が存在すると埋込デフォルトをスキップしていました (グローバル層が「置換」していた)。v0.6 では embedded を常にベースとして適用しつつ、明示的な opt-in 拡張として `append_*` を導入しています。詳細は [#38](https://github.com/tak848/ccgate/issues/38) を参照。v0.6 以前のグローバル設定 (もともと `allow:` / `deny:` で完全置換していた) は無編集で同じ挙動になります。v0.6 以前のプロジェクトローカル設定で `allow:` / `deny:` / `environment:` を **追加** 目的で使っていた人だけ、`append_allow:` / `append_deny:` / `append_environment:` への rename が必要です (そのままだと累積 list を完全置換してしまいます)。
-
 ### tracked file が無視される理由
 
 プロジェクトローカル設定は意図的に **git で tracked されていない場合のみ load** します。これは「個人 contributor が共有ベースラインの上に自分の制限を重ねる」用途を想定しているためで、ローカル設定経由でチーム全体ポリシーを repo に密かに混入させない狙いです。
@@ -197,5 +195,5 @@ cache 層の失敗は fallthrough せずに自動回復するので、`slog.Warn
 
 - **Plan mode (Claude のみ) はプロンプト依存**: `permission_mode == "plan"` では (a) 実装系 write を拒絶する判定と (b) 明示的な allow guidance なしの read-only クエリ許可 を、LLM とシステムプロンプトの指示文に委ねています。どちらの方向にも誤判定の余地あり。[#37](https://github.com/tak848/ccgate/issues/37) で追跡
 - **embedded default の特定ルールだけを部分削除する手段なし**: layer は list を **完全置換** (`allow: [...]`) するか **末尾追加** (`append_allow: [...]`) するかのどちらかで、embedded の中の 1 ルールだけ消したい場合は残り全部を `allow:` / `deny:` に書き直すしかない
-- **Codex hook の schema は変わる可能性あり**: Codex hooks 自体が upstream の `features.codex_hooks = true` flag 配下にあり、まだ進化中です
-- **Codex `~/.codex/config.toml` 取り込み未実装** (`approval_policy`, `sandbox_mode`, `prefix_rules`): ccgate は hook payload + ccgate config だけで判定するため、Codex 自身の設定が拒絶するはずだった操作のシグナルは LLM に届かない (現状)
+- **Codex hook の schema は upstream-driven**: Codex hooks は upstream の `[features] codex_hooks = true` flag 配下にあり、[OpenAI Codex hooks docs](https://developers.openai.com/codex/hooks) を一次情報として扱う
+- **Codex `~/.codex/config.toml` 取り込みは未対応** (`approval_policy`, `sandbox_mode`, `prefix_rules`): ccgate は hook payload + ccgate config だけで判定するため、Codex 自身の設定が拒絶するはずだった操作のシグナルは LLM に届かない
