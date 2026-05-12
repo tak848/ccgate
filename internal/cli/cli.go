@@ -89,16 +89,20 @@ func Run(version string, args []string, stdin io.Reader, stdout, stderr io.Write
 		return 2
 	}
 
-	return dispatch(kctx, &cli, stdin, stdout, stderr)
+	return dispatch(kctx, &cli, version, stdin, stdout, stderr)
 }
 
 // kongExit unwinds back to Run so we can translate kong's process-level
 // exit semantics into the int the caller already returns.
 type kongExit struct{ code int }
 
-func dispatch(kctx *kong.Context, cli *CLI, stdin io.Reader, stdout, stderr io.Writer) int {
+func dispatch(kctx *kong.Context, cli *CLI, version string, stdin io.Reader, stdout, stderr io.Writer) int {
 	switch kctx.Command() {
 	case "claude", "claude hook":
+		if isTerminal(stdin) {
+			printUsage(stderr, version)
+			return 0
+		}
 		return claude.Run(stdin, stdout)
 	case "claude init":
 		return claude.Init(stdout, stderr, claude.InitOptions{
@@ -117,6 +121,10 @@ func dispatch(kctx *kong.Context, cli *CLI, stdin io.Reader, stdout, stderr io.W
 			DetailsTop: cli.Claude.Metrics.Details,
 		})
 	case "codex", "codex hook":
+		if isTerminal(stdin) {
+			printUsage(stderr, version)
+			return 0
+		}
 		return codex.Run(stdin, stdout)
 	case "codex init":
 		return codex.Init(stdout, stderr, codex.InitOptions{
