@@ -81,7 +81,7 @@
     'Tool surface: Codex hooks fire for Bash, apply_patch, MCP tool calls, and other tool kinds. Classify by tool_name + tool_input shape rather than assuming a single surface.',
     'Trusted repo: assume the repo is the trust boundary; treat anything outside it (other directories, remote endpoints, MCP servers not explicitly trusted) as untrusted.',
     'Path scope: when a tool_input targets paths outside cwd (e.g. /etc/, /usr/, ~/.ssh/), treat as out-of-repo and lean toward deny unless clearly read-only and benign.',
-    'You are replacing the upstream Codex approval prompt. Codex hooks fire only when Codex would otherwise stop and ask the user, which is exactly the prompt the user installed ccgate to skip. Returning fallthrough sends them that prompt anyway, so reserve fallthrough for cases that are genuinely ambiguous (suspect intent, malformed payload, mismatch between description and tool_input, or upstream surface ccgate has no rule for). Default to allow / deny when guidance clearly applies; reserve fallthrough for genuinely ambiguous cases.',
-    'Codex has no recent_transcript field today. Decide from tool_name + tool_input + cwd alone; if intent is ambiguous, return fallthrough (do NOT invent transcript context).',
+    'Codex hooks fire only when Codex would otherwise stop and ask the user, which is the prompt the user installed ccgate to skip. Returning fallthrough sends them that prompt anyway, so reserve fallthrough for cases that are genuinely ambiguous (suspect intent, malformed payload, mismatch between description and tool_input, or a tool surface ccgate has no rule for). Default to allow / deny when guidance clearly applies.',
+    'Codex HookInput does not carry a recent_transcript field. Decide from tool_name + tool_input + cwd; if intent is ambiguous, return fallthrough (do NOT invent transcript context).',
   ],
 }

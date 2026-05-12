@@ -24,10 +24,12 @@ For layer composition see [docs/configuration.md](configuration.md#where-ccgate-
 
 ## 3. Replace vs append (i.e. copy-paste or not)
 
-| Field shape | Relationship to defaults | When ccgate ships new defaults | When to use it |
-|-------------|--------------------------|--------------------------------|----------------|
-| `append_allow` / `append_deny` / `append_environment` | Keep + append | Updates flow in on upgrade automatically | Default choice |
-| `allow:` / `deny:` / `environment:` | Replace wholesale (defaults are dropped) | Diff `ccgate <target> init` output yourself and copy what you want | Special cases: dropping a specific default, fully curated lists, etc. |
+| Field shape | Relationship to embedded defaults |
+|-------------|-----------------------------------|
+| `append_allow` / `append_deny` / `append_environment` | Embedded defaults from the running binary are kept; your entries are appended. |
+| `allow:` / `deny:` / `environment:` | Embedded defaults from the running binary are dropped; only your list is in effect. |
+
+If you replace wholesale, run `ccgate <target> init` whenever you bring in a different ccgate build to see the current embedded list, and reconcile manually.
 
 There is no surgical "remove one specific embedded rule" path. `append_*` only adds; to omit one embedded entry, restate the whole list under `allow:` / `deny:` minus that one entry.
 

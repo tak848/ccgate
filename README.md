@@ -32,8 +32,6 @@ To try ccgate without installing it globally (similar to `npx` / `uvx`):
 mise exec aqua:tak848/ccgate -- ccgate --version
 ```
 
-If you want to keep this no-install style for the hook itself, set the hook `command` to `mise exec aqua:tak848/ccgate -- ccgate claude` (or `... -- ccgate codex`) in your settings. Each hook invocation pays the launcher startup cost; for day-to-day use, `mise use -g` above is recommended.
-
 ### aqua
 
 Via the [aqua](https://aquaproj.github.io/) standard registry (requires registry `v4.498.0` or later). In an aqua-managed project (run `aqua init` first if you don't have an `aqua.yaml` yet):
@@ -221,7 +219,7 @@ Switch providers by setting `provider.name` (and `provider.model` if needed) in 
 
 Export the matching API key — see [docs/providers.md#api-keys](docs/providers.md#api-keys). If the key is missing, ccgate falls through to the upstream tool's permission prompt, so flipping providers cannot break the hook.
 
-Provider switching, model selection (avoiding reasoning models, etc.), API key resolution order, and compatible-proxy setup are all consolidated in [docs/providers.md](docs/providers.md).
+Provider switching, model selection constraints, API key resolution order, and compatible-proxy setup are all consolidated in [docs/providers.md](docs/providers.md).
 
 **Refreshable credentials** (AWS STS, Vertex ADC, OpenAI-compatible gateways with virtual keys, internal key brokers — anything a static env var cannot keep up with) are handled via `provider.auth`, a discriminated union over three shapes (`type=exec` / `type=file` / `type=profile`). The full helper contract, caching, 401/403 behaviour, and the recovery checklist live in [docs/api-key-helper.md](docs/api-key-helper.md).
 

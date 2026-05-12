@@ -6,8 +6,8 @@
 
 ## ステータス
 
-- **upstream schema を一次情報とする**: Codex hooks は `[features] codex_hooks = true` flag 配下にあります。OpenAI の [Codex hooks docs](https://developers.openai.com/codex/hooks) を authoritative として参照し、特定 field に依存する前に再確認してください
-- **Tool-agnostic**: Codex hooks は Bash、`apply_patch`、MCP tool 呼び出しなど複数の surface で発火します。ccgate は `tool_name` + `tool_input` JSON 全体で分類
+- Codex hooks は `[features] codex_hooks = true` の設定が必要です。 upstream の payload schema は [OpenAI Codex hooks docs](https://developers.openai.com/codex/hooks) を参照。
+- **Tool-agnostic**: Codex hooks は Bash、 `apply_patch`、 MCP tool 呼び出しなど複数の surface で発火します。 ccgate は `tool_name` + `tool_input` JSON 全体で分類。
 
 ## hook 登録
 
@@ -90,7 +90,7 @@ project-local の `<repo>/.codex/{hooks.json,config.toml}` は、project が tru
 
 ccgate は `tool_input` の JSON 全体をそのまま LLM に渡します。そのため、ccgate 側に専用フィールドのない MCP arguments や `apply_patch` の hunk metadata も判定対象に含まれます。metrics には parsed view (`command` / `description` / `file_path` / `path` / `pattern`) だけを書きますが、LLM に渡す内容から raw payload を削ることはありません。
 
-upstream Codex docs に記載があり ccgate が利用するフィールド:
+ccgate が Codex HookInput から読むフィールド:
 
 - `session_id`
 - `transcript_path` (path のみ; ccgate は transcript JSONL を parse しない)

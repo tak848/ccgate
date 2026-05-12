@@ -24,10 +24,12 @@ layer の合成順は [設定リファレンス](configuration.md#ccgate-が-con
 
 ## 3. 置換 vs 追加 (= コピペするかしないか)
 
-| 書き方 | defaults との関係 | 新 defaults リリース時 | 用途 |
-|--------|--------------------|------------------------|------|
-| `append_allow` / `append_deny` / `append_environment` | 残す + 追加 | upgrade 時に自動取り込み | 基本はこちら |
-| `allow:` / `deny:` / `environment:` | 完全置換 (defaults を採用しない) | 自分で `init` 出力と diff を取り、必要なら手で取り込み | 一部 default を消したい、独自方針を全部書きたい等、特別な事情のとき |
+| 書き方 | 実行中の binary の embedded defaults との関係 |
+|--------|--------------------------------------------|
+| `append_allow` / `append_deny` / `append_environment` | embedded defaults を残し、 自分のエントリを末尾に追加 |
+| `allow:` / `deny:` / `environment:` | embedded defaults を捨てて、 自分の list だけが有効になる |
+
+完全置換側を使っている場合は、 別の ccgate build に切り替えるたびに `ccgate <target> init` で当時の embedded list を確認し、 手で反映してください。
 
 「default を 1 件だけ消したい」を append で実現する経路はありません (append は **足す** だけ)。1 件除外したい場合は `allow:` / `deny:` で残り全部を書き直すしかありません。
 

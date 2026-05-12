@@ -32,8 +32,6 @@ ccgate をグローバルに登録せず一度だけ試したい場合 (`npx` / 
 mise exec aqua:tak848/ccgate -- ccgate --version
 ```
 
-そのまま hook としても no-install で使い続けたい場合は、設定の hook `command` を `mise exec aqua:tak848/ccgate -- ccgate claude` (または `... -- ccgate codex`) に書き換えてください。hook 呼び出しごとに launcher の起動コストが乗るため、常用するなら上の `mise use -g` の方を推奨します。
-
 ### aqua
 
 [aqua](https://aquaproj.github.io/) 標準 registry 経由 (registry `v4.498.0` 以降が必要)。aqua 管理下のプロジェクトで (`aqua.yaml` がない場合は `aqua init` を先に走らせる):
@@ -219,7 +217,7 @@ provider と hook の登録が済んでから、自分の `allow` / `deny` / `ap
 
 対応する API キーは [docs/ja/providers.md#api-キー](providers.md#api-キー) を参照して export してください。 キーが見つからない場合 ccgate は上流ツールの確認画面に fallthrough するので、 provider 切替で hook が壊れることはありません。
 
-provider の切替手順、 モデル選定 (reasoning model を避ける等)、 API キーの解決順、 互換 proxy 経由での利用は [docs/ja/providers.md](providers.md) にまとめてあります。
+provider の切替手順、 モデル選定時の確認事項、 API キーの解決順、 互換 proxy 経由での利用は [docs/ja/providers.md](providers.md) にまとめてあります。
 
 **Refresh される credential** (AWS STS / Vertex ADC / OpenAI 互換 gateway の virtual key / 社内 key broker など、 静的 env では追従できないケース) を扱いたいときは `provider.auth` を設定します。 3 形式の discriminated union (`type=exec` / `type=file` / `type=profile`) で、 helper 契約・キャッシュ・401/403 挙動・復旧手順を含む完全な仕様は [docs/ja/api-key-helper.md](api-key-helper.md) を参照。
 
