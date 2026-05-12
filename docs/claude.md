@@ -41,9 +41,11 @@ If you launch `ccgate` from a terminal with no stdin pipe, it prints a usage ban
 Claude Code delivers the standard PermissionRequest payload (see the upstream [hooks reference](https://code.claude.com/docs/en/hooks)). ccgate reads:
 
 - `tool_name`: routes early-return for user-interaction tools (`ExitPlanMode`, `AskUserQuestion`) -- those always fall through to Claude Code's prompt, ccgate never decides for them.
-- `tool_input`: forwarded to the LLM. The metrics layer captures `command` / `file_path` / `path` / `pattern` only.
+- `tool_input`: forwarded to the LLM as a typed object. The metrics layer captures `command` / `file_path` / `path` / `pattern` only.
+- `tool_input_raw`: the original `tool_input` JSON, forwarded verbatim. Use this to inspect fields that the typed view omits (e.g. nested MCP arguments).
+- `referenced_paths`: paths extracted from `tool_input` on a best-effort basis. Supported tools: `Read`, `Write`, `Edit`, `MultiEdit`, `Glob`, `Grep`, `Bash`. Other tools (MCP, user-interaction tools) produce an empty list -- the LLM still sees the raw payload via `tool_input_raw`.
 - `permission_mode`: switches the system prompt to plan-mode rules when `"plan"`. `"bypassPermissions"` and `"dontAsk"` short-circuit ccgate to fallthrough.
-- `cwd`: feeds the git context builder (`gitutil.RepoRoot`, branch, worktree).
+- `cwd`: feeds the git context builder (`gitutil.RepoRoot`, branch, worktree). Working-tree dirty/clean state is not delivered.
 - `transcript_path`: the recent-transcript loader reads up to N tail entries to give the LLM user-intent context.
 - `permission_suggestions`: forwarded to the LLM as background.
 - `settings_permissions`: ccgate reads `~/.claude/settings.json` separately and surfaces the user's own static allow / deny / ask patterns to the LLM as a hint, not as a whitelist requirement (see "Why settings.json patterns are a hint" below).
@@ -58,7 +60,7 @@ Claude Code delivers the standard PermissionRequest payload (see the upstream [h
 
 Allow guidance does NOT promote write operations to allow in plan mode. The deny guidance still applies and can override read-only operations too.
 
-This is purely prompt-driven, so there is no hard guarantee. Tracked in [#37](https://github.com/tak848/ccgate/issues/37).
+This is purely prompt-driven, so there is no hard guarantee.
 
 ## How `recent_transcript` is used
 
@@ -67,7 +69,7 @@ This is purely prompt-driven, so there is no hard guarantee. Tracked in [#37](ht
 - If the user explicitly requested the operation in the recent transcript, prefer `allow` or `fallthrough` over `deny`.
 - An explicit user request can only escalate `deny` to `fallthrough`, never to `allow`. Deny guidance still wins.
 
-This is the only signal in the prompt that lets the LLM say "the deny rule matches but the user clearly asked for this, so let the user confirm via Claude Code's prompt instead of refusing outright". Codex has no transcript field today, so this lever is Claude-only.
+This is the only signal in the prompt that lets the LLM say "the deny rule matches but the user clearly asked for this, so let the user confirm via Claude Code's prompt instead of refusing outright".
 
 ## Why `settings.json` patterns are a hint, not a whitelist
 
@@ -79,22 +81,20 @@ This is the only signal in the prompt that lets the LLM say "the deny rule match
 
 Treating `settings_permissions.allow` as a whitelist requirement therefore breaks the hook's normal operation. ccgate uses it as a hint about user preferences only -- a request can still be `allow`-ed by the LLM even when it does not appear in `settings_permissions.allow`.
 
-## Differences from Codex CLI
+## Claude-specific HookInput / state reference
 
-| Aspect                              | Claude Code                                        | Codex CLI                                                                                |
-|-------------------------------------|----------------------------------------------------|------------------------------------------------------------------------------------------|
-| Tool surface                        | `Bash`, `Read`, `Write`, `Edit`, `Glob`, MCP, ...  | `Bash`, `apply_patch`, MCP, ...                                                           |
-| `permission_mode`                   | `default` / `acceptEdits` / `plan` / `bypassPermissions` / `dontAsk` | Not delivered today.                                                |
-| `recent_transcript`                 | Forwarded to the LLM.                              | Not delivered. The LLM is told to judge from `tool_name` + `tool_input` + `cwd` alone.   |
-| `settings_permissions`              | Forwarded as background hint.                      | No equivalent. `~/.codex/config.toml` is not ingested.                                   |
-| `permission_suggestions`            | Forwarded.                                         | Not delivered.                                                                            |
-| State path                          | `$XDG_STATE_HOME/ccgate/claude/`                   | `$XDG_STATE_HOME/ccgate/codex/`                                                           |
-| Project-local config                | `{repo_root}/.claude/ccgate.local.jsonnet`         | `{repo_root}/.codex/ccgate.local.jsonnet`                                                 |
+| Aspect                      | Value |
+|-----------------------------|-------|
+| Tool surface                | `Bash`, `Read`, `Write`, `Edit`, `MultiEdit`, `Glob`, `Grep`, MCP, user-interaction tools (`ExitPlanMode`, `AskUserQuestion`) |
+| `permission_mode` values    | `default` / `acceptEdits` / `plan` / `bypassPermissions` / `dontAsk`. `plan` switches the system prompt; `bypassPermissions` / `dontAsk` short-circuit ccgate to fallthrough. |
+| `recent_transcript`         | Loaded from `transcript_path` and forwarded to the LLM as user-intent context (see "How `recent_transcript` is used" above). |
+| `settings_permissions`      | Forwarded as a hint -- see "Why `settings.json` patterns are a hint" above. |
+| `permission_suggestions`    | Forwarded verbatim. |
+| State path                  | `$XDG_STATE_HOME/ccgate/claude/` (falls back to `~/.local/state/ccgate/claude/` when unset). |
+| Project-local config        | `{repo_root}/.claude/ccgate.local.jsonnet` (untracked-only). |
 
-See [docs/codex.md](codex.md) for the Codex side.
+## Limitations
 
-## Known limitations
-
-- **Plan mode is prompt-only** ([#37](https://github.com/tak848/ccgate/issues/37)).
+- **Plan mode is prompt-only.** Under `permission_mode == "plan"`, ccgate relies on the LLM plus prose in the system prompt to (a) reject implementation-side writes and (b) allow read-only queries without requiring an allow-guidance match. Either side can misfire.
 - **No surgical reset for a single embedded default rule.** A layer either replaces a list wholesale (`allow: [...]`) or appends to it (`append_allow: [...]`); removing one specific embedded entry while keeping the rest requires re-stating the whole list under `allow` / `deny` minus that one entry.
-- **No deterministic short-circuit on `settings.json` deny patterns**. ccgate routes every Claude Code PermissionRequest through the LLM today; a deterministic prefilter that exits early on a literal `settings.json` deny match is a possible future optimization, not a current behavior.
+- **No deterministic short-circuit on `settings.json` deny patterns.** ccgate routes every Claude Code PermissionRequest through the LLM; literal `settings.json` deny matches do not exit ccgate early.

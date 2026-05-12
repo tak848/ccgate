@@ -1,15 +1,18 @@
-# 期限付き・自動更新される API キー
+# Refresh される credential
 
 [English version (docs/api-key-helper.md)](../api-key-helper.md)
 
-provider に渡す認証情報が静的な環境変数では追いつかない頻度で入れ替わる場合 (AWS STS セッション、Vertex ADC、OpenAI 互換 gateway の virtual key、社内 key broker など) は、`*_API_KEY` の代わりに `provider.auth` で取得します。
+provider に渡す credential が静的な環境変数では追いつかない頻度で入れ替わる場合 (AWS STS セッション、Vertex ADC、OpenAI 互換 gateway の virtual key、社内 key broker など) は、`*_API_KEY` の代わりに `provider.auth` で取得します。
 
-`provider.auth` には 2 つのモードがあります。
+`provider.auth` には 3 つのモードがあります。
 
-- **`type: 'exec'`**: ccgate がシェルコマンドを実行し、その stdout を認証情報として使います。
-- **`type: 'file'`**: 外部のローテーター (cron / launchd など) が書いたファイルを ccgate が読みます。
+- **`type: 'exec'`**: ccgate がシェルコマンドを実行し、その stdout を credential として使う。
+- **`type: 'file'`**: 外部のローテーターが書いたファイルを ccgate が読む。
+- **`type: 'profile'`**: Anthropic 専用。`ant auth login` の profile を anthropic-sdk-go に渡し、refresh は SDK 自身が担当する。[Profile ベース認証](#profile-ベース認証-anthropic-のみ) を参照。
 
-Linux / macOS / *BSD / Windows に対応します。helper コマンドを動かすシェルは `auth.shell` で選択 (default `bash`)。bash が入っていない Windows では `shell: 'powershell'` を指定してください。
+(`*_API_KEY` env var は `provider.auth` が省略されている場合の別経路。`auth` のモードではありません。)
+
+`exec` の helper を動かすシェルは `auth.shell` で選択 (default `bash`)。詳細は [helper の契約](#helper-の契約) を参照。
 
 ## 設定
 
@@ -47,7 +50,7 @@ Linux / macOS / *BSD / Windows に対応します。helper コマンドを動か
 |---|---|---|---|
 | `auth.type` | `"exec"` / `"file"` / `"profile"` | (`auth` を書くなら必須) | 取得モード。`profile` は Anthropic 専用、[Profile ベース認証](#profile-ベース認証-anthropic-のみ) を参照 |
 | `auth.command` | string | `""` | (`exec` 専用、必須) シェルコマンド。stdout が認証情報 |
-| `auth.shell` | `"bash"` / `"powershell"` | `"bash"` | (`exec` 専用) `powershell` は `pwsh` を優先解決、無ければ `powershell` に fallback |
+| `auth.shell` | `"bash"` / `"powershell"` | `"bash"` | (`exec` 専用) `auth.command` を実行するシェル。`powershell` は `pwsh` を優先解決、無ければ `powershell` に fallback |
 | `auth.path` | string | `$XDG_STATE_HOME/ccgate/<target>/auth_key.json` | (`file` 専用) 認証情報ファイルのパス。省略でデフォルトを使用 |
 | `auth.profile` | string | `""` | (`profile` 専用) Anthropic profile 名 (`ant auth login --profile <name>` が `<config_dir>/credentials/<name>.json` に書く値)。空 / 省略時は SDK が `$ANTHROPIC_PROFILE` → `<config_dir>/active_config` → `"default"` を解決 |
 | `auth.refresh_margin_ms` | int (ms) | `60000` | `expires_at` の何 ms 前で期限切れ扱いにするか。`0` で無効。(`exec` / `file` 専用 — `profile` は SDK が refresh を担当するので無視) |
@@ -75,24 +78,25 @@ helper は次を満たす必要があります。
 - 同じ `(shell, command, provider.name, base_url, cache_key)` の組に対して **決定論的** に振る舞う。同じ設定で 2 回呼んだら同じ意味の認証情報を返すこと。
 - **デーモン化しない**。process group の外に fork するとタイムアウト時の kill が効きません。
 - `auth.timeout_ms` 以内に終了する。
-- `auth.command` 文字列に **literal な秘密情報を直接書かない**。文字列は設定したシェル (`bash -c <command>`、または `auth.shell: 'powershell'` のときは `pwsh -Command <command>` / `powershell -Command <command>`) に渡されるため、`ps` / `/proc/<pid>/cmdline` / シェル履歴に残ります。秘密情報はファイルや keychain に置き、helper の中で読み出してください。
+- `auth.command` 文字列に **literal な秘密情報を直接書かない**。文字列は設定したシェル (`bash -c <command>`、または `auth.shell: 'powershell'` のときは `pwsh -Command <command>` / `powershell -Command <command>`) に渡されるため、 process listing やシェル履歴に残ります。秘密情報はファイルや keychain に置き、 helper の中で読み出してください。
 
 ccgate は helper の env に `CCGATE_API_KEY_RESOLUTION=1` を入れるので、helper が ccgate を再帰起動していないかを自分で検知できます。それ以外の環境変数 (`*_API_KEY` 含む) はそのまま継承します。stdin は閉じています (helper から親ターミナルの入力は読めません)。
 
 ### 初回ブラウザ認証
 
-`gcloud auth print-access-token`、`aws sso login`、社内 SSO 経由の key broker など、初回起動時にブラウザが開いて OAuth / SAML 認証 → 完了後 stdout に認証情報を出すタイプの helper も使えます。2 回目以降はローカルにキャッシュされた refresh token が使われ、サイレントに完了します。
+`gcloud auth print-access-token`、 `aws sso login`、 社内 SSO 経由の key broker など、 初回起動時にブラウザが開いて OAuth / SAML 認証 → 完了後 stdout に認証情報を出すタイプの helper も使えます。 2 回目以降はローカルにキャッシュされた refresh token が使われ、 silent に完了します。
 
 既定の `auth.timeout_ms` (`30000`) は非対話的な helper の大半をカバーします。ブラウザでユーザーが同意画面を操作するタイプは `120000` 程度まで上げてください。一定時間アイドル後の最初の Permission Request がブラウザ操作の完了まで待つ形になりますが、`reason=timeout` で fallthrough しなくなります。
 
 ## Profile ベース認証 (Anthropic のみ)
 
-Anthropic provider 専用です。公式 `ant` CLI (`ant auth login` でブラウザ OAuth、`ant profile activate <name>` で active profile を切り替え) が `<config_dir>/credentials/<name>.json` (mode 0600) に credentials を書き出します。`<config_dir>` の既定は `~/.config/anthropic`。Anthropic の profile 解決順 (`$ANTHROPIC_PROFILE` → `<config_dir>/active_config` → `"default"`) は Go SDK / Claude Code / Claude Agent SDK で **共有** されます ([wif-reference doc](https://platform.claude.com/docs/en/api/authentication/wif-reference))。access token の refresh は SDK 自身が行うため、ccgate は credential 経路には立ち入りません — ただし SDK の static-credential 用 env autoload (`ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN`) は無効化するので、残っている env var が、宣言した profile を silent に上書きすることはありません。Workload Identity Federation は `authentication.type=oidc_federation` を含む profile config 経由のみ対応 (env だけで WIF を構成する経路は本リリースの範囲外)。
+Anthropic provider 専用です。公式 `ant` CLI (`ant auth login` でブラウザ OAuth、`ant profile activate <name>` で active profile を切り替え) が `<config_dir>/credentials/<name>.json` (mode 0600) に credentials を書き出します。`<config_dir>` の既定は `~/.config/anthropic`。Anthropic の profile 解決順 (`$ANTHROPIC_PROFILE` → `<config_dir>/active_config` → `"default"`) は Go SDK / Claude Code / Claude Agent SDK で **共有** されます ([wif-reference doc](https://platform.claude.com/docs/en/api/authentication/wif-reference))。access token の refresh は SDK 自身が行うため、ccgate は credential 経路には立ち入りません — ただし SDK の static-credential 用 env autoload (`ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN`) は無効化するので、残っている env var が、宣言した profile を silent に上書きすることはありません。Workload Identity Federation は `authentication.type=oidc_federation` を含む profile config 経由のみ対応。
 
 ### Quick start
 
 ```sh
-mise use -g aqua:anthropics/anthropic-cli   # または `aqua g -i anthropics/anthropic-cli`。binary は `ant`
+# `ant` CLI を任意の方法で入れる (例: `mise use -g aqua:anthropics/anthropic-cli`、
+# `aqua g -i anthropics/anthropic-cli`、 upstream の release ページから直接 download など)。
 ant auth login --profile ccgate         # ブラウザが開き ~/.config/anthropic/credentials/ccgate.json を書き出す
 # ccgate.jsonnet に追記:
 #   provider: { ..., auth: { type: 'profile', profile: 'ccgate' } }
@@ -103,12 +107,11 @@ ant auth login --profile ccgate         # ブラウザが開き ~/.config/anthro
 > [!IMPORTANT]
 > **`ant auth login` は profile 名に関わらず `<config_dir>/active_config` を書き換える** 仕様です。ant は `--profile <name>` 指定時はその `<name>` に、`--profile` 省略時は `default` に、`<config_dir>/active_config` を毎回書き換えます。Anthropic の profile 解決順は Claude Code / Claude Agent SDK と共有されるため、この書き換えで Claude Code の credential 経路が subscription から従量課金 API に移ることがあります。対応:
 >
-> - `default` 以外の名前 (例: `ccgate`) で profile を作成し、ccgate.jsonnet で明示宣言する。`ant auth login` を `--profile` 指定なしで実行すると `default` profile が作られて active profile を奪うので、それを避ける。
-> - `ant auth login` の後は active profile の参照先を戻す。2 つの選択肢:
+> - `default` 以外の名前 (例: `ccgate`) で profile を作成し、ccgate.jsonnet で明示宣言する。 `ant auth login` を `--profile` 指定なしで実行すると `default` profile が作られ、 既定の参照先として使われるため、 これを避ける。
+> - `ant auth login` の後は `<config_dir>/active_config` の参照先を戻す。 2 つの選択肢:
 >   - `rm <config_dir>/active_config` で参照先を完全に消す (SDK は `default` 解決に戻る)
 >   - 普段使う profile があれば `ant profile activate <previous-profile-name>`
-> - 同じ profile を別 org / workspace に紐づけ直したい場合: ant は既に紐づいた profile への再 login を拒否するので、`<config_dir>/configs/<name>.json` を削除して `ant auth login --profile <name>` を再実行する。
-> - upstream の `--no-activate` flag (upstream PR [anthropics/anthropic-cli#45](https://github.com/anthropics/anthropic-cli/pull/45)) がマージされれば、`ant auth login --profile <name> --no-activate` で書き換え自体を回避できるようになる。
+> - 同じ profile を別 org / workspace に関連付け直す場合: ant は既に関連付け済みの profile への再 login を拒否するので、 `<config_dir>/configs/<name>.json` を削除して `ant auth login --profile <name>` を再実行する。
 
 ## 例
 
@@ -136,9 +139,11 @@ plain string の出力はキャッシュされず、hook 起動のたびに help
 ```sh
 #!/bin/sh
 # ~/bin/ccgate-key-broker.sh
+# 出力: {"key": "...", "expires_at": "<RFC3339>"} の 1 行 JSON。
+# `my-broker-expiry-rfc3339` は「now + helper lifetime」を RFC3339 文字列で返す任意のコマンドに置き換えてください。
 set -eu
 TOKEN=$(my-key-broker --provider anthropic)
-EXP=$(date -u -v+50M +%FT%TZ 2>/dev/null || date -u -d '+50 minutes' +%FT%TZ)
+EXP=$(my-broker-expiry-rfc3339)
 jq -nc --arg key "$TOKEN" --arg expires_at "$EXP" '{key:$key, expires_at:$expires_at}'
 ```
 
@@ -150,24 +155,11 @@ ccgate に渡す前に `~/bin/ccgate-key-broker.sh | jq .` 等で単体動作を
 
 ### 外部ローテーター (hook 経路で helper を回さない)
 
-hook の hot path で helper を回したくない場合は、cron / launchd / systemd-timer などの外部ローテーターから同じ JSON 形をファイルに atomic rename で書き出します。
-
-```sh
-#!/bin/sh
-set -eu
-TOKEN=$(my-key-broker --provider anthropic)
-EXP=$(date -u -v+1H +%FT%TZ 2>/dev/null || date -u -d '+1 hour' +%FT%TZ)
-TMP=$(mktemp ~/.config/my-broker/anthropic.json.XXXXXX)
-jq -nc --arg key "$TOKEN" --arg expires_at "$EXP" '{key:$key, expires_at:$expires_at}' > "$TMP"
-chmod 0600 "$TMP"
-mv "$TMP" ~/.config/my-broker/anthropic.json
-```
+hook の hot path で helper を回したくない場合は、外部ローテーターから同じ JSON 形を **atomic replace** (`tmp に書き込み` → `chmod 0600 tmp` → `rename tmp <auth.path>`) で `auth.path` に置きます。ローテートはローテーター側で担当し、 ccgate は hook 起動のたびに file を読むだけです。
 
 ```jsonnet
 auth: { type: 'file', path: '~/.config/my-broker/anthropic.json' }
 ```
-
-ローテートはローテーターが担い、ccgate は hook 起動のたびにファイルを読むだけです。
 
 ## キャッシュ
 
@@ -210,27 +202,20 @@ cache fingerprint には **カレントディレクトリもホスト名も含�
 
 ## ファイル経路の注意点
 
-`auth.path` の読み取りも exec 経路と同じく `auth.timeout_ms` (default 30000) で上限が決まります — 応答しない mount では `reason=timeout` で fallthrough します (hook はブロックしません)。とはいえ NFS / SMB / FUSE / keychain mount に置くと毎 fire `timeout_ms` 分待つコストが発生するので、user 専用のローカル path を強く推奨します。
+`auth.path` の読み取りも exec 経路と同じく `auth.timeout_ms` (default 30000) で上限が決まります — 応答しない file source では `reason=timeout` で fallthrough します (hook はブロックしません)。 ネットワーク経由や仮想 file source に置くと毎 fire `timeout_ms` 分待つコストが発生するので、 user 専用のローカル path を強く推奨します。
 
-`auth.path` か cache file が group/other に read 権を持っている / 現在の UID と所有者が違う (Unix)、または `Everyone` / `BuiltinUsers` SID に直接 read を許す ACE を持っている (Windows) 場合、ccgate は `slog.Warn` を出します (拒否はしません)。これらは security nudge であり policy enforcement ではありません: Windows DACL walk は当該 well-known SID への allow ACE のみを見ており、deny ACE・継承・effective access は評価しません。推奨は Unix で `chmod 0600` のファイルを `chmod 0700` の親ディレクトリに置く、Windows で当該 user のみ読める ACL に設定する、です。
+`auth.path` か cache file が現在の user 以外でも読める / 所有者が違う場合、ccgate は `slog.Warn` を出します (拒否はしません)。これは security nudge であり policy enforcement ではなく、ファイルシステムから取得できる "world-readable" 指標だけを確認し、effective access の計算は行いません。推奨は user 専用に読めるファイルを user 専用に読めるディレクトリ配下に置く構成です。
 
 ## provider が 401/403 を返した場合の挙動
 
 provider が認証情報を拒否した場合、HTTP status のみで挙動が決まります。
 
-| HTTP status         | `auth.type=exec`                                  | `auth.type=file`                          | `auth.type=profile`                                                 | env var      |
-|---------------------|---------------------------------------------------|-------------------------------------------|---------------------------------------------------------------------|--------------|
-| 401 / 403           | `provider_auth`、**キャッシュ削除して fallthrough** | `provider_auth`、fallthrough のみ (cache 無し) | `provider_auth`、fallthrough (SDK の refresh-token loop が credential を保有、ccgate cache 無し) | **exit 1**   |
-| 5xx / 429 / network | exit 1 (従来通り)                                  | exit 1                                    | exit 1                                                              | exit 1       |
+| HTTP status         | `auth.type=exec`              | `auth.type=file`               | `auth.type=profile`            | env var |
+|---------------------|-------------------------------|--------------------------------|--------------------------------|---------|
+| 401 / 403           | cache を invalidate、 fallthrough | fallthrough (cache なし)        | fallthrough                    | exit 1  |
+| 5xx / 429 / network | exit 1                        | exit 1                         | exit 1                         | exit 1  |
 
-env 経路で 401 / 403 を exit 1 にしているのは、ccgate 側で env を rotate する手段がないためです。黙って飲み込むとユーザー側の設定ミスを隠してしまいます。
-
-## AWS `credential_process` / kubectl exec plugin との関係
-
-`provider.auth` は同じ系列の credential helper を意識した形ですが、どれも drop-in 互換ではありません。
-
-- **AWS `credential_process`** は `{"Version":1, "AccessKeyId", "SecretAccessKey", "SessionToken", "Expiration"}` を SigV4 用に出力し、AWS CLI は呼び出しのたびに helper を再実行します。ccgate は Authorization header (Bearer) に乗せる用の `{"key", "expires_at"}` を出力し、ディスクにキャッシュします。AWS 形式の helper を流用する場合は、フィールドを抜き出して JSON を整える薄いラッパーが必要です。
-- **kubectl exec credential plugin** は `command` と `args` を分けて指定し、`ExecCredential` 形式を出力します。ccgate は ccgate が plug-in する Claude Code / Codex hook の慣習に揃えて、shell-form の `command` 1 本と上記 JSON 形式を採用しています。
+`auth.type=profile` では SDK の refresh-token loop が credential を保有しているため、 ccgate に invalidate する cache はありません。 env 経路は 401 / 403 で exit 1 になります — ccgate 側で env を rotate する手段がなく、 黙って飲み込むとユーザー側の設定ミスを隠してしまうため。
 
 キャッシュさせたくない場合は `expires_at` を含めない JSON (または plain string) を返せば、helper は毎 fire 再実行されます。
 
@@ -240,13 +225,13 @@ env 経路で 401 / 403 を exit 1 にしているのは、ccgate 側で env を
 2. `ccgate <target> metrics` を実行し、**Credential failures** セクションで `(source, reason)` 別の集計を確認します。
 3. キャッシュ起因 (`cache_parse` / `cache_read` / `cache_write` の log warning) が疑わしい場合は `$XDG_CACHE_HOME/ccgate/<target>/api_key.*.json` を削除して再生成させます。隣接する `*.lock` は再利用するので残しておいてください。
 4. `expired` が出続ける場合は helper の `expires_at` と `date -u` を比較してください。helper 側の TTL ロジックや時計ズレが原因のことが多いです。
-5. 新しい環境で `command_exit` が出る場合は、まず `auth.shell` で指定したシェルが `$PATH` にあるかを確認してください。Linux / macOS の `bash` は標準で入ります。`powershell` は `pwsh` (優先) または `powershell` のどちらか一方が `$PATH` で解決できれば動きます。両方とも見つからない場合、`os/exec` の lookup エラーとして `command_exit` で現れます。
+5. 新しい環境で `command_exit` が出る場合は、まず `auth.shell` で指定したシェルが `$PATH` にあるかを確認してください。`auth.shell: 'bash'` なら `bash` が、`auth.shell: 'powershell'` なら `pwsh` (優先) または `powershell` のどちらか一方が `$PATH` で解決できる必要があります。両方とも見つからない場合、`os/exec` の lookup エラーとして `command_exit` で現れます。
 6. キャッシュを削除しても `provider_auth` が繰り返される場合は、helper 自体が provider に拒否される認証情報を生成しています。ccgate と同じシェルで手動実行してください — `bash -c "$your_command"`、`auth.shell: 'powershell'` の場合は `pwsh -Command "$your_command"` / `powershell -Command "$your_command"`。SDK に渡された stdout を直接確認します。
 7. `profile_load` (`auth.type=profile`) の場合、slog の `error_class` で原因を絞れます:
    - `profile_config_missing`: `ant auth login --profile <name>` で profile を作成。
    - `profile_config_parse` / `profile_config_invalid`: `<config_dir>/configs/<name>.json` を mode `0644` に戻すか、削除して `ant auth login --profile <name>` で作り直す。
    - `credentials_missing`: `ant auth login --profile <name>` で credentials を発行。
    - `credentials_stat_failed`: credentials file または親 dir の `os.Stat` が "missing" 以外で失敗 (権限が典型)。`<config_dir>/credentials/` を mode 0700 に戻す。
-8. `ant auth login` の後は `ant auth status` で `<config_dir>/active_config` を確認してください。Claude Code が想定外の profile を使い始めたら `rm <config_dir>/active_config` で参照先を消すか、`ant profile activate <previous-profile>` で戻します。upstream PR [anthropics/anthropic-cli#45](https://github.com/anthropics/anthropic-cli/pull/45) (`--no-activate`) がマージされれば `ant auth login` が書き換えを回避できるようになります。
+8. `ant auth login` の後は `ant auth status` で `<config_dir>/active_config` を確認してください。Claude Code が想定外の profile を使い始めたら `rm <config_dir>/active_config` で参照先を消すか、`ant profile activate <previous-profile>` で戻します。
 
 reason の網羅は [configuration.md](configuration.md#credential_unavailable-の-reason-値) にあります。

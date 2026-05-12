@@ -41,9 +41,11 @@ ccgate は Claude Code の [PermissionRequest hook](https://code.claude.com/docs
 Claude Code は標準 PermissionRequest payload を流します ([upstream hooks reference](https://code.claude.com/docs/en/hooks))。ccgate が読むのは:
 
 - `tool_name`: ユーザー操作専用 tool (`ExitPlanMode`, `AskUserQuestion`) は早期に処理を終え、常に Claude Code の確認 prompt に委ねます。ccgate はこれらを判定しません
-- `tool_input`: LLM に転送。metrics 層は `command` / `file_path` / `path` / `pattern` のみ記録
+- `tool_input`: typed object として LLM に転送。metrics 層は `command` / `file_path` / `path` / `pattern` のみ記録
+- `tool_input_raw`: 元の `tool_input` JSON をそのまま LLM に渡します。typed view から漏れる field (ネストされた MCP 引数など) もここから読めます
+- `referenced_paths`: `tool_input` から best-effort で抽出した path のリスト。対象 tool は `Read` / `Write` / `Edit` / `MultiEdit` / `Glob` / `Grep` / `Bash` のみ。それ以外の tool (MCP / user-interaction tool) では空。LLM は `tool_input_raw` から raw payload を直接読めます
 - `permission_mode`: `"plan"` のとき system prompt を plan mode rule に切替。`"bypassPermissions"` / `"dontAsk"` は ccgate を fallthrough で短絡
-- `cwd`: git context builder (`gitutil.RepoRoot`, branch, worktree) に渡す
+- `cwd`: git context builder (`gitutil.RepoRoot`, branch, worktree) に渡す。working tree の dirty/clean は渡しません
 - `transcript_path`: recent-transcript loader が末尾 N 件を読み、ユーザー意図 context として LLM に渡す
 - `permission_suggestions`: LLM に背景情報として転送
 - `settings_permissions`: ccgate が `~/.claude/settings.json` を別途読み、ユーザー定義の static allow / deny / ask パターンを LLM に hint として渡す (whitelist 必須ではない、後述「settings.json パターンが whitelist 要件ではない理由」参照)
@@ -58,7 +60,7 @@ Claude Code は標準 PermissionRequest payload を流します ([upstream hooks
 
 allow guidance は plan mode で write 操作を allow に promote しません。deny guidance は依然として有効で、read-only 操作も override できます。
 
-完全に prompt-driven なので hard guarantee なし。[#37](https://github.com/tak848/ccgate/issues/37) で追跡。
+完全に prompt-driven なので hard guarantee なし。
 
 ## `recent_transcript` の使われ方
 
@@ -67,7 +69,7 @@ allow guidance は plan mode で write 操作を allow に promote しません�
 - ユーザーが直近の transcript で当該操作を明示的に依頼していた場合、`deny` より `allow` / `fallthrough` を優先せよ
 - ユーザーの明示依頼は `deny` を `fallthrough` に引き上げられるが、`allow` までは引き上げられない (deny guidance は依然として勝つ)
 
-これが LLM に「deny ルールに該当するが、ユーザーが明確に依頼してるので、refuse せず Claude Code の prompt に判断を委ねる」と言わせる唯一の signal です。Codex には現状 transcript field が無いので、この lever は Claude のみ。
+これが LLM に「deny ルールに該当するが、ユーザーが明確に依頼してるので、refuse せず Claude Code の prompt に判断を委ねる」と言わせる唯一の signal です。
 
 ## `settings.json` パターンが whitelist 要件ではない理由
 
@@ -79,22 +81,20 @@ allow guidance は plan mode で write 操作を allow に promote しません�
 
 → `settings_permissions.allow` を whitelist 要件として扱うと hook の通常動作が壊れます。ccgate はあくまでユーザー嗜好のヒントとしてのみ使い、`settings_permissions.allow` に存在しないリクエストでも LLM が allow できる設計です。
 
-## Codex CLI との挙動差分
+## Claude 固有の HookInput / state リファレンス
 
-| 観点                                | Claude Code                                        | Codex CLI                                                                                  |
-|-------------------------------------|----------------------------------------------------|--------------------------------------------------------------------------------------------|
-| Tool surface                        | `Bash`, `Read`, `Write`, `Edit`, `Glob`, MCP, ...  | `Bash`, `apply_patch`, MCP, ...                                                             |
-| `permission_mode`                   | `default` / `acceptEdits` / `plan` / `bypassPermissions` / `dontAsk` | 現状 deliver されない                                                |
-| `recent_transcript`                 | LLM に転送                                          | deliver されない。LLM は `tool_name` + `tool_input` + `cwd` のみで判断                       |
-| `settings_permissions`              | 背景 hint として転送                                | 等価物なし。`~/.codex/config.toml` は取り込まない                                            |
-| `permission_suggestions`            | 転送                                                | deliver されない                                                                              |
-| State path                          | `$XDG_STATE_HOME/ccgate/claude/`                   | `$XDG_STATE_HOME/ccgate/codex/`                                                              |
-| Project-local config                | `{repo_root}/.claude/ccgate.local.jsonnet`         | `{repo_root}/.codex/ccgate.local.jsonnet`                                                    |
+| 観点                              | 値                                                                                                                                       |
+|-----------------------------------|------------------------------------------------------------------------------------------------------------------------------------------|
+| Tool surface                      | `Bash`, `Read`, `Write`, `Edit`, `MultiEdit`, `Glob`, `Grep`, MCP, ユーザー操作 tool (`ExitPlanMode`, `AskUserQuestion`)                  |
+| `permission_mode` の値            | `default` / `acceptEdits` / `plan` / `bypassPermissions` / `dontAsk`。`plan` は system prompt を切替、`bypassPermissions` / `dontAsk` は fallthrough |
+| `recent_transcript`               | `transcript_path` から読み込み、ユーザー意図 context として LLM に渡す (上の「`recent_transcript` の使われ方」参照)                       |
+| `settings_permissions`            | hint として LLM に渡す (上の「`settings.json` パターンが whitelist 要件ではない理由」参照)                                                |
+| `permission_suggestions`          | そのまま LLM に転送                                                                                                                       |
+| State path                        | `$XDG_STATE_HOME/ccgate/claude/` (未設定なら `~/.local/state/ccgate/claude/`)                                                              |
+| Project-local config              | `{repo_root}/.claude/ccgate.local.jsonnet` (Git 未追跡のみ)                                                                                |
 
-Codex 側の詳細は [codex.md](codex.md) を参照。
+## 制約
 
-## 既知の制約
-
-- **Plan mode はプロンプト依存** ([#37](https://github.com/tak848/ccgate/issues/37))
+- **Plan mode は prompt-only**: `permission_mode == "plan"` では (a) 実装系 write を拒絶する判定と (b) 明示的な allow guidance なしの read-only クエリ許可の両方を、LLM とシステムプロンプトの指示文に委ねている。どちらの方向にも誤判定の余地あり
 - **embedded default の特定ルールだけを部分削除する手段なし**: layer は list を **完全置換** (`allow: [...]`) するか **末尾追加** (`append_allow: [...]`) するかのどちらかで、embedded の中の 1 ルールだけ消したい場合は残り全部を `allow:` / `deny:` に書き直すしかない
-- **`settings.json` の deny パターンに対する deterministic short-circuit なし**: ccgate は現状すべての Claude Code PermissionRequest を LLM に通します。literal な `settings.json` deny match で early exit する deterministic prefilter は将来の最適化候補で、現時点の挙動ではありません
+- **`settings.json` の deny パターンに対する deterministic short-circuit なし**: ccgate はすべての Claude Code PermissionRequest を LLM に通す。literal な `settings.json` deny match で ccgate を early exit する経路はない

@@ -2,14 +2,15 @@
   ['$schema']: 'https://raw.githubusercontent.com/tak848/ccgate/main/schemas/claude.schema.json',
 
   // Default safety rules for ccgate.
-  // Inspired by Claude Code Auto Mode defaults.
+  // These rules are natural-language guidance for the LLM, not deterministic matchers.
+  // The LLM is the primary judge; allow/deny lists shape its decision boundary.
+  //
   // To customize, write either:
   //   - ~/.claude/ccgate.jsonnet (global), or
   //   - <repo>/.claude/ccgate.local.jsonnet (project-local, untracked-only)
-  // and at either layer use append_* to add on top of what's
-  // inherited (picks up future ccgate quality updates automatically),
-  // or allow / deny / environment to replace the inherited list
-  // wholesale. See the README "Setup -- Claude Code" for examples.
+  // and at either layer use append_* to add entries on top of the
+  // embedded list, or allow / deny / environment to replace the list
+  // wholesale. See https://github.com/tak848/ccgate#rule-tuning for examples.
 
   provider: {
     name: 'anthropic',
@@ -18,7 +19,7 @@
     //   name: 'openai',  model: 'gpt-4o-mini',        (env: OPENAI_API_KEY)
     //   name: 'gemini',  model: 'gemini-2.0-flash',    (env: GEMINI_API_KEY)
     // base_url:  route through an OpenAI-/Anthropic-compatible proxy.
-    //            See README "Routing through a compatible proxy".
+    //            See https://github.com/tak848/ccgate/blob/main/docs/providers.md#base_url-and-compatible-proxies
     // timeout_ms: API timeout in ms, default 20000.
     // auth: short-lived / rotating credentials. Discriminated
     //   by auth.type:
@@ -27,8 +28,8 @@
     //     auth: { type: 'profile', profile: 'ccgate' }                           // anthropic-only; reads `ant auth login --profile ccgate` credentials, SDK refreshes
     //   The provider block is replaced atomically across config layers,
     //   so a project-local config that restates `provider` must repeat
-    //   the auth block. See docs/api-key-helper.md for the full helper
-    //   contract, examples, and recovery checklist.
+    //   the auth block. See https://github.com/tak848/ccgate/blob/main/docs/api-key-helper.md
+    //   for the full helper contract, examples, and recovery checklist.
   },
 
   // What to do when the LLM is uncertain (returns "fallthrough"):
