@@ -214,7 +214,7 @@ cache fingerprint には **カレントディレクトリもホスト名も含�
 
 `auth.path` の読み取りも exec 経路と同じく `auth.timeout_ms` (default 30000) で上限が決まります — 応答しない mount では `reason=timeout` で fallthrough します (hook はブロックしません)。とはいえ NFS / SMB / FUSE / keychain mount に置くと毎 fire `timeout_ms` 分待つコストが発生するので、user 専用のローカル path を強く推奨します。
 
-`auth.path` か cache file が group/other に read 権を持っている / 現在の UID と所有者が違う (Unix)、または `Everyone` / `BuiltinUsers` SID に直接 read を許す ACE を持っている (Windows) 場合、ccgate は `slog.Warn` を出します (拒否はしません)。これらは security nudge であり policy enforcement ではありません: Windows DACL walk は当該 well-known SID への allow ACE のみを見ており、deny ACE・継承・effective access は評価しません。推奨は Unix で `chmod 0600` のファイルを `chmod 0700` の親ディレクトリに置く、Windows で当該 user のみ読める ACL に設定する、です。
+`auth.path` か cache file が現在の user 以外でも読める / 所有者が違う場合、ccgate は `slog.Warn` を出します (拒否はしません)。これは security nudge であり policy enforcement ではなく、ファイルシステムから取得できる "world-readable" 指標だけを確認し、effective access の計算は行いません。推奨は user 専用に読めるファイルを user 専用に読めるディレクトリ配下に置く構成です (POSIX 系なら `0600` のファイルを `0700` の親ディレクトリの中に置く)。
 
 ## provider が 401/403 を返した場合の挙動
 
@@ -227,13 +227,6 @@ provider が認証情報を拒否した場合、HTTP status のみで挙動が�
 
 env 経路で 401 / 403 を exit 1 にしているのは、ccgate 側で env を rotate する手段がないためです。黙って飲み込むとユーザー側の設定ミスを隠してしまいます。
 
-## AWS `credential_process` / kubectl exec plugin との関係
-
-`provider.auth` は同じ系列の credential helper を意識した形ですが、どれも drop-in 互換ではありません。
-
-- **AWS `credential_process`** は `{"Version":1, "AccessKeyId", "SecretAccessKey", "SessionToken", "Expiration"}` を SigV4 用に出力し、AWS CLI は呼び出しのたびに helper を再実行します。ccgate は Authorization header (Bearer) に乗せる用の `{"key", "expires_at"}` を出力し、ディスクにキャッシュします。AWS 形式の helper を流用する場合は、フィールドを抜き出して JSON を整える薄いラッパーが必要です。
-- **kubectl exec credential plugin** は `command` と `args` を分けて指定し、`ExecCredential` 形式を出力します。ccgate は ccgate が plug-in する Claude Code / Codex hook の慣習に揃えて、shell-form の `command` 1 本と上記 JSON 形式を採用しています。
-
 キャッシュさせたくない場合は `expires_at` を含めない JSON (または plain string) を返せば、helper は毎 fire 再実行されます。
 
 ## 障害時の復旧チェックリスト
@@ -242,7 +235,7 @@ env 経路で 401 / 403 を exit 1 にしているのは、ccgate 側で env を
 2. `ccgate <target> metrics` を実行し、**Credential failures** セクションで `(source, reason)` 別の集計を確認します。
 3. キャッシュ起因 (`cache_parse` / `cache_read` / `cache_write` の log warning) が疑わしい場合は `$XDG_CACHE_HOME/ccgate/<target>/api_key.*.json` を削除して再生成させます。隣接する `*.lock` は再利用するので残しておいてください。
 4. `expired` が出続ける場合は helper の `expires_at` と `date -u` を比較してください。helper 側の TTL ロジックや時計ズレが原因のことが多いです。
-5. 新しい環境で `command_exit` が出る場合は、まず `auth.shell` で指定したシェルが `$PATH` にあるかを確認してください。Linux / macOS の `bash` は標準で入ります。`powershell` は `pwsh` (優先) または `powershell` のどちらか一方が `$PATH` で解決できれば動きます。両方とも見つからない場合、`os/exec` の lookup エラーとして `command_exit` で現れます。
+5. 新しい環境で `command_exit` が出る場合は、まず `auth.shell` で指定したシェルが `$PATH` にあるかを確認してください。`auth.shell: 'bash'` なら `bash` が、`auth.shell: 'powershell'` なら `pwsh` (優先) または `powershell` のどちらか一方が `$PATH` で解決できる必要があります。両方とも見つからない場合、`os/exec` の lookup エラーとして `command_exit` で現れます。
 6. キャッシュを削除しても `provider_auth` が繰り返される場合は、helper 自体が provider に拒否される認証情報を生成しています。ccgate と同じシェルで手動実行してください — `bash -c "$your_command"`、`auth.shell: 'powershell'` の場合は `pwsh -Command "$your_command"` / `powershell -Command "$your_command"`。SDK に渡された stdout を直接確認します。
 7. `profile_load` (`auth.type=profile`) の場合、slog の `error_class` で原因を絞れます:
    - `profile_config_missing`: `ant auth login --profile <name>` で profile を作成。

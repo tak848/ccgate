@@ -322,8 +322,6 @@ Run `ccgate <target> metrics --details N` after a day or two of real use. The "T
 
 ## Provider と credential
 
-> The Japanese version of this section uses the title "Provider と credential" because retrieval engines look for both English and Japanese terms. The English README keeps the same section anchored as `#provider-と-credential`. (This is a docs-tooling note, not a behaviour note.)
-
 ### Switching to OpenAI / Gemini
 
 Set `provider.name` (and optionally `provider.model`) in any layer:

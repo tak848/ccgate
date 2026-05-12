@@ -200,7 +200,7 @@ target ごとの完全な入力一覧は [docs/claude.md](claude.md) / [docs/cod
 
 プロジェクトローカル設定は **Git に追跡されていないファイルのみ** 読み込まれます。
 
-`disable_load_main_worktree_local_config: true` を (1) または (2) に書けば (3) をスキップします。この flag は (1) / (2) でのみ有効で、(3) / (4) に書いても無視されます。詳細は [docs/configuration.md](configuration.md#where-ccgate-looks-for-config) を参照。
+`disable_load_main_worktree_local_config: true` を (1) または (2) に書けば (3) をスキップします。この flag は (1) / (2) でのみ有効で、(3) / (4) に書いても無視されます。詳細は [docs/configuration.md](configuration.md#ccgate-が-config-を探す場所) を参照。
 
 ### 設定項目
 
@@ -218,7 +218,7 @@ target ごとの完全な入力一覧は [docs/claude.md](claude.md) / [docs/cod
 | `metrics_disabled`       | bool                              | `false`                                                                         | メトリクス収集を完全に無効化                                                                               |
 | `metrics_max_size`       | int                               | `2097152`                                                                         | ローテーション閾値 (bytes, デフォルト 2MB)。`0` = ローテーションなし                                       |
 | `fallthrough_strategy`   | `"ask"` / `"allow"` / `"deny"`    | `"ask"`                                                                         | LLM が判定に迷った (`fallthrough`) 際の扱い。[Fallthrough strategy](#fallthrough-strategy) 参照 |
-| `disable_load_main_worktree_local_config` | bool | `false`                                                                         | linked git worktree で main worktree 側の `ccgate.local.jsonnet` を読むのをスキップ。詳細は [docs/configuration.md](configuration.md#where-ccgate-looks-for-config) |
+| `disable_load_main_worktree_local_config` | bool | `false`                                                                         | linked git worktree で main worktree 側の `ccgate.local.jsonnet` を読むのをスキップ。詳細は [docs/configuration.md](configuration.md#ccgate-が-config-を探す場所) |
 | `allow`                  | string[]                          | `[]`                                                                            | 許可ルール。設定すると前の layer から引き継いだ list を **完全置換**                                       |
 | `deny`                   | string[]                          | `[]`                                                                            | 拒否ルール (mandatory)。`deny_message:` ヒント対応。`allow` と同じく置換                                   |
 | `environment`            | string[]                          | `[]`                                                                            | LLM に渡すコンテキスト (信頼レベル、ポリシー等)。`allow` と同じく置換                                       |

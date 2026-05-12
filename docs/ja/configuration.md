@@ -129,7 +129,7 @@ ccgate codex  metrics --days 7         # codex 側も同 shape
 
 `ft_kind` は LLM (またはランタイム) が fallthrough を返したときに埋まり、どの fallback path が発火したかを示します (`llm`, `api_unusable`, `no_apikey`, `credential_unavailable`, `unknown_provider`, `bypass`, `dontask`, `user_interaction`)。`forced=true` は `fallthrough_strategy` が LLM `fallthrough` を `decision` に promote したことを意味します。
 
-`credential_source` は `ft_kind=credential_unavailable` のときだけ埋まります。credential 解決のどの段階で起きた / 失敗したかを示し、現状は `exec` / `file` / `cache` / `lock` (keystore 経由の `auth.type=exec` / `auth.type=file`) に加え `profile` (Anthropic 専用 `auth.type=profile`、解決は anthropic-sdk-go に委譲し keystore は通らない) を取ります。値の集合は open: 将来 Windows ネイティブ backend など新しい credential 経路が増えると値も増えうるので、この field を parse する側は固定 enum で validation せず、未知の短い文字列を許容してください。
+`credential_source` は `ft_kind=credential_unavailable` のときだけ埋まります。credential 解決のどの段階で起きた / 失敗したかを示し、現状は `exec` / `file` / `cache` / `lock` (keystore 経由の `auth.type=exec` / `auth.type=file`) に加え `profile` (Anthropic 専用 `auth.type=profile`、解決は anthropic-sdk-go に委譲し keystore は通らない) を取ります。値の集合は open: 新しい credential 経路が追加されれば値も増えうるので、この field を parse する側は固定 enum で validation せず、未知の短い文字列を許容してください。
 
 `reason` の意味は `ft_kind` で文脈が変わります:
 

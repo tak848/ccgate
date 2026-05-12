@@ -214,7 +214,7 @@ Leaving `cache_key` empty is the explicit "share with anything that has the same
 
 `auth.path` reads are bounded by `auth.timeout_ms` (default 30000) just like the exec branch — a stalled mount surfaces as `reason=timeout` instead of blocking the hook. Local regular files are still strongly recommended (NFS / SMB / FUSE / keychain mounts will time out reliably but each fire pays a `timeout_ms` wait); a per-user local path is the cheapest path.
 
-ccgate emits a `slog.Warn` when `auth.path` *or* the cache file has any group/other read bit set, or is owned by a different UID than the current user (Unix), or grants direct read access to the `Everyone` / `BuiltinUsers` SIDs (Windows). Both checks are best-effort security nudges, not policy enforcement: the Windows DACL walk only inspects allow ACEs to those well-known SIDs and does not compute effective access, deny ACEs, or inheritance. The recommended setup is `chmod 0600` on Unix inside a `chmod 0700` parent, or a per-user-only ACL on Windows.
+ccgate emits a `slog.Warn` when `auth.path` *or* the cache file is readable by anyone other than the current user, or is owned by a different user. The check is a best-effort security nudge, not policy enforcement: it inspects only the well-known "world-readable" indicators reachable from the filesystem and does not compute effective access. The recommended setup is to keep the file user-only readable inside a user-only directory (e.g. `0600` file inside a `0700` parent on POSIX-style filesystems).
 
 ## Provider 401/403 behaviour
 
@@ -227,13 +227,6 @@ When the provider rejects the credential ccgate just used, the HTTP status alone
 
 The env-var path keeps the existing exit-1 behaviour on 401/403 because ccgate cannot rotate env vars; swallowing the rejection would hide a user-side configuration error.
 
-## Relationship to AWS `credential_process` and kubectl exec credential plugins
-
-`provider.auth` is shaped after the same family of credential helpers, but it is not a drop-in for any of them:
-
-- **AWS `credential_process`** prints `{"Version":1, "AccessKeyId", "SecretAccessKey", "SessionToken", "Expiration"}` for SigV4 callers, and the AWS CLI re-execs the helper every call. ccgate prints `{"key", "expires_at"}` for an Authorization-header bearer, and memoizes to disk. An AWS-style helper needs a thin adapter that picks the right field and reshapes the JSON.
-- **kubectl exec credential plugin** uses a separate `command` + `args` pair and prints an `ExecCredential` shape. ccgate uses a single shell-form `command` (matching the Claude Code / Codex hook conventions ccgate plugs into) and the JSON shape above.
-
 To opt out of caching, return JSON without `expires_at` (or plain string) and the helper re-runs every fire.
 
 ## Recovery checklist
@@ -242,7 +235,7 @@ To opt out of caching, return JSON without `expires_at` (or plain string) and th
 2. Run `ccgate <target> metrics` and check the **Credential failures** section, which groups failures by `(source, reason)`.
 3. For `cache_parse` / `cache_read` / `cache_write` (log-only warnings), remove `$XDG_CACHE_HOME/ccgate/<target>/api_key.*.json` to force a refresh. Leave the sibling `*.lock` files alone.
 4. For `expired`, compare the helper's `expires_at` with `date -u`. Clock skew or a broken TTL inside the helper is the usual cause.
-5. For `command_exit` on a fresh setup, check first whether the configured `auth.shell` binary is on `$PATH`. `bash` is universal on Linux / macOS; for `powershell`, at least one of `pwsh` (preferred) or `powershell` must resolve via `$PATH`. When ccgate cannot find the shell at all, the failure surfaces as `command_exit` from `os/exec`'s lookup error.
+5. For `command_exit` on a fresh setup, check whether the configured `auth.shell` binary is on `$PATH`. For `auth.shell: 'bash'`, `bash` must resolve; for `auth.shell: 'powershell'`, at least one of `pwsh` (preferred) or `powershell` must resolve. When ccgate cannot find the shell, the failure surfaces as `command_exit` from `os/exec`'s lookup error.
 6. For repeated `provider_auth` even after cache invalidation, the helper itself is producing a credential the provider rejects. Re-run the helper manually with the same shell ccgate would use — `bash -c "$your_command"`, or `pwsh -Command "$your_command"` / `powershell -Command "$your_command"` for `auth.shell: 'powershell'` — and inspect the stdout that reached the SDK.
 7. For `profile_load` (`auth.type=profile`), the slog `error_class` field narrows the cause:
    - `profile_config_missing`: run `ant auth login --profile <name>` to create the profile.
