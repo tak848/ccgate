@@ -156,13 +156,15 @@ ccgate の `allow` / `deny` / `environment` はいずれも **自然言語の文
 flowchart TD
   A["Claude Code / Codex CLI"] --> B{"上流側の静的ルールで解決できる?"}
   B -->|Yes| C["そのまま実行 / 拒否"]
-  B -->|No| D["PermissionRequest hook"]
+  B -->|No| D["PermissionRequest hook<br/>(stdin: HookInput JSON)"]
   D --> E["ccgate"]
-  E --> F["tool_input / git context / jsonnet rules"]
-  F --> G{"LLM (default: Haiku) が判定"}
+  E --> F1["jsonnet config を読み込む<br/>embedded defaults + global + project-local"]
+  E --> F2["context を組み立てる<br/>git context, referenced_paths,<br/>recent_transcript (Claude のみ)"]
+  F1 --> G{"LLM (default: Haiku) が<br/>structured output で判定"}
+  F2 --> G
   G -->|allow| H["実行"]
-  G -->|deny| I["理由付きで拒否"]
-  G -->|fallthrough| J["ユーザー確認へ戻す"]
+  G -->|deny| I["deny_message 付きで拒否"]
+  G -->|fallthrough| J["上流の確認 prompt に戻す"]
 ```
 
 ccgate が LLM に渡す情報 (代表項目):

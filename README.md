@@ -156,13 +156,15 @@ Evaluation flow:
 flowchart TD
   A["Claude Code / Codex CLI"] --> B{"Resolved by the upstream tool's static rules?"}
   B -->|Yes| C["Run / refuse upstream"]
-  B -->|No| D["PermissionRequest hook"]
+  B -->|No| D["PermissionRequest hook<br/>(stdin: HookInput JSON)"]
   D --> E["ccgate"]
-  E --> F["tool_input / git context / jsonnet rules"]
-  F --> G{"LLM (default: Haiku) judges"}
+  E --> F1["Load jsonnet config<br/>embedded defaults + global + project-local"]
+  E --> F2["Build context<br/>git context, referenced_paths,<br/>recent_transcript (Claude only)"]
+  F1 --> G{"LLM (default: Haiku) judges<br/>via structured output"}
+  F2 --> G
   G -->|allow| H["Run"]
-  G -->|deny| I["Refuse with reason"]
-  G -->|fallthrough| J["Back to user confirmation"]
+  G -->|deny| I["Refuse with deny_message"]
+  G -->|fallthrough| J["Back to the upstream prompt"]
 ```
 
 What ccgate puts in front of the LLM (representative fields):
