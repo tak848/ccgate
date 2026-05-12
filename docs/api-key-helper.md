@@ -249,6 +249,6 @@ To opt out of caching, return JSON without `expires_at` (or plain string) and th
    - `profile_config_parse` / `profile_config_invalid`: restore `<config_dir>/configs/<name>.json` to mode `0644`, or delete it and re-run `ant auth login --profile <name>`.
    - `credentials_missing`: run `ant auth login --profile <name>` to publish credentials.
    - `credentials_stat_failed`: the credentials file or its parent dir failed `os.Stat` for a reason other than "missing" (typically permissions). Restore mode 0700 on `<config_dir>/credentials/`.
-8. After any `ant auth login`, confirm `<config_dir>/active_config` with `ant auth status`. If Claude Code starts using an unexpected profile, either `rm <config_dir>/active_config` (clears the pointer) or `ant profile activate <previous-profile>`. Upstream PR [anthropics/anthropic-cli#45](https://github.com/anthropics/anthropic-cli/pull/45) (`--no-activate`) will let `ant auth login` skip the retarget once it lands.
+8. After any `ant auth login`, confirm `<config_dir>/active_config` with `ant auth status`. If Claude Code starts using an unexpected profile, either `rm <config_dir>/active_config` (clears the pointer) or `ant profile activate <previous-profile>`.
 
 The full reason list is in [docs/configuration.md](configuration.md#reason-values-for-credential_unavailable).

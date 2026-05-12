@@ -249,6 +249,6 @@ env 経路で 401 / 403 を exit 1 にしているのは、ccgate 側で env を
    - `profile_config_parse` / `profile_config_invalid`: `<config_dir>/configs/<name>.json` を mode `0644` に戻すか、削除して `ant auth login --profile <name>` で作り直す。
    - `credentials_missing`: `ant auth login --profile <name>` で credentials を発行。
    - `credentials_stat_failed`: credentials file または親 dir の `os.Stat` が "missing" 以外で失敗 (権限が典型)。`<config_dir>/credentials/` を mode 0700 に戻す。
-8. `ant auth login` の後は `ant auth status` で `<config_dir>/active_config` を確認してください。Claude Code が想定外の profile を使い始めたら `rm <config_dir>/active_config` で参照先を消すか、`ant profile activate <previous-profile>` で戻します。upstream PR [anthropics/anthropic-cli#45](https://github.com/anthropics/anthropic-cli/pull/45) (`--no-activate`) がマージされれば `ant auth login` が書き換えを回避できるようになります。
+8. `ant auth login` の後は `ant auth status` で `<config_dir>/active_config` を確認してください。Claude Code が想定外の profile を使い始めたら `rm <config_dir>/active_config` で参照先を消すか、`ant profile activate <previous-profile>` で戻します。
 
 reason の網羅は [configuration.md](configuration.md#credential_unavailable-の-reason-値) にあります。

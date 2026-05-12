@@ -104,7 +104,7 @@ go install github.com/tak848/ccgate@latest
 ## クイックスタート — Codex CLI
 
 > [!NOTE]
-> Codex hooks 自体が upstream で experimental 扱いで、`[features] codex_hooks = true` flag 配下にあり、schema が今後変わる可能性があります。特定 field に依存する前に [Codex hooks docs](https://developers.openai.com/codex/hooks) を一次情報として確認してください。
+> Codex hooks は upstream の `[features] codex_hooks = true` flag 配下にあります。特定 field に依存する前に [Codex hooks docs](https://developers.openai.com/codex/hooks) を一次情報として確認してください。
 
 ### 1. Codex hook として登録
 
@@ -235,7 +235,7 @@ ccgate は組み込みデフォルトだけで安全に動きます。この章�
 ### 何を変えられるか
 
 - `allow` / `deny` / `environment` (string list) — 値を設定すると前 layer からの引き継ぎを **置換**。
-- `append_allow` / `append_deny` / `append_environment` — 前 layer からの引き継ぎに **追加**。ccgate が今後リリースで品質改善した defaults もそのまま流れ込んでくる。
+- `append_allow` / `append_deny` / `append_environment` — 前 layer からの引き継ぎに **追加**。ccgate のリリースで embedded defaults が更新されると、upgrade 時に自動で流れ込んでくる。
 
 ### どこに書くか
 
@@ -255,7 +255,7 @@ ccgate codex  init -p > .codex/ccgate.local.jsonnet   # Codex も同じ
 
 ### 置換 vs 追加の判断
 
-`append_*` は前 layer からの引き継ぎを残して追加するので、ccgate が今後リリースで defaults を改善したぶんは自動で取り込まれます。`allow:` / `deny:` で丸ごと置き換える場合は、新 defaults に対する突き合わせを毎リリース自分でやる必要があります (`ccgate <target> init` の出力と diff を取る)。
+`append_*` は前 layer からの引き継ぎを残して追加するので、ccgate のリリースで embedded defaults が更新された分は upgrade 時に自動で取り込まれます。`allow:` / `deny:` で丸ごと置き換える場合は、新 defaults に対する突き合わせを毎リリース自分でやる必要があります (`ccgate <target> init` の出力と diff を取る)。
 
 ### ルールの書き方
 

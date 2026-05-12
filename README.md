@@ -104,7 +104,7 @@ That's it — ccgate is now running with its embedded defaults. To customize wha
 ## Quick start — Codex CLI
 
 > [!NOTE]
-> Codex hooks are still experimental upstream and live behind the `[features] codex_hooks = true` flag; their schema may change. Treat the [Codex hooks docs](https://developers.openai.com/codex/hooks) as the source of truth before relying on a specific field.
+> Codex hooks live behind the `[features] codex_hooks = true` flag upstream. Treat the [Codex hooks docs](https://developers.openai.com/codex/hooks) as the source of truth before relying on a specific field.
 
 ### 1. Register as a Codex hook
 
@@ -235,7 +235,7 @@ ccgate already runs safely on its embedded defaults. This section covers how to 
 ### What you can change
 
 - `allow` / `deny` / `environment` (string lists) — **replace** the inherited list when set.
-- `append_allow` / `append_deny` / `append_environment` — **append** entries on top of the inherited list. Future ccgate releases that improve the embedded defaults flow in automatically.
+- `append_allow` / `append_deny` / `append_environment` — **append** entries on top of the inherited list. Embedded-default updates ccgate ships in a release flow in automatically when you upgrade.
 
 ### Where to put it
 
@@ -255,7 +255,7 @@ ccgate codex  init -p > .codex/ccgate.local.jsonnet   # Same for Codex.
 
 ### Replace vs append
 
-`append_*` keeps the inherited list and adds to it — quality improvements ccgate ships in future releases land automatically. `allow:` / `deny:` replaces the inherited list wholesale; you take ownership of keeping your override in line with new embedded defaults, so re-check against `ccgate <target> init` output on each release.
+`append_*` keeps the inherited list and adds to it — embedded-default updates ccgate ships in a release land automatically when you upgrade. `allow:` / `deny:` replaces the inherited list wholesale; you take ownership of keeping your override in line with new embedded defaults, so re-check against `ccgate <target> init` output on each release.
 
 ### Writing rules
 
