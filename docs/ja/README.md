@@ -96,7 +96,7 @@ ccgate は default で Anthropic の Claude Haiku を呼びます。 `CCGATE_ANT
 ## クイックスタート — Codex CLI
 
 > [!NOTE]
-> Codex hooks は `~/.codex/config.toml` に `[features] codex_hooks = true` の設定が必要です。詳細は [docs/codex.md](codex.md) を参照。
+> Codex hooks は `~/.codex/config.toml` に `[features] codex_hooks = true` の設定が必要です。詳細は [docs/codex-cli.md](codex-cli.md) を参照。
 
 ### 1. Codex hook として登録
 
@@ -138,7 +138,7 @@ command = "ccgate codex"
 statusMessage = "ccgate evaluating request"
 ```
 
-lookup 順序、 project-local overlay、 in-tree dev build 用の `go run` レシピは [docs/codex.md](codex.md) を参照。
+lookup 順序、 project-local overlay、 in-tree dev build 用の `go run` レシピは [docs/codex-cli.md](codex-cli.md) を参照。
 
 ### 2. API キー
 
@@ -174,7 +174,7 @@ ccgate が LLM に渡す情報 (代表項目):
 - `referenced_paths` — `tool_input` から best-effort で抽出した path リスト。対象 tool は `Read` / `Write` / `Edit` / `MultiEdit` / `Glob` / `Grep` / `Bash` のみ。`apply_patch` (Codex) や MCP tool では空で、LLM は `tool_input_raw` の hunk / args を直接読む。
 - Claude のみ: `permission_mode` (`"plan"` で system prompt が plan mode rule に切替), `permission_suggestions`, `recent_transcript`, `settings_permissions` hint (whitelist ではなく hint 扱い)。
 
-target ごとの完全な入力一覧は [docs/claude.md](claude.md) / [docs/codex.md](codex.md) を参照してください。
+target ごとの完全な入力一覧は [docs/claude-code.md](claude-code.md) / [docs/codex-cli.md](codex-cli.md) を参照してください。
 
 ## 設定
 
@@ -266,8 +266,8 @@ ccgate codex  metrics --json          # JSON 出力 (機械可読)
 - [rule-tuning.md](rule-tuning.md) — ルールチューニングの入り口 (defaults 確認、 append vs 置換、 3 パターン例、 iteration workflow)
 - [configuration.md](configuration.md) — 設定 layering、 全フィールド reference、 fallthrough_strategy 詳細、 メトリクス出力
 - [api-key-helper.md](api-key-helper.md) — `provider.auth` リファレンス (helper の契約、 キャッシュ、 401/403 挙動、 復旧手順)
-- [claude.md](claude.md) — Claude Code 固有の HookInput
-- [codex.md](codex.md) — Codex CLI 固有の HookInput
+- [claude-code.md](claude-code.md) — Claude Code 固有の HookInput
+- [codex-cli.md](codex-cli.md) — Codex CLI 固有の HookInput
 - [English README](../../README.md)
 
 ## CLI リファレンス

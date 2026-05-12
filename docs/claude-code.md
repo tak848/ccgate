@@ -1,6 +1,6 @@
 # ccgate -- Claude Code
 
-[日本語版 (docs/ja/claude.md)](ja/claude.md)
+[日本語版 (docs/ja/claude-code.md)](ja/claude-code.md)
 
 Claude-Code-specific notes for the `ccgate claude` hook.
 

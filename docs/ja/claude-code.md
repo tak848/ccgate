@@ -1,6 +1,6 @@
 # ccgate -- Claude Code
 
-[English version (docs/claude.md)](../claude.md)
+[English version (docs/claude-code.md)](../claude-code.md)
 
 `ccgate claude` フック専用のドキュメント。
 

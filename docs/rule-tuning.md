@@ -113,5 +113,5 @@ Metrics column meanings, the JSON output schema, and the credential-failure aggr
 
 - [docs/configuration.md](configuration.md) — Layer / merge rules / full field reference / metrics / fallthrough_strategy details
 - [docs/api-key-helper.md](api-key-helper.md) — `provider.auth` (refreshable credentials, helper contract, 401/403 behaviour, recovery checklist)
-- [docs/claude.md](claude.md) — Claude Code-specific HookInput fields
-- [docs/codex.md](codex.md) — Codex CLI-specific HookInput fields
+- [docs/claude-code.md](claude-code.md) — Claude Code-specific HookInput fields
+- [docs/codex-cli.md](codex-cli.md) — Codex CLI-specific HookInput fields

@@ -1,6 +1,6 @@
 # ccgate -- OpenAI Codex CLI
 
-[English version (docs/codex.md)](../codex.md)
+[English version (docs/codex-cli.md)](../codex-cli.md)
 
 `ccgate codex` フック専用のドキュメント。
 
