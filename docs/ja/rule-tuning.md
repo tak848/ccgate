@@ -81,7 +81,7 @@ Codex (`apply_patch` の hunk target を `tool_input_raw` から LLM が読む):
 
 ```jsonnet
 {
-  // embedded defaults を採用せず自分で list を書く形 (defaults は effect しない)。
+  // embedded defaults を採用せず自分で list を書く形 (embedded defaults は有効にならない)。
   allow: [
     'Read-only filesystem inspection inside the repository.',
     'Local development commands using project scripts (build, test, lint).',
