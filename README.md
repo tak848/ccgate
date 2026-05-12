@@ -20,7 +20,7 @@ Supported targets:
 
 ### mise (recommended)
 
-Requires mise `2026.4.20` or later. Earlier releases bundle an aqua registry snapshot from before ccgate was added.
+Requires mise `2026.4.20` or later.
 
 ```bash
 mise use -g aqua:tak848/ccgate
@@ -36,7 +36,7 @@ If you want to keep this no-install style for the hook itself, set the hook `com
 
 ### aqua
 
-Via the [aqua](https://aquaproj.github.io/) standard registry (requires registry `v4.498.0` or later — ccgate's first registered version). In an aqua-managed project (run `aqua init` first if you don't have an `aqua.yaml` yet):
+Via the [aqua](https://aquaproj.github.io/) standard registry (requires registry `v4.498.0` or later). In an aqua-managed project (run `aqua init` first if you don't have an `aqua.yaml` yet):
 
 ```bash
 aqua g -i tak848/ccgate
@@ -98,7 +98,7 @@ That's it — ccgate is now running with its embedded defaults. To customize wha
 ## Quick start — Codex CLI
 
 > [!NOTE]
-> Codex hooks live behind the `[features] codex_hooks = true` flag upstream. Treat the [Codex hooks docs](https://developers.openai.com/codex/hooks) as the source of truth before relying on a specific field.
+> Codex hooks require `[features] codex_hooks = true` in `~/.codex/config.toml`. See [docs/codex.md](docs/codex.md) for details.
 
 ### 1. Register as a Codex hook
 
@@ -140,7 +140,7 @@ command = "ccgate codex"
 statusMessage = "ccgate evaluating request"
 ```
 
-See [docs/codex.md](docs/codex.md) for the full lookup order, project-local overlays, and a `go run` recipe for in-tree dev builds. Refer to the upstream [Codex hooks documentation](https://developers.openai.com/codex/hooks) for the authoritative schema.
+See [docs/codex.md](docs/codex.md) for the full lookup order, project-local overlays, and a `go run` recipe for in-tree dev builds.
 
 ### 2. API key
 
@@ -214,7 +214,7 @@ Switch providers by setting `provider.name` (and `provider.model` if needed) in 
 {
   provider: {
     name: 'openai',
-    model: 'gpt-4o-mini',
+    model: '<openai model name>',  // see docs/providers.md for model selection
   },
 }
 ```

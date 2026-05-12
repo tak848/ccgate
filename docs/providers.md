@@ -31,7 +31,7 @@ Export the matching API key (see [API keys](#api-keys) below). If the key is mis
 
 `CCGATE_*_API_KEY` is the preferred name and overrides the bare variant, so ccgate's key can stay separate from the AI tool's own key.
 
-| `provider.name` | Preferred                  | Fallback             | Issue page |
+| `provider.name` | Preferred                  | Fallback             | Get a key |
 |-----------------|----------------------------|----------------------|------------|
 | `anthropic`     | `CCGATE_ANTHROPIC_API_KEY` | `ANTHROPIC_API_KEY`  | <https://platform.claude.com/settings/keys> |
 | `openai`        | `CCGATE_OPENAI_API_KEY`    | `OPENAI_API_KEY`     | <https://platform.openai.com/api-keys>      |
@@ -43,10 +43,7 @@ Resolution order overall: `provider.auth` (when set) → `CCGATE_*_API_KEY` → 
 
 ccgate sends each request with structured output and `temperature=0` (deterministic classification). Pick a model that supports both.
 
-> [!WARNING]
-> Reasoning models reject `temperature=0` (every request fails) and add seconds of chain-of-thought that the classification does not need. The known affected families today are the OpenAI `gpt-5` reasoning lineup (`gpt-5`, `gpt-5-mini`, `gpt-5-nano`, `gpt-5-chat`) and the `o1*` / `o3*` / `o4-mini` lines. Use a chat-tier model from the same family instead.
-
-Concrete model picks change over time; check each provider's current model list when choosing one:
+Reasoning-tier models often require a different parameter shape and add chain-of-thought latency that ccgate's classification does not need. If a model rejects `temperature=0` or otherwise refuses structured output, ccgate falls through to the upstream tool's prompt instead of looping — but the same model will never produce a verdict. Confirm `temperature=0` + structured output support against the provider's model docs before relying on a specific model. Provider model lists:
 
 - Anthropic: <https://docs.anthropic.com/en/docs/about-claude/models/overview>
 - OpenAI: <https://platform.openai.com/docs/models>

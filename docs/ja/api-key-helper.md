@@ -7,7 +7,7 @@ provider に渡す credential が静的な環境変数では追いつかない�
 `provider.auth` には 3 つのモードがあります。
 
 - **`type: 'exec'`**: ccgate がシェルコマンドを実行し、その stdout を credential として使う。
-- **`type: 'file'`**: 外部のローテーター (cron / launchd など) が書いたファイルを ccgate が読む。
+- **`type: 'file'`**: 外部のローテーターが書いたファイルを ccgate が読む。
 - **`type: 'profile'`**: Anthropic 専用。`ant auth login` の profile を anthropic-sdk-go に渡し、refresh は SDK 自身が担当する。[Profile ベース認証](#profile-ベース認証-anthropic-のみ) を参照。
 
 (`*_API_KEY` env var は `provider.auth` が省略されている場合の別経路。`auth` のモードではありません。)
@@ -78,7 +78,7 @@ helper は次を満たす必要があります。
 - 同じ `(shell, command, provider.name, base_url, cache_key)` の組に対して **決定論的** に振る舞う。同じ設定で 2 回呼んだら同じ意味の認証情報を返すこと。
 - **デーモン化しない**。process group の外に fork するとタイムアウト時の kill が効きません。
 - `auth.timeout_ms` 以内に終了する。
-- `auth.command` 文字列に **literal な秘密情報を直接書かない**。文字列は設定したシェル (`bash -c <command>`、または `auth.shell: 'powershell'` のときは `pwsh -Command <command>` / `powershell -Command <command>`) に渡されるため、`ps` / `/proc/<pid>/cmdline` / シェル履歴に残ります。秘密情報はファイルや keychain に置き、helper の中で読み出してください。
+- `auth.command` 文字列に **literal な秘密情報を直接書かない**。文字列は設定したシェル (`bash -c <command>`、または `auth.shell: 'powershell'` のときは `pwsh -Command <command>` / `powershell -Command <command>`) に渡されるため、 process listing やシェル履歴に残ります。秘密情報はファイルや keychain に置き、 helper の中で読み出してください。
 
 ccgate は helper の env に `CCGATE_API_KEY_RESOLUTION=1` を入れるので、helper が ccgate を再帰起動していないかを自分で検知できます。それ以外の環境変数 (`*_API_KEY` 含む) はそのまま継承します。stdin は閉じています (helper から親ターミナルの入力は読めません)。
 
@@ -106,11 +106,11 @@ ant auth login --profile ccgate         # ブラウザが開き ~/.config/anthro
 > [!IMPORTANT]
 > **`ant auth login` は profile 名に関わらず `<config_dir>/active_config` を書き換える** 仕様です。ant は `--profile <name>` 指定時はその `<name>` に、`--profile` 省略時は `default` に、`<config_dir>/active_config` を毎回書き換えます。Anthropic の profile 解決順は Claude Code / Claude Agent SDK と共有されるため、この書き換えで Claude Code の credential 経路が subscription から従量課金 API に移ることがあります。対応:
 >
-> - `default` 以外の名前 (例: `ccgate`) で profile を作成し、ccgate.jsonnet で明示宣言する。`ant auth login` を `--profile` 指定なしで実行すると `default` profile が作られて active profile を奪うので、それを避ける。
-> - `ant auth login` の後は active profile の参照先を戻す。2 つの選択肢:
+> - `default` 以外の名前 (例: `ccgate`) で profile を作成し、ccgate.jsonnet で明示宣言する。 `ant auth login` を `--profile` 指定なしで実行すると `default` profile が作られ、 既定の参照先として使われるため、 これを避ける。
+> - `ant auth login` の後は `<config_dir>/active_config` の参照先を戻す。 2 つの選択肢:
 >   - `rm <config_dir>/active_config` で参照先を完全に消す (SDK は `default` 解決に戻る)
 >   - 普段使う profile があれば `ant profile activate <previous-profile-name>`
-> - 同じ profile を別 org / workspace に紐づけ直したい場合: ant は既に紐づいた profile への再 login を拒否するので、`<config_dir>/configs/<name>.json` を削除して `ant auth login --profile <name>` を再実行する。
+> - 同じ profile を別 org / workspace に関連付け直す場合: ant は既に関連付け済みの profile への再 login を reject するので、 `<config_dir>/configs/<name>.json` を削除して `ant auth login --profile <name>` を再実行する。
 
 ## 例
 
@@ -139,10 +139,10 @@ plain string の出力はキャッシュされず、hook 起動のたびに help
 #!/bin/sh
 # ~/bin/ccgate-key-broker.sh
 # 出力: {"key": "...", "expires_at": "<RFC3339>"} の 1 行 JSON。
-# `<rfc3339-now-plus-50m>` は実行環境で利用できる RFC3339 フォーマッタに置き換えてください。
+# `my-broker-expiry-rfc3339` は「now + helper lifetime」を RFC3339 文字列で返す任意のコマンドに置き換えてください。
 set -eu
 TOKEN=$(my-key-broker --provider anthropic)
-EXP=<rfc3339-now-plus-50m>
+EXP=$(my-broker-expiry-rfc3339)
 jq -nc --arg key "$TOKEN" --arg expires_at "$EXP" '{key:$key, expires_at:$expires_at}'
 ```
 
@@ -203,7 +203,7 @@ cache fingerprint には **カレントディレクトリもホスト名も含�
 
 `auth.path` の読み取りも exec 経路と同じく `auth.timeout_ms` (default 30000) で上限が決まります — 応答しない mount では `reason=timeout` で fallthrough します (hook はブロックしません)。とはいえ NFS / SMB / FUSE / keychain mount に置くと毎 fire `timeout_ms` 分待つコストが発生するので、user 専用のローカル path を強く推奨します。
 
-`auth.path` か cache file が現在の user 以外でも読める / 所有者が違う場合、ccgate は `slog.Warn` を出します (拒否はしません)。これは security nudge であり policy enforcement ではなく、ファイルシステムから取得できる "world-readable" 指標だけを確認し、effective access の計算は行いません。推奨は user 専用に読めるファイルを user 専用に読めるディレクトリ配下に置く構成です (POSIX 系なら `0600` のファイルを `0700` の親ディレクトリの中に置く)。
+`auth.path` か cache file が現在の user 以外でも読める / 所有者が違う場合、ccgate は `slog.Warn` を出します (拒否はしません)。これは security nudge であり policy enforcement ではなく、ファイルシステムから取得できる "world-readable" 指標だけを確認し、effective access の計算は行いません。推奨は user 専用に読めるファイルを user 専用に読めるディレクトリ配下に置く構成です。
 
 ## provider が 401/403 を返した場合の挙動
 

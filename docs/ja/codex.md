@@ -113,12 +113,6 @@ Codex 側の system prompt は LLM に `tool_name` + `tool_input` + `tool_input_
 | State path                | `$XDG_STATE_HOME/ccgate/codex/` (未設定なら `~/.local/state/ccgate/codex/`)                       |
 | Project-local config      | `{repo_root}/.codex/ccgate.local.jsonnet` (Git 未追跡のみ、project trust が必要)                 |
 
-## デフォルトスナップショット
+## 埋込デフォルト
 
-埋込 Codex defaults (`internal/cmd/codex/defaults.jsonnet`) は Codex の tool surface に合わせた allow / deny / environment guidance を持ちます。主要エントリ:
-
-- `allow`: 読み取り専用の Bash 検査、workspace 内の write (`apply_patch` の cwd / repo_root 配下の hunk、AI が現在編集しているプロジェクトファイル)、project script による build / test、リポジトリ内に閉じたパッケージインストール、feature branch 上の git 操作、ユーザーが信頼した MCP server で、影響範囲がユーザーの許可した範囲に収まる MCP tool
-- `deny`: remote content の pipe-to-shell、one-shot remote package execution (`npx` / `pnpx` / `bunx` で unfamiliar package)、`sudo`、workspace 外への `rm -rf` / `mv` / `apply_patch` hunks、protected branch への破壊的 git、無制限 network out (`nc` / `ssh` / `scp` / `ftp` の非 allowlist 先)、destructive side effect を advertise する MCP tool で per-rule allow なし
-- `environment`: heterogeneous tool surface、trusted-repo 境界、path scope ルール。ccgate は upstream の承認 prompt を置き換えるため、guidance が適用できるときは allow / deny を返し、fallthrough は真に曖昧なケースに留めます。Codex hooks には `recent_transcript` が deliver されないため、system prompt は LLM にその context を仮定しないよう伝えます
-
-workspace 内 `apply_patch` を `allow` に置いているのは、ユーザーが ccgate を入れた目的が repo 内編集の prompt を省略することだからです。workspace 外への apply_patch hunk は既存の deny rule でブロックされます。より保守的にしたい場合は、project-local rule で apply_patch の allow scope を狭めてください (specific subtree のみ等)。
+`ccgate codex init | less` で binary に同梱された allow / deny / environment guidance の中身を読めます。 拡張・置換の方法は [docs/ja/rule-tuning.md](rule-tuning.md) を参照。

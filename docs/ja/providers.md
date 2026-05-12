@@ -43,10 +43,7 @@ ccgate は各 PermissionRequest を provider LLM (default: Claude Haiku) に投�
 
 ccgate は structured output と `temperature=0` (決定論的な分類) でリクエストを送ります。どちらにも対応するモデルを選んでください。
 
-> [!WARNING]
-> reasoning model は `temperature=0` を拒否するため全リクエストが失敗し、分類タスクには不要な chain-of-thought に数秒かかります。現時点で該当することが知られているのは OpenAI の `gpt-5` reasoning 系列 (`gpt-5`, `gpt-5-mini`, `gpt-5-nano`, `gpt-5-chat`) と `o1*` / `o3*` / `o4-mini` 系。同じファミリーの chat 系モデルを使ってください。
-
-各 provider のモデル一覧は提供側で頻繁に更新されるので、選定時に確認:
+reasoning 系のモデルは別のパラメータ shape を要求することが多く、 分類タスクには不要な chain-of-thought 遅延が乗ります。 `temperature=0` や structured output を拒否するモデルでは ccgate は loop せず上流ツールの確認画面に fallthrough しますが、 同じモデルで判定が成立することはありません。 特定モデルを採用する前に provider のモデル一覧で `temperature=0` + structured output 対応を確認してください。 provider モデル一覧:
 
 - Anthropic: <https://docs.anthropic.com/en/docs/about-claude/models/overview>
 - OpenAI: <https://platform.openai.com/docs/models>

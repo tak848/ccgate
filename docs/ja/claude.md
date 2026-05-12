@@ -69,7 +69,7 @@ allow guidance は plan mode で write 操作を allow に promote しません�
 - ユーザーが直近の transcript で当該操作を明示的に依頼していた場合、`deny` より `allow` / `fallthrough` を優先せよ
 - ユーザーの明示依頼は `deny` を `fallthrough` に引き上げられるが、`allow` までは引き上げられない (deny guidance は依然として勝つ)
 
-これが LLM に「deny ルールに該当するが、ユーザーが明確に依頼してるので、refuse せず Claude Code の prompt に判断を委ねる」と言わせる唯一の signal です。Codex には現状 transcript field が無いので、この lever は Claude のみ。
+これが LLM に「deny ルールに該当するが、ユーザーが明確に依頼してるので、refuse せず Claude Code の prompt に判断を委ねる」と言わせる唯一の signal です。
 
 ## `settings.json` パターンが whitelist 要件ではない理由
 

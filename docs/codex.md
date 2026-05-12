@@ -113,12 +113,6 @@ The Codex system prompt tells the LLM to judge from `tool_name` + `tool_input` +
 | State path                  | `$XDG_STATE_HOME/ccgate/codex/` (falls back to `~/.local/state/ccgate/codex/` when unset). |
 | Project-local config        | `{repo_root}/.codex/ccgate.local.jsonnet` (untracked-only, project-trust required). |
 
-## Defaults snapshot
+## Embedded defaults
 
-The embedded Codex defaults file (`internal/cmd/codex/defaults.jsonnet`) ships allow / deny / environment guidance tuned to the Codex tool surface. Notable entries:
-
-- `allow`: read-only Bash inspection, in-workspace writes (`apply_patch` hunks under cwd / repo_root, project file edits the AI is doing right now), project-script build/test, repo-confined package install, feature-branch git, MCP tools on user-trusted servers whose side effects stay within the user-authorized scope.
-- `deny`: pipe-to-shell of remote content, one-shot remote package execution (`npx` / `pnpx` / `bunx` against unfamiliar packages), `sudo`, out-of-workspace `rm -rf` / `mv` / `apply_patch` hunks, destructive git on protected branches, unrestricted network out (`nc` / `ssh` / `scp` / `ftp` to non-allowlisted hosts), MCP tools advertising destructive side effects without an explicit per-rule allow.
-- `environment`: heterogeneous tool surface, trusted-repo boundary, path scope rule. ccgate replaces the upstream approval prompt, so the guidance defaults to allow / deny when it applies and reserves fallthrough for genuinely ambiguous cases. `recent_transcript` is not delivered to Codex hooks, so the prompt tells the LLM not to assume one.
-
-In-workspace `apply_patch` is in `allow` because the user installed ccgate specifically to avoid being prompted for routine in-repo edits; out-of-workspace patch hunks are denied via the existing deny rule. If you want to be more conservative, add a project-local rule that narrows the apply_patch allow scope (e.g. only specific subtrees).
+Run `ccgate codex init | less` to read the full allow / deny / environment guidance compiled into the binary. For how to extend or replace these defaults, see [docs/rule-tuning.md](rule-tuning.md).

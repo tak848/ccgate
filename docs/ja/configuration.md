@@ -33,7 +33,7 @@ ccgate は target ごとに以下の層を順に読み込みます。各層は�
 | list: `allow` / `deny` / `environment` | 値を設定した layer が前の layer から引き継いだ list を **置き換える** (`[]` でも置換)。設定していない layer は前の値を保持 | embedded `allow: ["A","B"]` + global `allow: ["X"]` → 最終 `allow: ["X"]` |
 | list: `append_allow` / `append_deny` / `append_environment` | 値を設定した layer が前の layer の累積 list の **末尾に追加** | embedded `deny: ["A"]` + project `append_deny: ["P"]` → 最終 `deny: ["A","P"]` |
 | スカラー: `log_*` / `metrics_*` / `fallthrough_strategy` | 各 layer が値を設定していれば per-field で **overwrite**、設定していなければ前の値を保持 | embedded `log_max_size: 5MB` + global `log_max_size: 10MB` → 最終 `log_max_size: 10MB` |
-| ブロック: `provider` (`provider.*` の全 field — `name` / `model` / `base_url` / `auth` / `timeout_ms`) | `provider` を書いた layer は **block 全体を置換**、書かなかった layer はそのまま継承。per-field merge にすると、下位 layer の proxy 用 `base_url` や helper 用 `auth.command` が `name` を切り替えただけの上位 layer に残る等の不整合が起きるため | embedded `provider: {name: anthropic, model: haiku}` + global `provider: {name: openai, model: gpt-5.4-nano-2026-03-17}` → 最終 `provider: {name: openai, model: gpt-5.4-nano-2026-03-17}`。model だけ変えたい場合は `provider: {name: anthropic, model: claude-sonnet-4-6}` のように block 全体を書き直す。global で `auth` を設定している場合、project-local 側で `provider` を上書きするときも `auth` ブロック全体を忘れずに書き写すこと (書き漏らすと当該プロジェクトで helper 設定が静かに消える) |
+| ブロック: `provider` (`provider.*` の全 field — `name` / `model` / `base_url` / `auth` / `timeout_ms`) | `provider` を書いた layer は **block 全体を置換**、書かなかった layer はそのまま継承。per-field merge にすると、下位 layer の proxy 用 `base_url` や helper 用 `auth.command` が `name` を切り替えただけの上位 layer に残る等の不整合が起きるため | embedded `provider: {name: anthropic, model: claude-haiku-4-5}` + global `provider: {name: openai, model: gpt-4o-mini}` → 最終 `provider: {name: openai, model: gpt-4o-mini}`。model だけ変えたい場合は `provider: {name: anthropic, model: claude-sonnet-4-6}` のように block 全体を書き直す。global で `auth` を設定している場合、project-local 側で `provider` を上書きするときも `auth` ブロック全体を忘れずに書き写すこと (書き漏らすと当該プロジェクトで helper 設定が静かに消える) |
 
 `allow` と `append_allow` (他 list も同じ) は同じ layer に共存可能 — 先に置換、その結果に対して append が積まれる。embedded の list を厳選版に **差し替えつつ** プロジェクト固有のルールを **追加** したいときに使います: `{ allow: ['only this base'], append_allow: ['plus this project rule'] }`。
 
@@ -219,7 +219,6 @@ cache 層の失敗は fallthrough せずに自動回復するので、`slog.Warn
 
 ## 既知の制約
 
-- **Plan mode (Claude のみ) はプロンプト依存**: `permission_mode == "plan"` では (a) 実装系 write を拒絶する判定と (b) 明示的な allow guidance なしの read-only クエリ許可 を、LLM とシステムプロンプトの指示文に委ねています。どちらの方向にも誤判定の余地あり。[#37](https://github.com/tak848/ccgate/issues/37) で追跡
+- **Plan mode (Claude のみ) はプロンプト依存**: `permission_mode == "plan"` では (a) 実装系 write を拒絶する判定と (b) 明示的な allow guidance なしの read-only クエリ許可 を、LLM とシステムプロンプトの指示文に委ねています。どちらの方向にも誤判定の余地あり
 - **embedded default の特定ルールだけを部分削除する手段なし**: layer は list を **完全置換** (`allow: [...]`) するか **末尾追加** (`append_allow: [...]`) するかのどちらかで、embedded の中の 1 ルールだけ消したい場合は残り全部を `allow:` / `deny:` に書き直すしかない
-- **Codex hook の schema は upstream-driven**: Codex hooks は upstream の `[features] codex_hooks = true` flag 配下にあり、[OpenAI Codex hooks docs](https://developers.openai.com/codex/hooks) を一次情報として扱う
-- **Codex `~/.codex/config.toml` 取り込みは out of scope** (`approval_policy`, `sandbox_mode`, `prefix_rules`): ccgate は hook payload + ccgate config だけで判定するため、Codex 自身の設定が拒絶する操作のシグナルは LLM に届かない
+- ccgate は hook payload と ccgate の設定からのみ判定する。Codex hooks は `[features] codex_hooks = true` flag が必要 (schema 詳細は [OpenAI Codex hooks docs](https://developers.openai.com/codex/hooks) を参照)。 ccgate は Codex の `~/.codex/config.toml` (`approval_policy`, `sandbox_mode`, `prefix_rules`) を読まない

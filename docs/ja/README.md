@@ -20,7 +20,7 @@ ccgate は組み込みのデフォルトルールを持っているので、設�
 
 ### mise (推奨)
 
-mise `2026.4.20` 以降が必要です。このリリースから、同梱の aqua registry に ccgate が含まれます。
+mise `2026.4.20` 以降が必要です。
 
 ```bash
 mise use -g aqua:tak848/ccgate
@@ -36,7 +36,7 @@ mise exec aqua:tak848/ccgate -- ccgate --version
 
 ### aqua
 
-[aqua](https://aquaproj.github.io/) 標準 registry 経由 (registry `v4.498.0` 以降が必要 — ccgate が初めて登録された version)。aqua 管理下のプロジェクトで (`aqua.yaml` がない場合は `aqua init` を先に走らせる):
+[aqua](https://aquaproj.github.io/) 標準 registry 経由 (registry `v4.498.0` 以降が必要)。aqua 管理下のプロジェクトで (`aqua.yaml` がない場合は `aqua init` を先に走らせる):
 
 ```bash
 aqua g -i tak848/ccgate
@@ -98,7 +98,7 @@ ccgate は default で Anthropic の Claude Haiku を呼びます。 `CCGATE_ANT
 ## クイックスタート — Codex CLI
 
 > [!NOTE]
-> Codex hooks は upstream の `[features] codex_hooks = true` flag 配下にあります。特定 field に依存する前に [Codex hooks docs](https://developers.openai.com/codex/hooks) を一次情報として確認してください。
+> Codex hooks は `~/.codex/config.toml` に `[features] codex_hooks = true` の設定が必要です。詳細は [docs/codex.md](codex.md) を参照。
 
 ### 1. Codex hook として登録
 
@@ -140,7 +140,7 @@ command = "ccgate codex"
 statusMessage = "ccgate evaluating request"
 ```
 
-lookup 順序、project-local overlay、in-tree dev build 用の `go run` レシピは [docs/codex.md](codex.md) を参照。upstream の [Codex hooks ドキュメント](https://developers.openai.com/codex/hooks) が schema の正本です。
+lookup 順序、 project-local overlay、 in-tree dev build 用の `go run` レシピは [docs/codex.md](codex.md) を参照。
 
 ### 2. API キー
 
@@ -212,7 +212,7 @@ provider と hook の登録が済んでから、自分の `allow` / `deny` / `ap
 {
   provider: {
     name: 'openai',
-    model: 'gpt-4o-mini',
+    model: '<openai model name>',  // model 選定は docs/ja/providers.md 参照
   },
 }
 ```

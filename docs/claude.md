@@ -69,7 +69,7 @@ This is purely prompt-driven, so there is no hard guarantee.
 - If the user explicitly requested the operation in the recent transcript, prefer `allow` or `fallthrough` over `deny`.
 - An explicit user request can only escalate `deny` to `fallthrough`, never to `allow`. Deny guidance still wins.
 
-This is the only signal in the prompt that lets the LLM say "the deny rule matches but the user clearly asked for this, so let the user confirm via Claude Code's prompt instead of refusing outright". Codex has no transcript field today, so this lever is Claude-only.
+This is the only signal in the prompt that lets the LLM say "the deny rule matches but the user clearly asked for this, so let the user confirm via Claude Code's prompt instead of refusing outright".
 
 ## Why `settings.json` patterns are a hint, not a whitelist
 

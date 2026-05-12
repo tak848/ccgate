@@ -78,7 +78,7 @@ A helper must:
 - Be **deterministic** for the same `(shell, command, provider.name, base_url, cache_key)` tuple. Two callers with the same config must agree on what the credential is.
 - **Not daemonize**. Forking past the process group escapes the timeout-kill.
 - Finish within `auth.timeout_ms`.
-- Avoid literal secrets in `auth.command`. The string is passed to the configured shell (`bash -c <command>`, or `pwsh -Command <command>` / `powershell -Command <command>` when `auth.shell: 'powershell'`) and shows up in `ps`, `/proc/<pid>/cmdline`, and shell history. Read secrets from a file or keychain inside the helper instead.
+- Avoid literal secrets in `auth.command`. The string is passed to the configured shell (`bash -c <command>`, or `pwsh -Command <command>` / `powershell -Command <command>` when `auth.shell: 'powershell'`) and shows up in process listings and shell history. Read secrets from a file or keychain inside the helper instead.
 
 ccgate exports `CCGATE_API_KEY_RESOLUTION=1` into the helper environment so a wrapper helper can detect recursive invocation. All other environment variables (including `*_API_KEY`) are inherited. Stdin is closed; the helper cannot read from the parent terminal.
 
@@ -139,10 +139,10 @@ When a real broker mints time-limited credentials, wrap the response in `{key, e
 #!/bin/sh
 # ~/bin/ccgate-key-broker.sh
 # Print a JSON line: {"key": "...", "expires_at": "<RFC3339>"}
-# Substitute the RFC3339 formatter your platform provides for `<rfc3339-now-plus-50m>`.
+# Replace `my-broker-expiry-rfc3339` with whatever produces an RFC3339 timestamp for "now + helper lifetime".
 set -eu
 TOKEN=$(my-key-broker --provider anthropic)
-EXP=<rfc3339-now-plus-50m>
+EXP=$(my-broker-expiry-rfc3339)
 jq -nc --arg key "$TOKEN" --arg expires_at "$EXP" '{key:$key, expires_at:$expires_at}'
 ```
 
@@ -203,7 +203,7 @@ Leaving `cache_key` empty is the explicit "share with anything that has the same
 
 `auth.path` reads are bounded by `auth.timeout_ms` (default 30000) just like the exec branch — a stalled mount surfaces as `reason=timeout` instead of blocking the hook. Local regular files are still strongly recommended (NFS / SMB / FUSE / keychain mounts will time out reliably but each fire pays a `timeout_ms` wait); a per-user local path is the cheapest path.
 
-ccgate emits a `slog.Warn` when `auth.path` *or* the cache file is readable by anyone other than the current user, or is owned by a different user. The check is a best-effort security nudge, not policy enforcement: it inspects only the well-known "world-readable" indicators reachable from the filesystem and does not compute effective access. The recommended setup is to keep the file user-only readable inside a user-only directory (e.g. `0600` file inside a `0700` parent on POSIX-style filesystems).
+ccgate emits a `slog.Warn` when `auth.path` *or* the cache file is readable by anyone other than the current user, or is owned by a different user. The check is a best-effort security nudge, not policy enforcement: it inspects only the well-known "world-readable" indicators reachable from the filesystem and does not compute effective access. Keep the file user-only readable inside a user-only directory.
 
 ## Provider 401/403 behaviour
 
