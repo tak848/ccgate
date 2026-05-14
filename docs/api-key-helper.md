@@ -12,6 +12,8 @@ When the credential the provider needs rotates faster than a static env var can 
 
 (`*_API_KEY` env var is a separate path used when `provider.auth` is omitted — it's not one of the `auth` modes.)
 
+`provider.name="codex-oauth"` is separate from this mechanism: it uses Codex app-server's ChatGPT login cache under `provider.codex_home`, not `provider.auth` or API keys.
+
 The shell that runs an `exec` helper is selected per-config via `auth.shell` (default `bash`); see [Helper contract](#helper-contract) for the shells ccgate currently spawns.
 
 ## Config

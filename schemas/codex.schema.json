@@ -111,6 +111,12 @@
         },
         "timeout_ms": {
           "type": "integer"
+        },
+        "codex_bin": {
+          "type": "string"
+        },
+        "codex_home": {
+          "type": "string"
         }
       },
       "additionalProperties": false,

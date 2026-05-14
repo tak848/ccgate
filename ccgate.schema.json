@@ -105,6 +105,14 @@
           "type": "integer",
           "minimum": 0,
           "description": "API timeout in milliseconds. 0 means no timeout. Default: 20000"
+        },
+        "codex_bin": {
+          "type": "string",
+          "description": "codex-oauth only. Path to the Codex CLI executable that provides `codex app-server`. Empty value resolves to `codex` on PATH."
+        },
+        "codex_home": {
+          "type": "string",
+          "description": "codex-oauth only. CODEX_HOME used for ChatGPT OAuth credentials. Empty value resolves to $XDG_STATE_HOME/ccgate/codex-oauth/codex-home (or ~/.local/state/ccgate/codex-oauth/codex-home)."
         }
       }
     },

@@ -222,6 +222,8 @@ provider と hook の登録が済んでから、自分の `allow` / `deny` / `ap
 
 provider の切替手順、 モデル選定時の確認事項、 API キーの解決順、 互換 proxy 経由での利用は [docs/ja/providers.md](providers.md) にまとめてあります。
 
+ChatGPT サブスクリプションの Codex で分類したい場合は `provider.name: 'codex-oauth'` を設定します。`codex app-server` と ccgate state 配下の専用 Codex `CODEX_HOME` を使うため、初回だけ `CODEX_HOME="${XDG_STATE_HOME:-$HOME/.local/state}/ccgate/codex-oauth/codex-home" codex login` でログインしてください。
+
 **Refresh される credential** (AWS STS / Vertex ADC / OpenAI 互換 gateway の virtual key / 社内 key broker など、 静的 env では追従できないケース) を扱いたいときは `provider.auth` を設定します。 3 形式から選びます:
 
 - `type=exec` — ccgate が **credential helper** コマンドを実行し、 stdout を credential として使う (`expires_at` を keyed cache)。

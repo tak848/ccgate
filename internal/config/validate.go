@@ -21,14 +21,18 @@ func (c Config) Validate() error {
 	if err := validateAuth(c.Provider.Auth); err != nil {
 		errs = append(errs, err)
 	}
+	providerName := strings.ToLower(strings.TrimSpace(c.Provider.Name))
 	// type=profile delegates to anthropic-sdk-go's profile loader, so
 	// the abstraction only makes sense when the provider is anthropic.
 	// Catch the obvious user error (`provider.name = "openai" + auth.type
 	// = "profile"`) at config load time instead of at the first hook fire.
 	if c.Provider.Auth != nil && c.Provider.Auth.Type == AuthTypeProfile {
-		if strings.ToLower(strings.TrimSpace(c.Provider.Name)) != "anthropic" {
+		if providerName != "anthropic" {
 			errs = append(errs, fmt.Errorf(`provider.auth.type=%q is only supported when provider.name="anthropic"`, AuthTypeProfile))
 		}
+	}
+	if err := validateCodexOAuthProviderFields(c.Provider, providerName); err != nil {
+		errs = append(errs, err)
 	}
 	if c.LogMaxSize != nil && *c.LogMaxSize < 0 {
 		errs = append(errs, fmt.Errorf("log_max_size must not be negative, got %d", *c.LogMaxSize))
@@ -45,6 +49,56 @@ func (c Config) Validate() error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+func validateCodexOAuthProviderFields(p ProviderConfig, providerName string) error {
+	var errs []error
+	switch providerName {
+	case "codex-oauth":
+		if p.Auth != nil {
+			errs = append(errs, fmt.Errorf(`provider.auth is not supported when provider.name="codex-oauth"; use Codex ChatGPT login under provider.codex_home instead`))
+		}
+		if strings.TrimSpace(p.BaseURL) != "" {
+			errs = append(errs, fmt.Errorf(`provider.base_url is not supported when provider.name="codex-oauth"`))
+		}
+		if p.CodexBin != "" && strings.TrimSpace(p.CodexBin) == "" {
+			errs = append(errs, fmt.Errorf("provider.codex_bin must not be whitespace only"))
+		}
+		if p.CodexHome != "" {
+			if strings.TrimSpace(p.CodexHome) == "" {
+				errs = append(errs, fmt.Errorf("provider.codex_home must not be whitespace only"))
+			} else if err := validateCodexHomePath(p.CodexHome); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	default:
+		if strings.TrimSpace(p.CodexBin) != "" {
+			errs = append(errs, fmt.Errorf(`provider.codex_bin is only supported when provider.name="codex-oauth"`))
+		}
+		if strings.TrimSpace(p.CodexHome) != "" {
+			errs = append(errs, fmt.Errorf(`provider.codex_home is only supported when provider.name="codex-oauth"`))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func validateCodexHomePath(path string) error {
+	v := strings.TrimSpace(path)
+	if v == "~" || v == "~/" {
+		return fmt.Errorf("provider.codex_home must point at a directory below home, got bare %q", v)
+	}
+	if strings.HasPrefix(v, "~/") || strings.HasPrefix(v, "/") || strings.HasPrefix(v, `\\`) {
+		return nil
+	}
+	// Windows absolute paths are accepted by filepath.IsAbs in
+	// validateAuthPath's callers only after importing filepath. Keep
+	// this function dependency-light and accept drive-letter paths
+	// explicitly; all other relative values are rejected because this
+	// directory stores OAuth credentials and should not vary by hook cwd.
+	if len(v) >= 3 && ((v[0] >= 'A' && v[0] <= 'Z') || (v[0] >= 'a' && v[0] <= 'z')) && v[1] == ':' && (v[2] == '\\' || v[2] == '/') {
+		return nil
+	}
+	return fmt.Errorf("provider.codex_home must be absolute or ~/-prefixed, got %q", v)
 }
 
 // validateAuth enforces the discriminated-union shape of provider.auth.

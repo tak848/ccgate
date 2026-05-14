@@ -49,6 +49,10 @@ const (
 	// the shared vocabulary so runner can route the fallthrough into
 	// the same `reason=` slot as the keystore-resolved cases.
 	ReasonProfileLoad Reason = "profile_load"
+	// ReasonCodexOAuthLogin is produced by internal/llm/codexoauth
+	// when provider.name="codex-oauth" cannot use a ChatGPT
+	// authenticated Codex account from its CODEX_HOME.
+	ReasonCodexOAuthLogin Reason = "codex_oauth_login"
 
 	// Log-only (Resolve still succeeds; these never sit in metrics).
 	ReasonCacheParse Reason = "cache_parse"

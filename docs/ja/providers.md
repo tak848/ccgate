@@ -11,6 +11,7 @@ ccgate は各 PermissionRequest を provider LLM (default: Claude Haiku) に投�
 | `anthropic`     | `anthropic-sdk-go` | `claude-haiku-4-5`               |
 | `openai`        | `openai-go`        | (`provider.model` で明示指定が必要) |
 | `gemini`        | Gemini の OpenAI 互換 endpoint 経由で `openai-go` | (同じく明示指定が必要) |
+| `codex-oauth`   | Codex app-server (stdio JSON-RPC) | (明示指定、例: `gpt-5.4`) |
 
 ## Provider の切り替え
 
@@ -27,6 +28,25 @@ ccgate は各 PermissionRequest を provider LLM (default: Claude Haiku) に投�
 
 対応する API キー (下の [API キー](#api-キー) 参照) を export してください。キーが見つからない場合 ccgate は上流ツールの確認画面に fallthrough するので、 provider 切替で hook が壊れることはありません。
 
+ChatGPT サブスクリプションで Codex を使う場合は `codex-oauth` を使います:
+
+```jsonnet
+{
+  provider: {
+    name: 'codex-oauth',
+    model: 'gpt-5.4',
+  },
+}
+```
+
+`codex-oauth` は分類ごとに `codex app-server` を起動し、Codex 側の ChatGPT login を使います。既定では `$XDG_STATE_HOME/ccgate/codex-oauth/codex-home` (未設定なら `~/.local/state/ccgate/codex-oauth/codex-home`) を専用 `CODEX_HOME` として使い、そこに `cli_auth_credentials_store = "file"` の Codex `config.toml` を作ります。初回だけ次でログインしてください:
+
+```sh
+CODEX_HOME="${XDG_STATE_HOME:-$HOME/.local/state}/ccgate/codex-oauth/codex-home" codex login
+```
+
+普段使いの `~/.codex` などを意図的に再利用したい場合は `provider.codex_home`、`codex` が `PATH` にない場合は `provider.codex_bin` を設定します。`codex-oauth` の子プロセスからは `CODEX_API_KEY` / `OPENAI_API_KEY` / `CCGATE_OPENAI_API_KEY` を除去するため、API key 課金へ silent に落ちることはありません。
+
 ## API キー
 
 `CCGATE_*_API_KEY` が優先され bare 変数を上書きします。 AI ツール本体の API キーと ccgate 用キーを分けられます。
@@ -36,8 +56,11 @@ ccgate は各 PermissionRequest を provider LLM (default: Claude Haiku) に投�
 | `anthropic`     | `CCGATE_ANTHROPIC_API_KEY` | `ANTHROPIC_API_KEY`   | <https://platform.claude.com/settings/keys> |
 | `openai`        | `CCGATE_OPENAI_API_KEY`    | `OPENAI_API_KEY`      | <https://platform.openai.com/api-keys>      |
 | `gemini`        | `CCGATE_GEMINI_API_KEY`    | `GEMINI_API_KEY`      | <https://aistudio.google.com/app/api-keys>  |
+| `codex-oauth`   | (なし)                     | (なし)                | ChatGPT で `codex login`                    |
 
 全体の解決順: `provider.auth` (設定済み) → `CCGATE_*_API_KEY` → `*_API_KEY`。`provider.auth` を設定した状態で失敗しても env var に silent に fallback はせず、 `kind=credential_unavailable` で fallthrough します。 helper の契約と復旧手順は [docs/ja/api-key-helper.md](api-key-helper.md) を参照。
+
+`codex-oauth` は例外で、`provider.auth` や API key env var を使いません。ChatGPT OAuth の保存と token refresh は Codex app-server / CLI の login cache に委譲します。
 
 ## モデル選択
 

@@ -49,11 +49,13 @@ repo 全体に効くポリシーが必要なら、自前 fork の埋込デフォ
 
 | フィールド               | 型                                | デフォルト                                                                       | 説明                                                                                                       |
 |--------------------------|-----------------------------------|---------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------|
-| `provider.name`          | string                            | `"anthropic"`                                                                   | プロバイダー名。`"anthropic"` / `"openai"` / `"gemini"`。詳細は [docs/ja/providers.md](providers.md)。      |
+| `provider.name`          | string                            | `"anthropic"`                                                                   | プロバイダー名。`"anthropic"` / `"openai"` / `"gemini"` / `"codex-oauth"`。詳細は [docs/ja/providers.md](providers.md)。 |
 | `provider.model`         | string                            | `"claude-haiku-4-5"`                                                            | モデル名。選定指針は [docs/ja/providers.md](providers.md#モデル選択) を参照。                              |
 | `provider.base_url`      | string                            | `""`                                                                            | API base URL の上書き。空文字列 (default) で SDK の既定 endpoint を使用。詳細は [docs/ja/providers.md#base_url-と互換-proxy](providers.md#base_url-と互換-proxy)。 |
 | `provider.auth`          | object (`{type, ...}`)            | (省略時は env var)                                                              | refresh される credential を扱う discriminated union。`type=exec` / `type=file` / `type=profile`。詳細は [docs/ja/api-key-helper.md](api-key-helper.md)。 |
 | `provider.timeout_ms`    | int                               | `20000`                                                                         | API タイムアウト (ms)。`0` = タイムアウトなし。                                                            |
+| `provider.codex_bin`     | string                            | `"codex"`                                                                       | `codex-oauth` 専用。`codex app-server` を提供する Codex CLI 実行ファイル。                               |
+| `provider.codex_home`    | string                            | `$XDG_STATE_HOME/ccgate/codex-oauth/codex-home`                                 | `codex-oauth` 専用。ChatGPT OAuth credential 用の CODEX_HOME。絶対パスまたは `~/` パス。                  |
 | `log_path`               | string                            | `$XDG_STATE_HOME/ccgate/<target>/ccgate.log`                                    | ログファイルパス。`~` でホームディレクトリ展開。                                                           |
 | `log_disabled`           | bool                              | `false`                                                                         | ログ出力を完全に無効化。                                                                                   |
 | `log_max_size`           | int                               | `5242880`                                                                       | ローテーション閾値 (bytes, デフォルト 5MB)。`0` = ローテーションなし。                                     |
@@ -157,7 +159,7 @@ ccgate codex  metrics --days 7         # codex 側も同 shape
 
 `ft_kind` は LLM (またはランタイム) が fallthrough を返したときに埋まり、どの fallback path が発火したかを示します (`llm`, `api_unusable`, `no_apikey`, `credential_unavailable`, `unknown_provider`, `bypass`, `dontask`, `user_interaction`)。`forced=true` は `fallthrough_strategy` が LLM `fallthrough` を `decision` に promote したことを意味します。
 
-`credential_source` は `ft_kind=credential_unavailable` のときだけ埋まります。credential 解決のどの段階で起きた / 失敗したかを示し、 `exec` / `file` / `cache` / `lock` (keystore 経由の `auth.type=exec` / `auth.type=file`)、 `profile` (Anthropic 専用 `auth.type=profile`、解決は anthropic-sdk-go に委譲し keystore は通らない) を取ります。値の集合は open で、この field を parse する側は固定 enum で validation せず、未知の短い文字列を許容してください。
+`credential_source` は `ft_kind=credential_unavailable` のときだけ埋まります。credential 解決のどの段階で起きた / 失敗したかを示し、 `exec` / `file` / `cache` / `lock` (keystore 経由の `auth.type=exec` / `auth.type=file`)、 `profile` (Anthropic 専用 `auth.type=profile`、解決は anthropic-sdk-go に委譲し keystore は通らない)、 `codex-oauth` (Codex app-server の ChatGPT login) を取ります。値の集合は open で、この field を parse する側は固定 enum で validation せず、未知の短い文字列を許容してください。
 
 `reason` の意味は `ft_kind` で文脈が変わります:
 
@@ -183,12 +185,15 @@ ccgate codex  metrics --days 7         # codex 側も同 shape
 | `cache_unavailable`     | cache dir を作成 / `chmod` できない。 fail-fast (helper exec せずに fallthrough)。 |
 | `provider_auth`         | provider が HTTP 401 または 403 で credential を拒否。 |
 | `profile_load`          | `auth.type=profile` で credential を SDK に渡す前に失敗。 |
+| `codex_oauth_login`     | `provider.name="codex-oauth"` が `provider.codex_home` の ChatGPT 認証済み Codex account を使えなかった。 |
 
 `cache_unavailable` が fail-fast なのは、 隣接 lock file も作れず concurrent helper の race を防げないためです。
 
 `provider_auth` の `auth.type` 別挙動: `exec` は cache を invalidate して次回 hook 発火時に helper を再実行、 `file` は内部 cache がないため fallthrough のみ、 `profile` も fallthrough (SDK の refresh-token loop が credential を保有)。 env var 経路は意図的にこの経路に乗せず exit 1 (ccgate からは rotate できず、 握り潰すと user 側の設定ミスを隠してしまうため)。 したがって `credential_unavailable` は「credential 解決に失敗した」だけでなく「provider が credential を受け取った上で拒否した」 (401 / 403) ケースも含みます。
 
 `profile_load` の具体的な原因は slog の `error_class` で narrow できます (profile config 不在 / parse error / profile 名不正、 credentials file の preflight 失敗 = 不在 / 読めない、 など)。 完全なラベルと triage 手順は [docs/ja/api-key-helper.md の障害時の復旧チェックリスト](api-key-helper.md#障害時の復旧チェックリスト) を参照。
+
+`codex_oauth_login` は、設定された `CODEX_HOME` に ChatGPT login がまだ無い、API key login になっていて `codex-oauth` の契約と合わない、または cached ChatGPT token が Codex に拒否された場合に出ます。`CODEX_HOME=<provider.codex_home> codex login` を ChatGPT で実行するか、その Codex home から API key credential を取り除いてください。
 
 #### log のみで出る credential 警告 (metrics には乗らない)
 
