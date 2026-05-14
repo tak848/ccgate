@@ -18,9 +18,14 @@
     // Alternatives:
     //   name: 'openai',  model: 'gpt-4o-mini',        (env: OPENAI_API_KEY)
     //   name: 'gemini',  model: 'gemini-2.0-flash',    (env: GEMINI_API_KEY)
+    //   name: 'codex-oauth', model: 'gpt-5.4',          (ChatGPT OAuth via Codex app-server)
     // base_url:  route through an OpenAI-/Anthropic-compatible proxy.
     //            See https://github.com/tak848/ccgate/blob/main/docs/providers.md#base_url-and-compatible-proxies
     // timeout_ms: API timeout in ms, default 20000.
+    // codex-oauth only:
+    //   codex_bin:  path to the Codex CLI executable (default: codex)
+    //   codex_home: isolated CODEX_HOME for ChatGPT OAuth credentials
+    //               (default: $XDG_STATE_HOME/ccgate/codex-oauth/codex-home)
     // auth: short-lived / rotating credentials. Discriminated
     //   by auth.type:
     //     auth: { type: 'exec', command: '/usr/local/bin/my-broker --provider anthropic' }

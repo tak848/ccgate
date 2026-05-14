@@ -142,3 +142,23 @@ func TestResolveAPIKeyUnknownProviderShortCircuit(t *testing.T) {
 		t.Fatalf("reason/source = %q/%q, want empty (no helper attempt)", reason, source)
 	}
 }
+
+func TestResolveAPIKeyCodexOAuthDoesNotRequireAPIKey(t *testing.T) {
+	t.Parallel()
+
+	key, kind, reason, source, err := resolveAPIKey(
+		context.Background(),
+		config.ProviderConfig{Name: "codex-oauth", Model: "gpt-5.4"},
+		"codex-oauth",
+		"codex",
+	)
+	if err != nil {
+		t.Fatalf("err = %v, want nil", err)
+	}
+	if key != "" || kind != "" || reason != "" {
+		t.Fatalf("key/kind/reason = %q/%q/%q, want empty success path", key, kind, reason)
+	}
+	if source != credentialSourceCodexOAuth {
+		t.Fatalf("source = %q, want %q", source, credentialSourceCodexOAuth)
+	}
+}

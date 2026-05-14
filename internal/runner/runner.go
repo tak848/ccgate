@@ -37,6 +37,7 @@ import (
 	"github.com/tak848/ccgate/internal/keystore"
 	"github.com/tak848/ccgate/internal/llm"
 	"github.com/tak848/ccgate/internal/llm/anthropic"
+	"github.com/tak848/ccgate/internal/llm/codexoauth"
 	"github.com/tak848/ccgate/internal/llm/gemini"
 	"github.com/tak848/ccgate/internal/llm/openai"
 	"github.com/tak848/ccgate/internal/metrics"
@@ -54,6 +55,8 @@ const PermissionModePlan = "plan"
 // credential_source slot with the keystore-managed values in
 // metrics.Entry so the field has a uniform meaning.
 const credentialSourceProfile = "profile"
+
+const credentialSourceCodexOAuth = "codex-oauth"
 
 // HookInput is the on-the-wire JSON Claude Code and Codex CLI both
 // deliver to the PermissionRequest hook. Fields that only one of the
@@ -398,6 +401,18 @@ func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOpti
 				credentialSourceProfile,
 				res.Usage, nil
 		}
+		if errors.Is(err, codexoauth.ErrAuthUnavailable) || errors.Is(err, codexoauth.ErrWrongAuthMode) {
+			slog.Warn("codex oauth credential unavailable, falling through",
+				"kind", llm.FallthroughKindCredentialUnavailable,
+				"reason", string(keystore.ReasonCodexOAuthLogin),
+				"source", credentialSourceCodexOAuth,
+			)
+			return llm.Decision{}, false,
+				llm.FallthroughKindCredentialUnavailable,
+				string(keystore.ReasonCodexOAuthLogin),
+				credentialSourceCodexOAuth,
+				res.Usage, nil
+		}
 		// 401 / 403 against a key that came from a helper / file
 		// path is the canonical "the credential we just used is
 		// stale or wrong" signal: invalidate the keystore cache
@@ -700,6 +715,10 @@ func resolveAPIKey(ctx context.Context, p config.ProviderConfig, providerName, t
 		return "", llm.FallthroughKindUnknownProvider, "", "", nil
 	}
 
+	if providerName == "codex-oauth" {
+		return "", "", "", credentialSourceCodexOAuth, nil
+	}
+
 	if p.Auth != nil {
 		// auth.type=profile delegates credential resolution to the
 		// Anthropic SDK at request time, so runner returns
@@ -768,7 +787,7 @@ func resolveAPIKey(ctx context.Context, p config.ProviderConfig, providerName, t
 // real key to.
 func isKnownProvider(name string) bool {
 	switch name {
-	case "anthropic", "openai", "gemini":
+	case "anthropic", "openai", "gemini", "codex-oauth":
 		return true
 	}
 	return false
@@ -776,6 +795,12 @@ func isKnownProvider(name string) bool {
 
 func newProviderClient(providerName string, p config.ProviderConfig, apiKey, baseURL string) llm.Provider {
 	switch providerName {
+	case "codex-oauth":
+		return &codexoauth.Client{
+			CodexBin:        p.GetCodexBin(),
+			CodexHome:       p.ResolveCodexHome(),
+			EnsureCodexHome: strings.TrimSpace(p.CodexHome) == "",
+		}
 	case "openai":
 		return &openai.Client{APIKey: apiKey, BaseURL: baseURL}
 	case "gemini":

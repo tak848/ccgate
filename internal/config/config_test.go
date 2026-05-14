@@ -226,6 +226,54 @@ func TestProfileAuthCrossFieldProvider(t *testing.T) {
 	}
 }
 
+func TestValidateCodexOAuthProviderFields(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		provider ProviderConfig
+		wantErr  bool
+	}{
+		"codex oauth minimal": {
+			provider: ProviderConfig{Name: "codex-oauth", Model: "gpt-5.4", TimeoutMS: intPtr(1000)},
+		},
+		"codex oauth with home and bin": {
+			provider: ProviderConfig{Name: "codex-oauth", Model: "gpt-5.4", TimeoutMS: intPtr(1000), CodexHome: "~/.local/state/ccgate/codex-oauth/codex-home", CodexBin: "codex"},
+		},
+		"codex oauth rejects auth": {
+			provider: ProviderConfig{Name: "codex-oauth", Model: "gpt-5.4", TimeoutMS: intPtr(1000), Auth: &AuthConfig{Type: AuthTypeExec, Command: "echo sk"}},
+			wantErr:  true,
+		},
+		"codex oauth rejects base url": {
+			provider: ProviderConfig{Name: "codex-oauth", Model: "gpt-5.4", TimeoutMS: intPtr(1000), BaseURL: "https://example.test"},
+			wantErr:  true,
+		},
+		"codex oauth rejects relative home": {
+			provider: ProviderConfig{Name: "codex-oauth", Model: "gpt-5.4", TimeoutMS: intPtr(1000), CodexHome: ".codex"},
+			wantErr:  true,
+		},
+		"other provider rejects codex home": {
+			provider: ProviderConfig{Name: "openai", Model: "gpt-test", TimeoutMS: intPtr(1000), CodexHome: "~/.codex"},
+			wantErr:  true,
+		},
+		"other provider rejects codex bin": {
+			provider: ProviderConfig{Name: "openai", Model: "gpt-test", TimeoutMS: intPtr(1000), CodexBin: "codex"},
+			wantErr:  true,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			err := Config{Provider: tc.provider}.Validate()
+			if tc.wantErr && err == nil {
+				t.Fatal("expected validation error, got nil")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("unexpected validation error: %v", err)
+			}
+		})
+	}
+}
+
 func TestAuthDurationDefaults(t *testing.T) {
 	t.Parallel()
 

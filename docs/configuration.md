@@ -49,11 +49,13 @@ If you want repo-wide policy that everyone gets, ship it in your own fork's embe
 
 | Field                    | Type                              | Default                                                                       | Description                                                                                            |
 |--------------------------|-----------------------------------|-------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------|
-| `provider.name`          | string                            | `"anthropic"`                                                                 | Provider name. One of `"anthropic"` / `"openai"` / `"gemini"`. See [docs/providers.md](providers.md).   |
+| `provider.name`          | string                            | `"anthropic"`                                                                 | Provider name. One of `"anthropic"` / `"openai"` / `"gemini"` / `"codex-oauth"`. See [docs/providers.md](providers.md). |
 | `provider.model`         | string                            | `"claude-haiku-4-5"`                                                          | Model name. See [docs/providers.md](providers.md#model-selection) for selection guidance.              |
 | `provider.base_url`      | string                            | `""`                                                                          | API base URL override. Empty = SDK default. See [docs/providers.md#base_url-and-compatible-proxies](providers.md#base_url-and-compatible-proxies). |
 | `provider.auth`          | object (`{type, ...}`)            | (omit = env var)                                                              | Discriminated union for refreshable credentials. `type=exec` / `type=file` / `type=profile`. See [docs/api-key-helper.md](api-key-helper.md). |
 | `provider.timeout_ms`    | int                               | `20000`                                                                       | API timeout (ms). `0` = no timeout.                                                                    |
+| `provider.codex_bin`     | string                            | `"codex"`                                                                     | `codex-oauth` only. Codex CLI executable that provides `codex app-server`.                             |
+| `provider.codex_home`    | string                            | `$XDG_STATE_HOME/ccgate/codex-oauth/codex-home`                               | `codex-oauth` only. CODEX_HOME for ChatGPT OAuth credentials. Supports absolute or `~/` paths.         |
 | `log_path`               | string                            | `$XDG_STATE_HOME/ccgate/<target>/ccgate.log`                                  | Log file path. Supports `~` for home directory.                                                        |
 | `log_disabled`           | bool                              | `false`                                                                       | Disable logging entirely.                                                                              |
 | `log_max_size`           | int                               | `5242880`                                                                     | Max log file size in bytes before rotation (default 5MB). `0` = no rotation.                           |
@@ -157,7 +159,7 @@ ccgate codex  metrics --days 7         # same shape, codex side
 
 `ft_kind` is filled when the LLM returned (or the runtime forced) a fallthrough; the value tells you which fallback path fired (`llm`, `api_unusable`, `no_apikey`, `credential_unavailable`, `unknown_provider`, `bypass`, `dontask`, `user_interaction`). `forced=true` means `fallthrough_strategy` promoted an LLM `fallthrough` into the recorded `decision`.
 
-`credential_source` is set only when `ft_kind=credential_unavailable`. It carries the credential stage that produced (or failed to produce) the credential — `exec` / `file` / `cache` / `lock` (matching the keystore-managed `auth.type=exec` / `auth.type=file` paths) plus `profile` (Anthropic-only `auth.type=profile`, which delegates resolution to anthropic-sdk-go and never touches the keystore). The set is open and consumers parsing this field should treat it as a free-form short string and tolerate unknown values rather than enum-validate it.
+`credential_source` is set only when `ft_kind=credential_unavailable`. It carries the credential stage that produced (or failed to produce) the credential — `exec` / `file` / `cache` / `lock` (matching the keystore-managed `auth.type=exec` / `auth.type=file` paths), `profile` (Anthropic-only `auth.type=profile`, which delegates resolution to anthropic-sdk-go and never touches the keystore), or `codex-oauth` (Codex app-server ChatGPT login). The set is open and consumers parsing this field should treat it as a free-form short string and tolerate unknown values rather than enum-validate it.
 
 The `reason` field meaning depends on `ft_kind`:
 
@@ -183,12 +185,15 @@ The `reason` field meaning depends on `ft_kind`:
 | `cache_unavailable`     | Cache directory cannot be created or `chmod`'d. Fail-fast (helper exec is skipped). |
 | `provider_auth`         | Provider rejected the credential with HTTP 401 or 403. |
 | `profile_load`          | `auth.type=profile` could not produce a usable credential before the SDK ran. |
+| `codex_oauth_login`     | `provider.name="codex-oauth"` could not use a ChatGPT-authenticated Codex account from `provider.codex_home`. |
 
 `cache_unavailable` is fail-fast because without the sibling lock file ccgate cannot serialise concurrent helpers and would let them race the broker.
 
 `provider_auth` reaction by `auth.type`: `exec` invalidates the cache so the next fire re-runs the helper, `file` falls through (no cache to clear), `profile` falls through (the SDK's refresh-token loop owns the credential). Env-var keys are not routed here because ccgate cannot rotate env vars and swallowing the rejection would hide user-side misconfiguration. So `credential_unavailable` covers both "credential resolution failed" and "provider received and rejected the credential" (401 / 403).
 
 `profile_load` cause is narrowed by the slog `error_class` field; see the [Recovery checklist in docs/api-key-helper.md](api-key-helper.md#recovery-checklist) for the full label list and triage steps.
+
+`codex_oauth_login` usually means the configured `CODEX_HOME` has no ChatGPT login yet, is logged in with an API key instead of ChatGPT, or the cached ChatGPT token was rejected by Codex. Run `CODEX_HOME=<provider.codex_home> codex login` with ChatGPT, or remove API-key credentials from that Codex home.
 
 #### Log-only credential warnings (not in metrics)
 

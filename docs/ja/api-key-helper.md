@@ -12,6 +12,8 @@ provider に渡す credential が静的な環境変数では追いつかない�
 
 (`*_API_KEY` env var は `provider.auth` が省略されている場合の別経路。`auth` のモードではありません。)
 
+`provider.name="codex-oauth"` はこの仕組みとは別です。`provider.auth` や API key ではなく、`provider.codex_home` 配下の Codex app-server / CLI の ChatGPT login cache を使います。
+
 `exec` の helper を動かすシェルは `auth.shell` で選択 (default `bash`)。詳細は [helper の契約](#helper-の契約) を参照。
 
 ## 設定

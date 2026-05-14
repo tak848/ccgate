@@ -224,6 +224,8 @@ Export the matching API key — see [docs/providers.md#api-keys](docs/providers.
 
 Provider switching, model selection constraints, API key resolution order, and compatible-proxy setup are all consolidated in [docs/providers.md](docs/providers.md).
 
+For ChatGPT subscription-backed Codex classification, set `provider.name: 'codex-oauth'`. It uses `codex app-server` and an isolated Codex `CODEX_HOME` under ccgate state by default; sign in once with `CODEX_HOME="${XDG_STATE_HOME:-$HOME/.local/state}/ccgate/codex-oauth/codex-home" codex login`.
+
 **Refreshable credentials** (AWS STS, Vertex ADC, OpenAI-compatible gateways with virtual keys, internal key brokers — anything a static env var cannot keep up with) are handled via `provider.auth`. Three shapes are supported:
 
 - `type=exec` — ccgate runs a **credential helper** command and uses its stdout as the credential, with caching keyed on `expires_at`.

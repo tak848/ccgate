@@ -11,6 +11,7 @@ ccgate calls a provider LLM (default: Claude Haiku) to classify each PermissionR
 | `anthropic`     | `anthropic-sdk-go` | `claude-haiku-4-5` |
 | `openai`        | `openai-go`        | (set explicitly via `provider.model`) |
 | `gemini`        | `openai-go` against Gemini's OpenAI-compat endpoint | (set explicitly) |
+| `codex-oauth`   | Codex app-server over stdio | (set explicitly, e.g. `gpt-5.4`) |
 
 ## Switching providers
 
@@ -27,6 +28,25 @@ Set `provider.name` (and `provider.model` when needed) in any layer:
 
 Export the matching API key (see [API keys](#api-keys) below). If the key is missing, ccgate falls through to the upstream tool's permission prompt, so a wrong provider name cannot break the hook.
 
+For ChatGPT subscription-backed Codex usage, use `codex-oauth`:
+
+```jsonnet
+{
+  provider: {
+    name: 'codex-oauth',
+    model: 'gpt-5.4',
+  },
+}
+```
+
+`codex-oauth` starts `codex app-server` for each classification and requires a ChatGPT-authenticated Codex login. By default ccgate isolates that login under `$XDG_STATE_HOME/ccgate/codex-oauth/codex-home` (or `~/.local/state/ccgate/codex-oauth/codex-home`) and writes a local Codex `config.toml` there with `cli_auth_credentials_store = "file"`. Sign in once with:
+
+```sh
+CODEX_HOME="${XDG_STATE_HOME:-$HOME/.local/state}/ccgate/codex-oauth/codex-home" codex login
+```
+
+Set `provider.codex_home` if you intentionally want to reuse another Codex profile, such as `~/.codex`. Set `provider.codex_bin` if `codex` is not on `PATH`. The child app-server process has `CODEX_API_KEY`, `OPENAI_API_KEY`, and `CCGATE_OPENAI_API_KEY` removed from its environment so this provider does not silently fall back to API-key billing.
+
 ## API keys
 
 `CCGATE_*_API_KEY` is the preferred name and overrides the bare variant, so ccgate's key can stay separate from the AI tool's own key.
@@ -36,8 +56,11 @@ Export the matching API key (see [API keys](#api-keys) below). If the key is mis
 | `anthropic`     | `CCGATE_ANTHROPIC_API_KEY` | `ANTHROPIC_API_KEY`  | <https://platform.claude.com/settings/keys> |
 | `openai`        | `CCGATE_OPENAI_API_KEY`    | `OPENAI_API_KEY`     | <https://platform.openai.com/api-keys>      |
 | `gemini`        | `CCGATE_GEMINI_API_KEY`    | `GEMINI_API_KEY`     | <https://aistudio.google.com/app/api-keys>  |
+| `codex-oauth`   | (none)                     | (none)               | `codex login` with ChatGPT                  |
 
 Resolution order overall: `provider.auth` (when set) → `CCGATE_*_API_KEY` → `*_API_KEY`. When `provider.auth` is set and fails, ccgate does **not** silently fall back to env vars — the hook falls through with `kind=credential_unavailable`. See [docs/api-key-helper.md](api-key-helper.md) for the helper contract and recovery.
+
+`codex-oauth` is the exception: it does not use `provider.auth` or API key env vars. It delegates ChatGPT OAuth storage and token refresh to Codex's app-server / CLI login cache.
 
 ## Model selection
 

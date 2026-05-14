@@ -24,6 +24,7 @@ const (
 	DefaultTimeoutMS      = 20_000
 	DefaultModel          = string(anthropic.ModelClaudeHaiku4_5)
 	DefaultProvider       = "anthropic"
+	DefaultCodexOAuthBin  = "codex"
 	DefaultLogMaxSize     = 5 * 1024 * 1024 // 5MB
 	DefaultMetricsMaxSize = 2 * 1024 * 1024 // 2MB
 	BaseConfigName        = "ccgate.jsonnet"
@@ -153,6 +154,17 @@ type ProviderConfig struct {
 	// sources (`type=exec` shell helper, `type=file` rotator file).
 	Auth      *AuthConfig `json:"auth,omitempty"`
 	TimeoutMS *int        `json:"timeout_ms,omitempty"`
+	// CodexBin is used only when provider.name="codex-oauth".
+	// It points at the Codex CLI executable that exposes
+	// `codex app-server`. Empty value resolves to "codex" on PATH.
+	CodexBin string `json:"codex_bin,omitempty"`
+	// CodexHome is used only when provider.name="codex-oauth".
+	// Empty value resolves to $XDG_STATE_HOME/ccgate/codex-oauth/codex-home
+	// (or ~/.local/state/ccgate/codex-oauth/codex-home). ccgate sets
+	// CODEX_HOME to this directory for the app-server child process so
+	// ChatGPT OAuth credentials stay isolated from the user's normal
+	// Codex CLI profile unless the user explicitly overrides it.
+	CodexHome string `json:"codex_home,omitempty"`
 }
 
 // AuthConfig is the discriminated union for short-lived / rotating
@@ -198,6 +210,23 @@ func (p ProviderConfig) GetTimeoutMS() int {
 		return DefaultTimeoutMS
 	}
 	return *p.TimeoutMS
+}
+
+// GetCodexBin returns the Codex CLI executable for provider.name="codex-oauth".
+func (p ProviderConfig) GetCodexBin() string {
+	if strings.TrimSpace(p.CodexBin) == "" {
+		return DefaultCodexOAuthBin
+	}
+	return strings.TrimSpace(p.CodexBin)
+}
+
+// ResolveCodexHome returns the CODEX_HOME directory ccgate should pass to
+// `codex app-server` for provider.name="codex-oauth".
+func (p ProviderConfig) ResolveCodexHome() string {
+	if strings.TrimSpace(p.CodexHome) == "" {
+		return DefaultCodexOAuthHome()
+	}
+	return resolvePath(strings.TrimSpace(p.CodexHome))
 }
 
 // GetRefreshMargin returns the refresh margin as a time.Duration,
@@ -434,6 +463,15 @@ func StateDir(sub string) string {
 // under StateDir.
 func DefaultAuthPath(target string) string {
 	return filepath.Join(StateDir(target), "auth_key.json")
+}
+
+// DefaultCodexOAuthHome is the isolated CODEX_HOME used by
+// provider.name="codex-oauth" when the user does not override
+// provider.codex_home. It lives under ccgate state rather than
+// ~/.codex so the provider does not mutate the user's primary Codex
+// CLI/app profile by default.
+func DefaultCodexOAuthHome() string {
+	return filepath.Join(StateDir("codex-oauth"), "codex-home")
 }
 
 // Load composes the runtime config from three layers, all using the
