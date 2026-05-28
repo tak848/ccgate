@@ -304,6 +304,8 @@ nix develop -c go test ./...   # シェルに入らず単発でコマンドを�
 
 flakes が有効な Nix が必要です (`experimental-features = nix-command flakes`)。
 
+macOS では `path_helper` がシステム PATH を Nix より優先することがあります。`which go` で確認してください。
+
 ## 関連記事
 
 - 日本語 (Zenn): <https://zenn.dev/layerx/articles/20260428-ccgate>

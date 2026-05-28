@@ -306,6 +306,8 @@ nix develop -c go test ./...   # Run a one-off command in the shell
 
 Requires Nix with flakes enabled (`experimental-features = nix-command flakes`).
 
+macOS note: `path_helper` may shadow Nix paths with system bins — verify with `which go`.
+
 ## Articles
 
 - English (dev.to): <https://dev.to/tak848/ccgate-delegate-claude-code-codex-cli-permission-prompts-to-an-llm-274c>
