@@ -620,7 +620,7 @@ func buildPrompt(cfg config.Config, in HookInput, ro runtimeOptions) (llm.Prompt
 			ReferencedPaths: referencedPaths(in),
 		},
 	}
-	if ro.loadStaticPermissions != nil {
+	if ro.loadStaticPermissions != nil && cfg.ShouldIncludeSettingsPermissionsInPrompt() {
 		pi.SettingsPermissions = ro.loadStaticPermissions(in.Cwd)
 	}
 	if ro.loadRecentTranscript != nil && in.TranscriptPath != "" {

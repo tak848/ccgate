@@ -91,6 +91,15 @@ type Config struct {
 	// embed+global layer; values written into project-local config
 	// are ignored — see `Load` for the rationale.
 	DisableLoadMainWorktreeLocalConfig *bool `json:"disable_load_main_worktree_local_config,omitempty"`
+	// IncludeSettingsPermissionsInPrompt controls whether ccgate puts
+	// the host tool's static permission list (e.g. the `~/.claude/settings.json`
+	// allow/deny merged across global / project / project-local) into
+	// the user payload sent to the LLM. Default true. Set false when
+	// those entries bias the classifier and you would rather the LLM
+	// judge purely from allow/deny guidance + tool_input. Only Claude
+	// Code populates a settings_permissions field today; Codex CLI
+	// ignores this flag.
+	IncludeSettingsPermissionsInPrompt *bool `json:"include_settings_permissions_in_prompt,omitempty"`
 	// Allow / Deny / Environment replace the value carried over from
 	// previous layers when the layer sets them (even to []). Embedded
 	// defaults are always layer 0, so writing `allow: [...]` in your
@@ -125,6 +134,13 @@ func (c Config) GetFallthroughStrategy() string {
 // defaults or your global config to skip the main worktree entirely.
 func (c Config) ShouldLoadMainWorktreeLocalConfig() bool {
 	return c.DisableLoadMainWorktreeLocalConfig == nil || !*c.DisableLoadMainWorktreeLocalConfig
+}
+
+// ShouldIncludeSettingsPermissionsInPrompt reports whether ccgate
+// should put the host tool's static permission list into the user
+// payload sent to the LLM. Default true.
+func (c Config) ShouldIncludeSettingsPermissionsInPrompt() bool {
+	return c.IncludeSettingsPermissionsInPrompt == nil || *c.IncludeSettingsPermissionsInPrompt
 }
 
 type ProviderConfig struct {
@@ -723,6 +739,9 @@ func mergeConfigJSON(data string, cfg *Config) error {
 	}
 	if override.DisableLoadMainWorktreeLocalConfig != nil {
 		cfg.DisableLoadMainWorktreeLocalConfig = override.DisableLoadMainWorktreeLocalConfig
+	}
+	if override.IncludeSettingsPermissionsInPrompt != nil {
+		cfg.IncludeSettingsPermissionsInPrompt = override.IncludeSettingsPermissionsInPrompt
 	}
 
 	// Lists: `allow` / `deny` / `environment` REPLACE the value
