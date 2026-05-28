@@ -114,18 +114,16 @@ func writePlanModeRules(b *strings.Builder, hasRecentTranscript bool) {
 }
 
 func writeNormalModeRules(b *strings.Builder, hasRecentTranscript bool) {
-	b.WriteString("Decision rules (check deny first, then allow, then fallthrough):\n")
+	b.WriteString("Decision rules:\n")
 	if hasRecentTranscript {
-		b.WriteString("- deny: When a deny guidance rule matches the operation literally. EXCEPT: if recent_transcript shows the user explicitly requested the exact operation, use fallthrough instead of deny to let the user confirm. Do NOT deny because the operation merely resembles a deny rule -- the match must be literal.\n")
-		b.WriteString("- allow: When the operation matches allow guidance and no deny rule literally matches. Return allow even if the operation writes state -- \"writes state\" is not by itself a reason to fallthrough.\n")
-		b.WriteString("- fallthrough: When you genuinely cannot classify the operation against allow OR deny guidance (it matches neither), OR when a deny rule matches but the user explicitly requested the exact operation.\n")
-		b.WriteString("Fallthrough is NOT \"proceed\". A fallthrough response causes the host tool (Claude Code / Codex CLI) to surface its own confirmation prompt to the user, which is friction. Do not pick fallthrough as a safety net on top of an allow or deny decision; it is the answer for genuine inability to classify, not for \"the user might want to double-check\".\n")
+		b.WriteString("- deny: When a deny guidance rule matches. EXCEPT: if recent_transcript shows the user explicitly requested the exact operation, use fallthrough instead of deny to let the user confirm.\n")
+		b.WriteString("- allow: When the operation matches allow guidance and no deny rule matches.\n")
+		b.WriteString("- fallthrough: When genuinely uncertain, OR when a deny rule matches but the user explicitly requested the operation.\n")
 		b.WriteString("Deny rules always take priority over allow rules. Explicit user requests can only escalate deny to fallthrough, never to allow.\n\n")
 	} else {
-		b.WriteString("- deny: When a deny guidance rule matches the operation literally. Do NOT deny because the operation merely resembles a deny rule -- the match must be literal. (No recent_transcript field is delivered by this target, so explicit-user-intent escalation from deny to fallthrough is not available -- judge solely from tool_name + tool_input + cwd.)\n")
-		b.WriteString("- allow: When the operation matches allow guidance and no deny rule literally matches. Return allow even if the operation writes state -- \"writes state\" is not by itself a reason to fallthrough.\n")
-		b.WriteString("- fallthrough: When you genuinely cannot classify the operation against allow OR deny guidance (it matches neither).\n")
-		b.WriteString("Fallthrough is NOT \"proceed\". A fallthrough response causes the host tool to surface its own confirmation prompt to the user, which is friction. Do not pick fallthrough as a safety net on top of an allow or deny decision; it is the answer for genuine inability to classify, not for \"the user might want to double-check\".\n")
+		b.WriteString("- deny: When a deny guidance rule matches. (No recent_transcript field is delivered by this target, so explicit-user-intent escalation from deny to fallthrough is not available -- judge solely from tool_name + tool_input + cwd.)\n")
+		b.WriteString("- allow: When the operation matches allow guidance and no deny rule matches.\n")
+		b.WriteString("- fallthrough: When genuinely uncertain.\n")
 		b.WriteString("Deny rules always take priority over allow rules.\n\n")
 	}
 }
