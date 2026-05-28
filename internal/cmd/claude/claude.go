@@ -47,17 +47,33 @@ func LoadOptions() (config.LoadOptions, error) {
 	}, nil
 }
 
-// claudeTargetSection is the Claude-Code-specific guidance the
+// claudeTargetSection returns the Claude-Code-specific guidance the
 // runner inserts between the decision rules and the allow/deny
 // lists. It teaches the LLM how to read settings_permissions and
 // recent_transcript -- both fields ccgate adds to the user payload
 // only for Claude. Codex has no equivalent to either today and
-// passes no TargetSection. Wording is editorial and intentionally
-// not asserted in tests; only the wiring (that the section reaches
-// the system prompt) is.
-const claudeTargetSection = "The user message includes settings_permissions and recent_transcript as background context.\n" +
-	"settings_permissions lists the user's Claude Code static allow/deny/ask patterns. Claude Code already matched them BEFORE invoking ccgate, so by design every request that reaches ccgate did NOT auto-match allow (often composite constructs like `$()` or pipelines that slip past literal matchers, or MCP tools without a static matcher). Absence from settings_permissions.allow is therefore the normal, expected case -- use it only as a hint about user preferences, never as a whitelist requirement. Specifically: do NOT return fallthrough merely because an operation that matches allow guidance is absent from settings_permissions.allow. That absence is the normal case and is not by itself a fallthrough reason.\n" +
-	"recent_transcript shows recent user messages and tool calls. Use it to understand what the user asked for. If the user explicitly requested the operation, prefer fallthrough over deny so Claude Code can confirm with the user. Explicit user intent never escalates a deny rule to allow.\n"
+// passes no TargetSection.
+//
+// When include_settings_permissions_in_prompt is false the
+// settings_permissions paragraph (and its mention in the header) is
+// dropped, since the field is also omitted from the user payload --
+// leaving the description in would tell the LLM to consult a field
+// it never gets, wasting tokens and inviting hallucinated content.
+// Wording is editorial and intentionally not asserted in tests;
+// only the wiring (that the section reaches the system prompt) is.
+func claudeTargetSection(cfg config.Config) string {
+	const settingsPermissionsParagraph = "settings_permissions lists the user's Claude Code static allow/deny/ask patterns. Claude Code already matched them BEFORE invoking ccgate, so by design every request that reaches ccgate did NOT auto-match allow (often composite constructs like `$()` or pipelines that slip past literal matchers, or MCP tools without a static matcher). Absence from settings_permissions.allow is therefore the normal, expected case -- use it only as a hint about user preferences, never as a whitelist requirement. Specifically: do NOT return fallthrough merely because an operation that matches allow guidance is absent from settings_permissions.allow. That absence is the normal case and is not by itself a fallthrough reason.\n"
+
+	const recentTranscriptParagraph = "recent_transcript shows recent user messages and tool calls. Use it to understand what the user asked for. If the user explicitly requested the operation, prefer fallthrough over deny so Claude Code can confirm with the user. Explicit user intent never escalates a deny rule to allow.\n"
+
+	if cfg.ShouldIncludeSettingsPermissionsInPrompt() {
+		return "The user message includes settings_permissions and recent_transcript as background context.\n" +
+			settingsPermissionsParagraph +
+			recentTranscriptParagraph
+	}
+	return "The user message includes recent_transcript as background context.\n" +
+		recentTranscriptParagraph
+}
 
 // Run reads a single PermissionRequest from stdin and writes the
 // response to stdout. Delegates the orchestration to internal/runner

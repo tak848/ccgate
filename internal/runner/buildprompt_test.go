@@ -53,7 +53,7 @@ func TestBuildPromptClaudePayloadShape(t *testing.T) {
 
 	var ro runtimeOptions
 	WithTargetName("Claude Code")(&ro)
-	WithPromptSection(sectionSentinel)(&ro)
+	WithPromptSection(func(config.Config) string { return sectionSentinel })(&ro)
 	WithHasRecentTranscript(true)(&ro)
 	WithStaticPermissions(func(string) any { return fakeSP{Allow: []string{"x"}} })(&ro)
 	WithRecentTranscript(func(string) any { return fakeRT{Entries: []string{"hello"}} })(&ro)
