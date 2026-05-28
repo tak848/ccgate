@@ -47,6 +47,15 @@
   // worktree's local config. Evaluated before project-local configs;
   // values written in project-local config are ignored.
 
+  // include_settings_permissions_in_prompt: false,
+  // ccgate normally includes the user's Claude Code static
+  // allow/deny patterns (merged across ~/.claude/settings.json,
+  // <repo>/.claude/settings.json, <repo>/.claude/settings.local.json)
+  // in the user payload sent to the LLM, as a hint about user
+  // preferences. Set this to false to omit that field entirely so
+  // the LLM judges purely from allow/deny guidance + tool_input.
+  // Default true.
+
   allow: [
     'Read-Only Operations: Read, Glob, Grep, and other read-only tools that do not modify state.',
     'Local Development: Build, test, lint, format commands in the current repository.',

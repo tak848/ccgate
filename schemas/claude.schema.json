@@ -144,6 +144,9 @@
     "disable_load_main_worktree_local_config": {
       "type": "boolean"
     },
+    "include_settings_permissions_in_prompt": {
+      "type": "boolean"
+    },
     "allow": {
       "items": {
         "type": "string"

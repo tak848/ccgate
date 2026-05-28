@@ -162,7 +162,7 @@ type Option func(*runtimeOptions)
 type runtimeOptions struct {
 	targetName            string
 	cacheTarget           string
-	promptSection         string
+	promptSection         func(cfg config.Config) string
 	hasRecentTranscript   bool
 	loadStaticPermissions func(cwd string) any
 	loadRecentTranscript  func(transcriptPath string) any
@@ -196,10 +196,14 @@ func WithCacheTarget(name string) Option {
 // WithPromptSection injects target-specific guidance about which
 // payload fields the target delivers and how the LLM should
 // interpret them. Inserted between the decision rules and the
-// allow/deny lists. Targets that have nothing target-specific to
-// say (Codex today) simply do not pass this option.
-func WithPromptSection(section string) Option {
-	return func(o *runtimeOptions) { o.promptSection = section }
+// allow/deny lists. The callback receives the loaded Config so the
+// section can drop or alter paragraphs whose underlying payload
+// field is suppressed (e.g. settings_permissions when
+// include_settings_permissions_in_prompt is false). Targets that
+// have nothing target-specific to say (Codex today) simply do not
+// pass this option.
+func WithPromptSection(fn func(cfg config.Config) string) Option {
+	return func(o *runtimeOptions) { o.promptSection = fn }
 }
 
 // WithHasRecentTranscript declares that the user payload carries a
@@ -620,7 +624,7 @@ func buildPrompt(cfg config.Config, in HookInput, ro runtimeOptions) (llm.Prompt
 			ReferencedPaths: referencedPaths(in),
 		},
 	}
-	if ro.loadStaticPermissions != nil {
+	if ro.loadStaticPermissions != nil && cfg.ShouldIncludeSettingsPermissionsInPrompt() {
 		pi.SettingsPermissions = ro.loadStaticPermissions(in.Cwd)
 	}
 	if ro.loadRecentTranscript != nil && in.TranscriptPath != "" {
@@ -630,11 +634,15 @@ func buildPrompt(cfg config.Config, in HookInput, ro runtimeOptions) (llm.Prompt
 	if err != nil {
 		return llm.Prompt{}, fmt.Errorf("marshal prompt input: %w", err)
 	}
+	var targetSection string
+	if ro.promptSection != nil {
+		targetSection = ro.promptSection(cfg)
+	}
 	p := prompt.Build(prompt.Args{
 		TargetName:          ro.targetName,
 		PlanMode:            in.PermissionMode == PermissionModePlan,
 		HasRecentTranscript: ro.hasRecentTranscript,
-		TargetSection:       ro.promptSection,
+		TargetSection:       targetSection,
 		Allow:               cfg.Allow,
 		Deny:                cfg.Deny,
 		Environment:         cfg.Environment,

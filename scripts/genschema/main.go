@@ -25,6 +25,16 @@ const (
 	repoBase = "https://raw.githubusercontent.com/tak848/ccgate/main/schemas"
 )
 
+// claudeOnlyConfigKeys lists Config struct json keys that are
+// meaningful only for the Claude Code target today. They live on
+// the shared Config struct so the loader / merger does not need
+// per-target plumbing, but writing them in a codex config has no
+// effect, so the codex schema strips them to avoid suggesting
+// otherwise to editor users.
+var claudeOnlyConfigKeys = []string{
+	"include_settings_permissions_in_prompt",
+}
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "genschema: %v\n", err)
@@ -85,6 +95,11 @@ func writeSchema(path, target string) error {
 			Format:      "uri",
 			Description: "JSON schema reference. Editors use this to enable validation; ccgate ignores it at runtime.",
 		})
+		if target == "codex" {
+			for _, key := range claudeOnlyConfigKeys {
+				schema.Properties.Delete(key)
+			}
+		}
 	}
 
 	data, err := json.MarshalIndent(schema, "", "  ")
