@@ -295,6 +295,17 @@ mise run vet      # Run go vet
 mise run schema   # Regenerate schemas/{claude,codex}.schema.json
 ```
 
+### Nix (flakes)
+
+A `flake.nix` is provided as an alternative to mise. It pins Go 1.25, `golangci-lint`, `gopls`, `goimports`, `staticcheck`, and `delve` into a dev shell.
+
+```bash
+nix develop                    # Enter the dev shell
+nix develop -c go test ./...   # Run a one-off command in the shell
+```
+
+Requires Nix with flakes enabled (`experimental-features = nix-command flakes`).
+
 ## Articles
 
 - English (dev.to): <https://dev.to/tak848/ccgate-delegate-claude-code-codex-cli-permission-prompts-to-an-llm-274c>

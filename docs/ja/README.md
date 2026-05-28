@@ -293,6 +293,17 @@ mise run vet      # go vet
 mise run schema   # schemas/{claude,codex}.schema.json を再生成
 ```
 
+### Nix (flakes)
+
+mise の代わりに `flake.nix` でも開発環境を立ち上げられます。Go 1.25 / `golangci-lint` / `gopls` / `goimports` / `staticcheck` / `delve` を dev shell にピン留めしています。
+
+```bash
+nix develop                    # dev shell に入る
+nix develop -c go test ./...   # シェルに入らず単発でコマンドを流す
+```
+
+flakes が有効な Nix が必要です (`experimental-features = nix-command flakes`)。
+
 ## 関連記事
 
 - 日本語 (Zenn): <https://zenn.dev/layerx/articles/20260428-ccgate>
