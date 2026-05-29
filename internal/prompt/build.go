@@ -119,11 +119,12 @@ func writeNormalModeRules(b *strings.Builder, hasRecentTranscript bool) {
 		b.WriteString("- deny: When a deny guidance rule matches. EXCEPT: if recent_transcript shows the user explicitly requested the exact operation, use fallthrough instead of deny to let the user confirm.\n")
 		b.WriteString("- allow: When the operation matches allow guidance and no deny rule matches.\n")
 		b.WriteString("- fallthrough: When genuinely uncertain, OR when a deny rule matches but the user explicitly requested the operation.\n")
-		b.WriteString("Deny rules always take priority over allow rules. Explicit user requests can only escalate deny to fallthrough, never to allow.\n\n")
+		b.WriteString("Deny rules always take priority over allow rules. Explicit user requests can only escalate deny to fallthrough, never to allow.\n")
 	} else {
 		b.WriteString("- deny: When a deny guidance rule matches. (No recent_transcript field is delivered by this target, so explicit-user-intent escalation from deny to fallthrough is not available -- judge solely from tool_name + tool_input + cwd.)\n")
 		b.WriteString("- allow: When the operation matches allow guidance and no deny rule matches.\n")
 		b.WriteString("- fallthrough: When genuinely uncertain.\n")
-		b.WriteString("Deny rules always take priority over allow rules.\n\n")
+		b.WriteString("Deny rules always take priority over allow rules.\n")
 	}
+	b.WriteString("A state-changing or side-effecting operation (commit, branch create/switch, package install, build, file write) is NOT by itself a reason to fallthrough: if it matches allow guidance and no deny rule applies, return allow.\n\n")
 }

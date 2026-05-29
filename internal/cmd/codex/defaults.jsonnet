@@ -62,7 +62,7 @@
     'Local writes inside the workspace: apply_patch hunks whose target paths are all under cwd / repo_root, edits to project files for editing/refactoring/scaffolding the AI is currently doing. Workspace-internal writes for the active coding task are in scope; writes that escape cwd / repo_root or that match a deny rule are not.',
     'Local build/test against project-defined scripts: make, just, mise run, pnpm test, go test, cargo test, etc.',
     'Package install confined to this repo: pnpm/cargo/go install with no global flags.',
-    'Git feature-branch operations on non-protected branches.',
+    'Git feature-branch operations on non-protected branches. For switch -c / checkout -b, the target branch is in the command; context.branch_name is the pre-command branch.',
     'MCP tools whose server is explicitly trusted by the user and whose side effects are confined to the user-authorized scope (read APIs, project-scoped writes).',
   ],
 
