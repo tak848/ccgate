@@ -59,7 +59,7 @@
   allow: [
     'Read-Only Operations: Read, Glob, Grep, and other read-only tools that do not modify state.',
     'Local Development: Build, test, lint, format commands in the current repository.',
-    'Git Feature Branch: Git operations on non-protected branches (not main, master, release/*, prod).',
+    'Git Feature Branch: Git operations on non-protected branches (not main, master, release/*, prod). For switch -c / checkout -b, the target branch is in the command; context.branch_name is the pre-command branch.',
     'Package Manager Install: Package manager commands (npm install, go mod tidy, pip install, etc.) in the current repository.',
   ],
 
