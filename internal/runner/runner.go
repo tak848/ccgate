@@ -474,32 +474,76 @@ func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOpti
 	}
 }
 
-// redactProviderError strips the SDK error of its raw response
-// body before the runner logs it / writes it to metrics. Both
-// anthropic-sdk-go and openai-go build Error.Error() by embedding
-// the entire response body, which a misbehaving proxy / gateway can
-// populate with Authorization headers, request signatures, or echo
-// of the submitted credential. ccgate.log is `0644` and the
-// metrics JSONL is consumed by the user's other tooling, so we
-// can't risk that surface carrying secrets through.
+// redactProviderError keeps the diagnosable parts of an SDK error
+// (status, the API's structured error `type` and `message`, request
+// id) while dropping the raw response body. Both anthropic-sdk-go and
+// openai-go build Error.Error() by embedding the entire response body,
+// which a misbehaving proxy / gateway can populate with Authorization
+// headers, request signatures, or an echo of the submitted credential.
+// ccgate.log is `0644` and the metrics JSONL is consumed by the user's
+// other tooling, so we can't risk that surface carrying secrets.
 //
-// Known SDK error types collapse to "<provider> <statusCode>".
-// Anything else (transport / context / parse) keeps its original
-// shape because we built those messages ourselves and they don't
-// echo provider response bodies.
+// We surface ONLY the standard `{"error":{"type","message"}}` envelope
+// fields, never the raw dump: that envelope is the API's own
+// human-readable description (e.g. "model: claude-haiku-4-5") and is
+// exactly what a user needs to tell a model-name typo from an auth or
+// rate-limit failure. A body that doesn't fit the envelope leaves
+// type/message empty and collapses to "<provider> API error
+// (status N)".
+//
+// Non-SDK errors (transport / context / parse) keep their original
+// shape because we built those messages ourselves and they don't echo
+// provider response bodies.
 func redactProviderError(providerName string, err error) error {
 	if err == nil {
 		return nil
 	}
 	var anth *anthropicsdk.Error
 	if errors.As(err, &anth) {
-		return fmt.Errorf("%s API error (status %d)", providerName, anth.StatusCode)
+		return providerAPIError(providerName, anth.StatusCode, string(anth.Type()), errorEnvelopeMessage(anth.RawJSON()), anth.RequestID)
 	}
 	var oai *openaisdk.Error
 	if errors.As(err, &oai) {
-		return fmt.Errorf("%s API error (status %d)", providerName, oai.StatusCode)
+		return providerAPIError(providerName, oai.StatusCode, oai.Type, oai.Message, "")
 	}
 	return err
+}
+
+// providerAPIError formats the redacted, secret-free API error string
+// from its already-extracted structured parts. type / message /
+// requestID are appended only when present so a bare body still yields
+// a clean "<provider> API error (status N)".
+func providerAPIError(providerName string, status int, errType, message, requestID string) error {
+	out := fmt.Sprintf("%s API error (status %d)", providerName, status)
+	if errType != "" {
+		out += fmt.Sprintf(", type=%s", errType)
+	}
+	if message != "" {
+		out += ": " + message
+	}
+	if requestID != "" {
+		out += fmt.Sprintf(" (request-id %s)", requestID)
+	}
+	return errors.New(out)
+}
+
+// errorEnvelopeMessage pulls the `error.message` field out of the
+// standard provider error envelope without exposing any other part of
+// the raw body. Returns "" when the body is empty or not shaped like
+// {"error":{"message":"..."}}.
+func errorEnvelopeMessage(rawJSON string) string {
+	if rawJSON == "" {
+		return ""
+	}
+	var envelope struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(rawJSON), &envelope); err != nil {
+		return ""
+	}
+	return envelope.Error.Message
 }
 
 // providerAuthStatus type-checks the error against the

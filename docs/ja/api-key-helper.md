@@ -61,6 +61,8 @@ provider に渡す credential が静的な環境変数では追いつかない�
 
 認証情報の解決順は `provider.auth` (設定済みのとき) > `CCGATE_*_API_KEY` > `*_API_KEY` です。`auth` を設定している状態で解決に失敗しても env var には fallback しません。`kind=credential_unavailable` で fallthrough します。
 
+Anthropic provider では、ccgate は SDK の ambient な env autoload を全モードで無効化するため、使われる credential は上記で解決したものだけです。残っている `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` (空文字で export されていても) やディスク上の `default` profile がそれを上書きすることはなく、`ANTHROPIC_BASE_URL` も無視されます — base URL の指定は `provider.base_url` で行います。
+
 ## helper の出力
 
 helper は次のどちらかの形を stdout (もしくは `auth.type=file` ならファイル中身として) に書きます。
