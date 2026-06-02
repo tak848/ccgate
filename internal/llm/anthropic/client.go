@@ -71,10 +71,9 @@ type Client struct {
 
 	// UseProfile selects the profile-delegation path: ccgate calls
 	// anthropicconfig.LoadProfile / LoadConfig directly and feeds
-	// the resulting *Config into option.WithConfig. ANTHROPIC_API_KEY
-	// / ANTHROPIC_AUTH_TOKEN env vars are suppressed via
-	// option.WithoutEnvironmentDefaults so a leftover env never
-	// shadows the declared profile.
+	// the resulting *Config into option.WithConfig. (Env-default
+	// suppression via option.WithoutEnvironmentDefaults is applied
+	// unconditionally by Decide for every mode, not just this one.)
 	UseProfile bool
 }
 
@@ -91,7 +90,23 @@ func (c *Client) Decide(ctx context.Context, p llm.Prompt) (llm.Result, error) {
 		defer cancel()
 	}
 
-	opts := []option.RequestOption{option.WithMaxRetries(maxRetries)}
+	// WithoutEnvironmentDefaults is unconditional: ccgate always resolves
+	// its own credential (exec/file via keystore, profile via the SDK
+	// loader, or a *_API_KEY env var it reads itself), so the SDK must
+	// contribute nothing from the ambient environment. Without it,
+	// anthropic.NewClient prepends DefaultClientOptions, which autoloads a
+	// stray ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN / ANTHROPIC_BASE_URL or
+	// an on-disk fallback profile (active_config / "default"). In the
+	// WithAPIKey branch a leftover default profile then gets shadowed by our
+	// explicit key, which makes the SDK emit a misleading "ANTHROPIC_API_KEY
+	// is set ... takes precedence over the profile" warning even though the
+	// env var is empty/unset. Suppressing env defaults keeps every mode
+	// deterministic: only ccgate's resolved credential and configured
+	// base_url reach the request.
+	opts := []option.RequestOption{
+		option.WithMaxRetries(maxRetries),
+		option.WithoutEnvironmentDefaults(),
+	}
 	if c.UseProfile {
 		profileOpts, err := c.resolveProfileOptions()
 		if err != nil {
@@ -188,8 +203,10 @@ func (c *Client) resolveProfileOptions() ([]option.RequestOption, error) {
 		"source", "profile",
 		"profile_name_set", c.Profile != "",
 	)
+	// Only the profile wiring lives here; env-default suppression
+	// (option.WithoutEnvironmentDefaults) is applied unconditionally by
+	// Decide for every mode, so it is not repeated here.
 	return []option.RequestOption{
-		option.WithoutEnvironmentDefaults(),
 		option.WithConfig(cfg),
 	}, nil
 }

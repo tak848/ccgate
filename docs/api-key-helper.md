@@ -61,6 +61,8 @@ Relative paths in `auth.command` and `auth.path` resolve from the hook's working
 
 Credential resolution order: `provider.auth` (when configured) > `CCGATE_*_API_KEY` > `*_API_KEY`. A configured `auth` block does not fall back to env vars on failure; the hook falls through with `kind=credential_unavailable` so the issue surfaces.
 
+For the Anthropic provider, ccgate disables the SDK's ambient-environment autoload in every mode, so only the credential resolved above is ever used: a stray `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` (even exported empty) or an on-disk `default` profile never shadows it, and `ANTHROPIC_BASE_URL` is ignored — `provider.base_url` is the base-URL control.
+
 ## Helper output
 
 The helper writes one of two shapes on stdout (or, for `auth.type=file`, into the file):

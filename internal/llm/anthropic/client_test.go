@@ -1,9 +1,11 @@
 package anthropic
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -59,6 +61,23 @@ func writeCredentials(t *testing.T, path, profile string) {
 	if err := anthropicconfig.WriteCredentials(path, creds); err != nil {
 		t.Fatalf("WriteCredentials: %v", err)
 	}
+}
+
+// unsetEnvForTest removes an env var for the duration of the test,
+// restoring any prior value on cleanup. t.Setenv cannot express
+// "unset", and an exported-empty value is not equivalent (e.g. the SDK
+// treats ANTHROPIC_PROFILE="" as an explicit empty profile name).
+func unsetEnvForTest(t *testing.T, key string) {
+	t.Helper()
+	prev, had := os.LookupEnv(key)
+	if err := os.Unsetenv(key); err != nil {
+		t.Fatalf("unset %s: %v", key, err)
+	}
+	t.Cleanup(func() {
+		if had {
+			_ = os.Setenv(key, prev)
+		}
+	})
 }
 
 // setActiveConfig writes the active_config pointer used by
@@ -181,6 +200,71 @@ func TestProfileLoadPaths(t *testing.T) {
 				t.Fatalf("server calls = %d, want 1", got)
 			}
 		})
+	}
+}
+
+// TestNonProfileSuppressesEnvDefaults proves that the WithAPIKey
+// (exec / file / *_API_KEY) path passes option.WithoutEnvironmentDefaults
+// so the SDK's env autoload never runs. Without it, an empty/unset
+// ANTHROPIC_API_KEY makes the SDK fall through to an on-disk fallback
+// profile (active_config / "default"), which our explicit key then
+// shadows — emitting the misleading "ANTHROPIC_API_KEY is set ... takes
+// precedence over the profile" warning. The explicit key is used either
+// way (it shadows the profile), so the only observable signal of the
+// fix is the absence of that warning. This is the only ccgate test that
+// exercises the autoload-shadow path, so the SDK's once-per-process
+// warn dedupe is pristine when it runs.
+//
+// Cannot run t.Parallel — mutates process env via t.Setenv.
+func TestNonProfileSuppressesEnvDefaults(t *testing.T) {
+	t.Setenv("ANTHROPIC_CONFIG_DIR", t.TempDir())
+	// The user's exact scenario: ANTHROPIC_API_KEY exported but empty, so
+	// the SDK skips it and falls through to the on-disk fallback profile.
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
+	// ANTHROPIC_PROFILE must be UNSET (not empty): an exported-empty value
+	// makes LoadConfig error with "profile name is empty" instead of
+	// falling through to active_config / the literal "default" profile,
+	// which would defeat the autoload this test needs to provoke.
+	unsetEnvForTest(t, "ANTHROPIC_PROFILE")
+
+	// Stage a fallback "default" profile the SDK would autoload if env
+	// defaults were not suppressed.
+	credPath := fixtureProfileConfig(t, "default", "https://should-not-be-used.example")
+	writeCredentials(t, credPath, "default")
+	setActiveConfig(t, "default")
+
+	var gotAuth, gotAPIKey string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		gotAPIKey = r.Header.Get("X-Api-Key")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id": "msg_test", "type": "message", "role": "assistant", "model": "claude-test",
+			"content":     []map[string]any{{"type": "text", "text": `{"behavior":"allow"}`}},
+			"stop_reason": "end_turn",
+			"usage":       map[string]any{"input_tokens": 1, "output_tokens": 1},
+		})
+	}))
+	t.Cleanup(srv.Close)
+
+	var logBuf bytes.Buffer
+	log.SetOutput(&logBuf)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+	c := &Client{APIKey: "sk-ant-explicit", BaseURL: srv.URL}
+	if _, err := c.Decide(context.Background(), classificationPrompt("claude-test", 5_000)); err != nil {
+		t.Fatalf("Decide: %v", err)
+	}
+
+	if gotAPIKey != "sk-ant-explicit" {
+		t.Errorf("X-Api-Key = %q, want sk-ant-explicit", gotAPIKey)
+	}
+	if gotAuth != "" {
+		t.Errorf("autoloaded profile credential leaked: Authorization = %q", gotAuth)
+	}
+	if out := logBuf.String(); strings.Contains(out, "takes precedence over the profile") {
+		t.Errorf("env defaults not suppressed: SDK emitted shadow warning: %q", out)
 	}
 }
 
