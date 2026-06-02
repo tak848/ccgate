@@ -6,7 +6,7 @@
 
 ## 前提
 
-- Codex hooks は `[features] codex_hooks = true` の設定が必要です。 upstream の payload schema は [OpenAI Codex hooks docs](https://developers.openai.com/codex/hooks) を参照。
+- Codex hooks は `[features] hooks = true` の設定が必要です。 upstream の payload schema は [OpenAI Codex hooks docs](https://developers.openai.com/codex/hooks) を参照。
 - **Tool-agnostic**: Codex hooks は Bash、 `apply_patch`、 MCP tool 呼び出しなど複数の surface で発火します。 ccgate は `tool_name` + `tool_input` JSON 全体で分類。
 
 ## hook 登録
@@ -49,7 +49,7 @@ Codex 設定全体を 1 ファイルにまとめたい場合:
 
 ```toml
 [features]
-codex_hooks = true   # Codex hooks はこの feature flag 配下にあるため、互換性のため明示しておく
+hooks = true   # Codex hooks はこの feature flag 配下にある
 
 [[hooks.PermissionRequest]]
 matcher = ""

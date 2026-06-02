@@ -96,7 +96,7 @@ That's it — ccgate is now running with its embedded defaults. To customize wha
 ## Quick start — Codex CLI
 
 > [!NOTE]
-> Codex hooks require `[features] codex_hooks = true` in `~/.codex/config.toml`. See [docs/codex-cli.md](docs/codex-cli.md) for details.
+> Codex hooks require `[features] hooks = true` in `~/.codex/config.toml`. See [docs/codex-cli.md](docs/codex-cli.md) for details.
 
 ### 1. Register as a Codex hook
 
@@ -127,7 +127,7 @@ Codex reads hooks from `~/.codex/hooks.json` and `~/.codex/config.toml` (with `<
 
 ```toml
 [features]
-codex_hooks = true   # Codex hooks live behind this feature flag; keep it set for compatibility.
+hooks = true   # Codex hooks live behind this feature flag.
 
 [[hooks.PermissionRequest]]
 matcher = ""

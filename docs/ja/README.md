@@ -96,7 +96,7 @@ ccgate は default で Anthropic の Claude Haiku を呼びます。 `CCGATE_ANT
 ## クイックスタート — Codex CLI
 
 > [!NOTE]
-> Codex hooks は `~/.codex/config.toml` に `[features] codex_hooks = true` の設定が必要です。詳細は [docs/codex-cli.md](codex-cli.md) を参照。
+> Codex hooks は `~/.codex/config.toml` に `[features] hooks = true` の設定が必要です。詳細は [docs/codex-cli.md](codex-cli.md) を参照。
 
 ### 1. Codex hook として登録
 
@@ -127,7 +127,7 @@ Codex は `~/.codex/hooks.json` と `~/.codex/config.toml` から hook を読み
 
 ```toml
 [features]
-codex_hooks = true   # Codex hooks はこの feature flag 配下にあり、互換性のため明示しておく
+hooks = true   # Codex hooks はこの feature flag 配下にある
 
 [[hooks.PermissionRequest]]
 matcher = ""

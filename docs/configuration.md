@@ -227,4 +227,4 @@ The same fields exist for the log file (`log_path`, `log_disabled`, `log_max_siz
 
 - **Plan mode (Claude only) is prompt-only.** Under `permission_mode == "plan"`, ccgate relies on the LLM plus prose in the system prompt to (a) reject implementation-side writes and (b) allow read-only queries without an explicit allow-guidance match. Either side can misfire.
 - **No surgical reset for a single embedded default rule.** A layer either replaces a list wholesale or appends to it; removing one specific embedded entry while keeping the rest requires re-stating the whole list under `allow` / `deny` minus that one entry.
-- ccgate decides from the hook payload + ccgate config. The Codex side requires `[features] codex_hooks = true` (see the [OpenAI Codex hooks docs](https://developers.openai.com/codex/hooks) for schema details).
+- ccgate decides from the hook payload + ccgate config. The Codex side requires `[features] hooks = true` (see the [OpenAI Codex hooks docs](https://developers.openai.com/codex/hooks) for schema details).
