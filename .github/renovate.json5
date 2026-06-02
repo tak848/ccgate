@@ -10,14 +10,39 @@
   ],
   rangeStrategy: "bump",
   postUpdateOptions: ["gomodTidy"],
+  minimumReleaseAge: "3 days",
   labels: ["renovate"],
   prConcurrentLimit: 0,
   prHourlyLimit: 0,
   major: { labels: ["renovate", "update_major"] },
+  // Opt-in to the beta nix manager (disabled by default) so flake.lock is maintained.
+  nix: { enabled: true },
   gitIgnoredAuthors: [
     "github-actions[bot]@users.noreply.github.com",
   ],
   packageRules: [
+    {
+      description: "Rename the allNonMajor group (avoid 'non-major' wording)",
+      matchUpdateTypes: ["minor", "patch"],
+      groupName: "minor & patch updates",
+    },
+    {
+      description: "Nix flake.lock: refresh via lock file maintenance (beta nix manager)",
+      matchManagers: ["nix"],
+      lockFileMaintenance: { enabled: true },
+    },
+    {
+      description: "anthropic-sdk-go: independent PR (coupled to jsonschema's OrderedMap dep)",
+      matchManagers: ["gomod"],
+      matchPackageNames: ["github.com/anthropics/anthropic-sdk-go"],
+      groupName: "anthropic-sdk-go",
+    },
+    {
+      description: "invopop/jsonschema: independent PR; v0.14 switched OrderedMap to pb33f and breaks anthropic-sdk-go until upstream migrates",
+      matchManagers: ["gomod"],
+      matchPackageNames: ["github.com/invopop/jsonschema"],
+      groupName: "jsonschema",
+    },
     {
       description: "go directive: keep pinned at 1.25.0",
       matchDepNames: ["go"],
