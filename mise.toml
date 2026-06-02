@@ -1,6 +1,6 @@
 [tools]
-go = "1.25.9"
-"aqua:golangci/golangci-lint" = "2.5.0"
+go = "1.25.11"
+"aqua:golangci/golangci-lint" = "2.12.2"
 
 [tasks.build]
 description = "Build the binary (dev use)"
