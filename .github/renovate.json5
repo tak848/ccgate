@@ -36,12 +36,16 @@
       matchManagers: ["gomod"],
       matchPackageNames: ["github.com/anthropics/anthropic-sdk-go"],
       groupName: "anthropic-sdk-go",
+      // Override the slug inherited from group:allNonMajor so minor/patch bumps
+      // get their own branch instead of being folded into renovate/all-minor-patch.
+      groupSlug: "anthropic-sdk-go",
     },
     {
       description: "invopop/jsonschema: independent PR; v0.14 switched OrderedMap to pb33f and breaks anthropic-sdk-go until upstream migrates",
       matchManagers: ["gomod"],
       matchPackageNames: ["github.com/invopop/jsonschema"],
       groupName: "jsonschema",
+      groupSlug: "jsonschema",
     },
     {
       description: "go directive: keep pinned at 1.25.0",
