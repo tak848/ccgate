@@ -6,7 +6,7 @@ toolchain go1.25.9
 
 require (
 	github.com/alecthomas/kong v1.15.0
-	github.com/anthropics/anthropic-sdk-go v1.40.0
+	github.com/anthropics/anthropic-sdk-go v1.46.0
 	github.com/gofrs/flock v0.13.0
 	github.com/google/go-jsonnet v0.22.0
 	github.com/invopop/jsonschema v0.13.0
@@ -22,6 +22,7 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
+	github.com/standard-webhooks/standard-webhooks/libraries v0.0.1 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
