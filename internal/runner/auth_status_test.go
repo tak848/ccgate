@@ -56,53 +56,104 @@ func TestProviderAuthStatus(t *testing.T) {
 	}
 }
 
-// TestRedactProviderError pins the contract that the SDK error
-// string never reaches the runner's log / metrics surface verbatim.
-// Both anthropic-sdk-go and openai-go embed the response body in
+// TestRedactProviderError pins the contract that the runner's
+// log / metrics surface gets the API's structured error type and
+// message (the diagnosable parts) but never the raw response body
+// verbatim. Both anthropic-sdk-go and openai-go embed the body in
 // Error.Error(), and proxies sometimes echo Authorization headers /
 // request signatures there.
 func TestRedactProviderError(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]struct {
+		provider     string
 		err          error
-		wantContains string
-		wantOmits    string
+		wantContains []string
+		wantOmits    []string
 	}{
-		"anthropic 500": {
-			// Real anthropic-sdk-go errors render with "POST 'url': 500 ..."
-			// and the response body. We can't easily fabricate that body
-			// here, but we can verify the redacted message no longer
-			// contains the long, body-bearing prefix.
+		"anthropic bare status": {
+			// A zero-value SDK error (no parsed type / body) collapses to
+			// just the status — proving empty parts are omitted, not
+			// printed as "type=" / ": ".
+			provider:     "anthropic",
 			err:          &anthropicsdk.Error{StatusCode: 500},
-			wantContains: "anthropic API error (status 500)",
+			wantContains: []string{"anthropic API error (status 500)"},
+			wantOmits:    []string{"type=", ": "},
 		},
-		"openai 502": {
-			err:          &openaisdk.Error{StatusCode: 502},
-			wantContains: "openai API error (status 502)",
+		"openai surfaces type and message": {
+			// openai-go exposes Type / Message as public struct fields, so
+			// we can drive the full format deterministically. This is the
+			// case that would have told the user "model not found" instead
+			// of a bare "status 400".
+			provider: "openai",
+			err: &openaisdk.Error{
+				StatusCode: 400,
+				Type:       "invalid_request_error",
+				Message:    "model: gpt-bogus does not exist",
+			},
+			wantContains: []string{
+				"openai API error (status 400)",
+				"type=invalid_request_error",
+				"model: gpt-bogus does not exist",
+			},
 		},
 		"non-sdk error passthrough": {
+			provider:     "anthropic",
 			err:          errors.New("network read timed out"),
-			wantContains: "network read timed out",
+			wantContains: []string{"network read timed out"},
 		},
-		"nil": {err: nil, wantContains: ""},
+		"nil": {provider: "anthropic", err: nil},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			provider := "anthropic"
-			if strings.Contains(name, "openai") {
-				provider = "openai"
-			}
-			got := redactProviderError(provider, tc.err)
+			got := redactProviderError(tc.provider, tc.err)
 			if tc.err == nil {
 				if got != nil {
 					t.Fatalf("nil err must redact to nil, got %v", got)
 				}
 				return
 			}
-			if !strings.Contains(got.Error(), tc.wantContains) {
-				t.Fatalf("redacted = %q, want substring %q", got.Error(), tc.wantContains)
+			for _, want := range tc.wantContains {
+				if !strings.Contains(got.Error(), want) {
+					t.Fatalf("redacted = %q, want substring %q", got.Error(), want)
+				}
+			}
+			for _, omit := range tc.wantOmits {
+				if strings.Contains(got.Error(), omit) {
+					t.Fatalf("redacted = %q, must not contain %q", got.Error(), omit)
+				}
+			}
+		})
+	}
+}
+
+// TestErrorEnvelopeMessage pins that we lift ONLY the error.message
+// field out of the standard provider envelope — never a sibling field
+// a misbehaving proxy might use to echo a credential / header.
+func TestErrorEnvelopeMessage(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		raw  string
+		want string
+	}{
+		"standard envelope":       {raw: `{"error":{"type":"not_found_error","message":"model: x"}}`, want: "model: x"},
+		"ignores sibling secrets": {raw: `{"error":{"message":"model: x"},"authorization":"Bearer SECRET"}`, want: "model: x"},
+		"empty body":              {raw: "", want: ""},
+		"not an error envelope":   {raw: `{"id":"msg_1","type":"message"}`, want: ""},
+		"malformed json":          {raw: `{"error":{`, want: ""},
+		"proxy html (not json)":   {raw: `<html>502 Bad Gateway</html>`, want: ""},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			got := errorEnvelopeMessage(tc.raw)
+			if got != tc.want {
+				t.Fatalf("errorEnvelopeMessage(%q) = %q, want %q", tc.raw, got, tc.want)
+			}
+			if strings.Contains(got, "SECRET") {
+				t.Fatalf("leaked sibling field into message: %q", got)
 			}
 		})
 	}
