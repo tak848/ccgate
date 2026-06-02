@@ -2,7 +2,7 @@ module github.com/tak848/ccgate
 
 go 1.25.0
 
-toolchain go1.25.9
+toolchain go1.25.10
 
 require (
 	github.com/alecthomas/kong v1.15.0
@@ -10,10 +10,10 @@ require (
 	github.com/gofrs/flock v0.13.0
 	github.com/google/go-jsonnet v0.22.0
 	github.com/invopop/jsonschema v0.13.0
-	github.com/openai/openai-go/v3 v3.34.0
+	github.com/openai/openai-go/v3 v3.37.0
 	github.com/wk8/go-ordered-map/v2 v2.1.8
-	golang.org/x/sys v0.43.0
-	golang.org/x/term v0.42.0
+	golang.org/x/sys v0.45.0
+	golang.org/x/term v0.43.0
 )
 
 require (
