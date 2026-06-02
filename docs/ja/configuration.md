@@ -227,4 +227,4 @@ cache 層の失敗は fallthrough せずに自動回復するので、`slog.Warn
 
 - **Plan mode (Claude のみ) はプロンプト依存**: `permission_mode == "plan"` では (a) 実装系 write を拒絶する判定と (b) 明示的な allow guidance なしの read-only クエリ許可 を、LLM とシステムプロンプトの指示文に委ねています。どちらの方向にも誤判定の余地あり
 - **embedded default の特定ルールだけを部分削除する手段なし**: layer は list を **完全置換** (`allow: [...]`) するか **末尾追加** (`append_allow: [...]`) するかのどちらかで、embedded の中の 1 ルールだけ消したい場合は残り全部を `allow:` / `deny:` に書き直すしかない
-- ccgate は hook payload と ccgate の設定からのみ判定する。 Codex 側は `[features] codex_hooks = true` の設定が必要 (schema 詳細は [OpenAI Codex hooks docs](https://developers.openai.com/codex/hooks) を参照)。
+- ccgate は hook payload と ccgate の設定からのみ判定する。 Codex 側は `[features] hooks = true` の設定が必要 (schema 詳細は [OpenAI Codex hooks docs](https://developers.openai.com/codex/hooks) を参照)。

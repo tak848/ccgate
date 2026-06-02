@@ -6,7 +6,7 @@ Codex-CLI-specific notes for the `ccgate codex` hook.
 
 ## Requirements
 
-- Codex hooks require `[features] codex_hooks = true`. See [OpenAI's Codex hooks docs](https://developers.openai.com/codex/hooks) for the upstream payload schema.
+- Codex hooks require `[features] hooks = true`. See [OpenAI's Codex hooks docs](https://developers.openai.com/codex/hooks) for the upstream payload schema.
 - **Tool-agnostic.** Codex hooks fire for Bash, `apply_patch`, MCP tool calls, and other surfaces. ccgate classifies by `tool_name` + the full `tool_input` JSON, not by tool kind alone.
 
 ## Hook registration
@@ -49,7 +49,7 @@ If you want to keep hooks alongside the rest of your Codex config:
 
 ```toml
 [features]
-codex_hooks = true   # Codex hooks live behind this feature flag; keep it set for compatibility.
+hooks = true   # Codex hooks live behind this feature flag.
 
 [[hooks.PermissionRequest]]
 matcher = ""
