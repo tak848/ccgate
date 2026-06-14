@@ -1,13 +1,13 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/tak848/ccgate/main/schemas/codex.schema.json",
+  "type": "object",
   "properties": {
     "$schema": {
       "type": "string",
-      "format": "uri",
-      "description": "JSON schema reference. Editors use this to enable validation; ccgate ignores it at runtime."
+      "description": "JSON schema reference. Editors use this to enable validation; ccgate ignores it at runtime.",
+      "format": "uri"
     },
     "provider": {
+      "type": "object",
       "properties": {
         "name": {
           "type": "string"
@@ -19,8 +19,11 @@
           "type": "string"
         },
         "auth": {
+          "title": "auth",
+          "description": "Discriminated union selecting the credential source for the provider.",
           "oneOf": [
             {
+              "type": "object",
               "properties": {
                 "type": {
                   "type": "string",
@@ -28,40 +31,40 @@
                 },
                 "command": {
                   "type": "string",
-                  "minLength": 1,
-                  "description": "Shell command. Stdout is the credential. Run via the configured shell (default bash)."
+                  "description": "Shell command. Stdout is the credential. Run via the configured shell (default bash).",
+                  "minLength": 1
                 },
                 "shell": {
                   "type": "string",
+                  "description": "Shell that runs `command`. \"bash\" runs `bash -c \u003ccommand\u003e`. \"powershell\" runs `pwsh -Command \u003ccommand\u003e` when pwsh is on PATH (PowerShell 7+, cross-platform) and falls back to `powershell -Command \u003ccommand\u003e` (Windows PowerShell 5.1) otherwise. Default: bash.",
                   "enum": [
                     "bash",
                     "powershell"
-                  ],
-                  "description": "Shell that runs `command`. \"bash\" runs `bash -c \u003ccommand\u003e`. \"powershell\" runs `pwsh -Command \u003ccommand\u003e` when pwsh is on PATH (PowerShell 7+, cross-platform) and falls back to `powershell -Command \u003ccommand\u003e` (Windows PowerShell 5.1) otherwise. Default: bash."
+                  ]
                 },
                 "refresh_margin_ms": {
                   "type": "integer",
-                  "minimum": 0,
-                  "description": "Cache early-refresh threshold + minimum remaining TTL guard for fresh credentials, in milliseconds. Default: 60000."
+                  "description": "Cache early-refresh threshold + minimum remaining TTL guard for fresh credentials, in milliseconds. Default: 60000.",
+                  "minimum": 0
                 },
                 "timeout_ms": {
                   "type": "integer",
-                  "minimum": 1,
-                  "description": "Hard cap on one Resolve call (lock + helper exec), in milliseconds. Default: 30000."
+                  "description": "Hard cap on one Resolve call (lock + helper exec), in milliseconds. Default: 30000.",
+                  "minimum": 1
                 },
                 "cache_key": {
                   "type": "string",
                   "description": "Secret-free salt added to the cache fingerprint so a single command string can produce per-account cache entries (used as-is; pull env values via jsonnet std.native('env') / std.native('must_env'))."
                 }
               },
-              "additionalProperties": false,
-              "type": "object",
               "required": [
                 "type",
                 "command"
-              ]
+              ],
+              "additionalProperties": false
             },
             {
+              "type": "object",
               "properties": {
                 "type": {
                   "type": "string",
@@ -69,27 +72,27 @@
                 },
                 "path": {
                   "type": "string",
-                  "minLength": 1,
-                  "description": "Path to the credential file. Absolute, ~/-prefixed, or relative (relative paths resolve from the hook's working directory at fire time, not the config file's directory). Omit the field to use the default $XDG_STATE_HOME/ccgate/\u003ctarget\u003e/auth_key.json; do not set it to an empty string."
+                  "description": "Path to the credential file. Absolute, ~/-prefixed, or relative (relative paths resolve from the hook's working directory at fire time, not the config file's directory). Omit the field to use the default $XDG_STATE_HOME/ccgate/\u003ctarget\u003e/auth_key.json; do not set it to an empty string.",
+                  "minLength": 1
                 },
                 "refresh_margin_ms": {
                   "type": "integer",
-                  "minimum": 0,
-                  "description": "Minimum remaining TTL guard for file output, in milliseconds. Default: 60000."
+                  "description": "Minimum remaining TTL guard for file output, in milliseconds. Default: 60000.",
+                  "minimum": 0
                 },
                 "timeout_ms": {
                   "type": "integer",
-                  "minimum": 1,
-                  "description": "Hard cap on the file read so a stalled mount surfaces as reason=timeout. Default: 30000."
+                  "description": "Hard cap on the file read so a stalled mount surfaces as reason=timeout. Default: 30000.",
+                  "minimum": 1
                 }
               },
-              "additionalProperties": false,
-              "type": "object",
               "required": [
                 "type"
-              ]
+              ],
+              "additionalProperties": false
             },
             {
+              "type": "object",
               "properties": {
                 "type": {
                   "type": "string",
@@ -100,25 +103,22 @@
                   "description": "Anthropic profile name (the value `ant auth login --profile \u003cname\u003e` writes to \u003cconfig_dir\u003e/credentials/\u003cname\u003e.json). Empty/omitted lets the SDK resolve $ANTHROPIC_PROFILE → active_config → \"default\". Anthropic provider only."
                 }
               },
-              "additionalProperties": false,
-              "type": "object",
               "required": [
                 "type"
-              ]
+              ],
+              "additionalProperties": false
             }
-          ],
-          "title": "auth"
+          ]
         },
         "timeout_ms": {
           "type": "integer"
         }
       },
-      "additionalProperties": false,
-      "type": "object",
       "required": [
         "name",
         "model"
-      ]
+      ],
+      "additionalProperties": false
     },
     "log_path": {
       "type": "string"
@@ -145,44 +145,45 @@
       "type": "boolean"
     },
     "allow": {
+      "type": "array",
       "items": {
         "type": "string"
-      },
-      "type": "array"
+      }
     },
     "deny": {
+      "type": "array",
       "items": {
         "type": "string"
-      },
-      "type": "array"
+      }
     },
     "environment": {
+      "type": "array",
       "items": {
         "type": "string"
-      },
-      "type": "array"
+      }
     },
     "append_allow": {
+      "type": "array",
       "items": {
         "type": "string"
-      },
-      "type": "array"
+      }
     },
     "append_deny": {
+      "type": "array",
       "items": {
         "type": "string"
-      },
-      "type": "array"
+      }
     },
     "append_environment": {
+      "type": "array",
       "items": {
         "type": "string"
-      },
-      "type": "array"
+      }
     }
   },
-  "additionalProperties": false,
-  "type": "object",
+  "$id": "https://raw.githubusercontent.com/tak848/ccgate/main/schemas/codex.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "ccgate codex configuration",
-  "description": "Configuration schema for ccgate's codex PermissionRequest hook. See https://github.com/tak848/ccgate."
+  "description": "Configuration schema for ccgate's codex PermissionRequest hook. See https://github.com/tak848/ccgate.",
+  "additionalProperties": false
 }

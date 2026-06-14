@@ -24,9 +24,9 @@ type Prompt struct {
 
 // Output is the structured response from the LLM.
 type Output struct {
-	Behavior    string `json:"behavior"     jsonschema_description:"One of allow, deny, fallthrough."`
-	Reason      string `json:"reason"       jsonschema_description:"Brief reason for the decision. Always provide this regardless of behavior."`
-	DenyMessage string `json:"deny_message" jsonschema_description:"When behavior is deny, a concise explanation of why. Must not be empty when denying."`
+	Behavior    string `json:"behavior"     jsonschema:"One of allow, deny, fallthrough."`
+	Reason      string `json:"reason"       jsonschema:"Brief reason for the decision. Always provide this regardless of behavior."`
+	DenyMessage string `json:"deny_message" jsonschema:"When behavior is deny, a concise explanation of why. Must not be empty when denying."`
 }
 
 // Usage holds token usage from a single LLM call.

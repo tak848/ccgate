@@ -17,7 +17,7 @@ import (
 	anthropicsdk "github.com/anthropics/anthropic-sdk-go"
 	anthropicconfig "github.com/anthropics/anthropic-sdk-go/config"
 	"github.com/anthropics/anthropic-sdk-go/option"
-	"github.com/invopop/jsonschema"
+	"github.com/google/jsonschema-go/jsonschema"
 
 	"github.com/tak848/ccgate/internal/llm"
 )
@@ -279,11 +279,10 @@ func classifyProfileLoadError(err error) string {
 }
 
 func outputSchema() (map[string]any, error) {
-	reflector := jsonschema.Reflector{
-		AllowAdditionalProperties: false,
-		DoNotReference:            true,
+	schema, err := jsonschema.For[llm.Output](nil)
+	if err != nil {
+		return nil, fmt.Errorf("build schema: %w", err)
 	}
-	schema := reflector.Reflect(llm.Output{})
 	data, err := json.Marshal(schema)
 	if err != nil {
 		return nil, fmt.Errorf("marshal schema: %w", err)

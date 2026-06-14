@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/invopop/jsonschema"
+	"github.com/google/jsonschema-go/jsonschema"
 	openaigo "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/packages/param"
@@ -122,11 +122,10 @@ func (c *Client) Decide(ctx context.Context, p llm.Prompt) (llm.Result, error) {
 }
 
 func outputSchema() (map[string]any, error) {
-	reflector := jsonschema.Reflector{
-		AllowAdditionalProperties: false,
-		DoNotReference:            true,
+	schema, err := jsonschema.For[llm.Output](nil)
+	if err != nil {
+		return nil, fmt.Errorf("build schema: %w", err)
 	}
-	schema := reflector.Reflect(llm.Output{})
 	data, err := json.Marshal(schema)
 	if err != nil {
 		return nil, fmt.Errorf("marshal schema: %w", err)

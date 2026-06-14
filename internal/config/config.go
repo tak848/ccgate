@@ -13,8 +13,7 @@ import (
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	jsonnet "github.com/google/go-jsonnet"
 	"github.com/google/go-jsonnet/ast"
-	"github.com/invopop/jsonschema"
-	orderedmap "github.com/pb33f/ordered-map/v2"
+	"github.com/google/jsonschema-go/jsonschema"
 
 	"github.com/tak848/ccgate/internal/gitutil"
 	"github.com/tak848/ccgate/internal/llm"
@@ -240,14 +239,16 @@ func (a AuthConfig) GetTimeout() time.Duration {
 	return time.Duration(ms) * time.Millisecond
 }
 
-// JSONSchema implements jsonschema.customSchemaImpl so the generated
-// schemas/{claude,codex}.schema.json present `provider.auth` as a
+// AuthConfigSchema returns the JSON Schema for `provider.auth` as a
 // `oneOf` over the type=exec, type=file, and type=profile branches,
 // mirroring the validate() rules (required field per type,
-// additionalProperties false). Editor users get the same
+// additionalProperties false). genschema injects it into the generated
+// schemas/{claude,codex}.schema.json so editor users get the same
 // mutual-exclusion feedback that runtime validate would give them at
-// hook fire time.
-func (AuthConfig) JSONSchema() *jsonschema.Schema {
+// hook fire time. google/jsonschema-go has no custom-schema interface
+// hook (unlike invopop), so the generator wires this in explicitly
+// rather than it being discovered via a method on AuthConfig.
+func AuthConfigSchema() *jsonschema.Schema {
 	return &jsonschema.Schema{
 		Title:       "auth",
 		Description: "Discriminated union selecting the credential source for the provider.",
@@ -260,48 +261,56 @@ func (AuthConfig) JSONSchema() *jsonschema.Schema {
 }
 
 func authExecBranchSchema() *jsonschema.Schema {
-	props := orderedmap.New[string, *jsonschema.Schema]()
-	props.Set("type", &jsonschema.Schema{Type: "string", Const: AuthTypeExec})
-	props.Set("command", &jsonschema.Schema{Type: "string", MinLength: ptr(uint64(1)), Description: "Shell command. Stdout is the credential. Run via the configured shell (default bash)."})
-	props.Set("shell", &jsonschema.Schema{Type: "string", Enum: []any{AuthShellBash, AuthShellPowerShell}, Description: "Shell that runs `command`. \"bash\" runs `bash -c <command>`. \"powershell\" runs `pwsh -Command <command>` when pwsh is on PATH (PowerShell 7+, cross-platform) and falls back to `powershell -Command <command>` (Windows PowerShell 5.1) otherwise. Default: bash."})
-	props.Set("refresh_margin_ms", &jsonschema.Schema{Type: "integer", Minimum: json.Number("0"), Description: "Cache early-refresh threshold + minimum remaining TTL guard for fresh credentials, in milliseconds. Default: 60000."})
-	props.Set("timeout_ms", &jsonschema.Schema{Type: "integer", Minimum: json.Number("1"), Description: "Hard cap on one Resolve call (lock + helper exec), in milliseconds. Default: 30000."})
-	props.Set("cache_key", &jsonschema.Schema{Type: "string", Description: "Secret-free salt added to the cache fingerprint so a single command string can produce per-account cache entries (used as-is; pull env values via jsonnet std.native('env') / std.native('must_env'))."})
 	return &jsonschema.Schema{
-		Type:                 "object",
-		Required:             []string{"type", "command"},
-		Properties:           props,
-		AdditionalProperties: jsonschema.FalseSchema,
+		Type:     "object",
+		Required: []string{"type", "command"},
+		Properties: map[string]*jsonschema.Schema{
+			"type":              {Type: "string", Const: ptr[any](AuthTypeExec)},
+			"command":           {Type: "string", MinLength: ptr(1), Description: "Shell command. Stdout is the credential. Run via the configured shell (default bash)."},
+			"shell":             {Type: "string", Enum: []any{AuthShellBash, AuthShellPowerShell}, Description: "Shell that runs `command`. \"bash\" runs `bash -c <command>`. \"powershell\" runs `pwsh -Command <command>` when pwsh is on PATH (PowerShell 7+, cross-platform) and falls back to `powershell -Command <command>` (Windows PowerShell 5.1) otherwise. Default: bash."},
+			"refresh_margin_ms": {Type: "integer", Minimum: ptr(0.0), Description: "Cache early-refresh threshold + minimum remaining TTL guard for fresh credentials, in milliseconds. Default: 60000."},
+			"timeout_ms":        {Type: "integer", Minimum: ptr(1.0), Description: "Hard cap on one Resolve call (lock + helper exec), in milliseconds. Default: 30000."},
+			"cache_key":         {Type: "string", Description: "Secret-free salt added to the cache fingerprint so a single command string can produce per-account cache entries (used as-is; pull env values via jsonnet std.native('env') / std.native('must_env'))."},
+		},
+		PropertyOrder:        []string{"type", "command", "shell", "refresh_margin_ms", "timeout_ms", "cache_key"},
+		AdditionalProperties: falseSchema(),
 	}
 }
 
 func authFileBranchSchema() *jsonschema.Schema {
-	props := orderedmap.New[string, *jsonschema.Schema]()
-	props.Set("type", &jsonschema.Schema{Type: "string", Const: AuthTypeFile})
-	props.Set("path", &jsonschema.Schema{Type: "string", MinLength: ptr(uint64(1)), Description: "Path to the credential file. Absolute, ~/-prefixed, or relative (relative paths resolve from the hook's working directory at fire time, not the config file's directory). Omit the field to use the default $XDG_STATE_HOME/ccgate/<target>/auth_key.json; do not set it to an empty string."})
-	props.Set("refresh_margin_ms", &jsonschema.Schema{Type: "integer", Minimum: json.Number("0"), Description: "Minimum remaining TTL guard for file output, in milliseconds. Default: 60000."})
-	props.Set("timeout_ms", &jsonschema.Schema{Type: "integer", Minimum: json.Number("1"), Description: "Hard cap on the file read so a stalled mount surfaces as reason=timeout. Default: 30000."})
 	return &jsonschema.Schema{
-		Type:                 "object",
-		Required:             []string{"type"},
-		Properties:           props,
-		AdditionalProperties: jsonschema.FalseSchema,
+		Type:     "object",
+		Required: []string{"type"},
+		Properties: map[string]*jsonschema.Schema{
+			"type":              {Type: "string", Const: ptr[any](AuthTypeFile)},
+			"path":              {Type: "string", MinLength: ptr(1), Description: "Path to the credential file. Absolute, ~/-prefixed, or relative (relative paths resolve from the hook's working directory at fire time, not the config file's directory). Omit the field to use the default $XDG_STATE_HOME/ccgate/<target>/auth_key.json; do not set it to an empty string."},
+			"refresh_margin_ms": {Type: "integer", Minimum: ptr(0.0), Description: "Minimum remaining TTL guard for file output, in milliseconds. Default: 60000."},
+			"timeout_ms":        {Type: "integer", Minimum: ptr(1.0), Description: "Hard cap on the file read so a stalled mount surfaces as reason=timeout. Default: 30000."},
+		},
+		PropertyOrder:        []string{"type", "path", "refresh_margin_ms", "timeout_ms"},
+		AdditionalProperties: falseSchema(),
 	}
 }
 
 func authProfileBranchSchema() *jsonschema.Schema {
-	props := orderedmap.New[string, *jsonschema.Schema]()
-	props.Set("type", &jsonschema.Schema{Type: "string", Const: AuthTypeProfile})
-	props.Set("profile", &jsonschema.Schema{Type: "string", Description: "Anthropic profile name (the value `ant auth login --profile <name>` writes to <config_dir>/credentials/<name>.json). Empty/omitted lets the SDK resolve $ANTHROPIC_PROFILE → active_config → \"default\". Anthropic provider only."})
 	return &jsonschema.Schema{
-		Type:                 "object",
-		Required:             []string{"type"},
-		Properties:           props,
-		AdditionalProperties: jsonschema.FalseSchema,
+		Type:     "object",
+		Required: []string{"type"},
+		Properties: map[string]*jsonschema.Schema{
+			"type":    {Type: "string", Const: ptr[any](AuthTypeProfile)},
+			"profile": {Type: "string", Description: "Anthropic profile name (the value `ant auth login --profile <name>` writes to <config_dir>/credentials/<name>.json). Empty/omitted lets the SDK resolve $ANTHROPIC_PROFILE → active_config → \"default\". Anthropic provider only."},
+		},
+		PropertyOrder:        []string{"type", "profile"},
+		AdditionalProperties: falseSchema(),
 	}
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// falseSchema returns a schema that renders as JSON `false`, i.e. the
+// google/jsonschema-go spelling of invopop's jsonschema.FalseSchema —
+// used for additionalProperties: false on the closed auth branches.
+func falseSchema() *jsonschema.Schema { return &jsonschema.Schema{Not: &jsonschema.Schema{}} }
 
 // Default returns a Config seeded with the provider/log/metrics
 // defaults common to every target. LogPath / MetricsPath are left
