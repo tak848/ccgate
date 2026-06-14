@@ -1,5 +1,5 @@
 [tools]
-go = "1.25.10"
+go = "1.25.11"
 "aqua:golangci/golangci-lint" = "2.12.2"
 
 [tasks.build]
