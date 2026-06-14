@@ -14,12 +14,18 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
-	"github.com/invopop/jsonschema"
+	"github.com/google/jsonschema-go/jsonschema"
 
 	"github.com/tak848/ccgate/internal/config"
 )
+
+// draft2020 is the JSON Schema dialect the generated files advertise.
+// google/jsonschema-go does not emit $schema during reflection, so the
+// generator sets it explicitly to match what editors expect.
+const draft2020 = "https://json-schema.org/draft/2020-12/schema"
 
 const (
 	repoBase = "https://raw.githubusercontent.com/tak848/ccgate/main/schemas"
@@ -65,12 +71,22 @@ func run() error {
 }
 
 func writeSchema(path, target string) error {
-	r := jsonschema.Reflector{
-		AllowAdditionalProperties: false,
-		DoNotReference:            true,
+	// For inlines nested structs (no $defs/$ref) and emits
+	// additionalProperties:false plus a per-field required list for every
+	// struct, matching the strict, dereferenced shape the editor schemas
+	// have always shipped.
+	schema, err := jsonschema.For[config.Config](nil)
+	if err != nil {
+		return fmt.Errorf("reflect config: %w", err)
 	}
-	schema := r.Reflect(config.Config{})
-	schema.ID = jsonschema.ID(repoBase + "/" + target + ".schema.json")
+	// google/jsonschema-go widens Go pointers and slices/maps to the
+	// nullable spelling (`"type": ["null", T]`). The config loader treats
+	// an omitted key and an explicit null identically, and the schema has
+	// always rejected a literal null, so collapse it back to the bare type
+	// to keep the editor schema strict and the migration behavior-neutral.
+	stripNullable(schema)
+	schema.Schema = draft2020
+	schema.ID = repoBase + "/" + target + ".schema.json"
 	schema.Title = "ccgate " + target + " configuration"
 	schema.Description = "Configuration schema for ccgate's " + target +
 		" PermissionRequest hook. See https://github.com/tak848/ccgate."
@@ -83,21 +99,33 @@ func writeSchema(path, target string) error {
 	// nested name / model) is still emitted by the reflector.
 	schema.Required = nil
 
+	// provider.auth is a discriminated union. google/jsonschema-go has no
+	// custom-schema interface, and the field is a pointer (reflection would
+	// otherwise widen it with a "null" type that makes the oneOf
+	// unsatisfiable), so overwrite the reflected property with the
+	// hand-built oneOf from config.AuthConfigSchema.
+	if prov := schema.Properties["provider"]; prov != nil && prov.Properties != nil {
+		if _, ok := prov.Properties["auth"]; ok {
+			prov.Properties["auth"] = config.AuthConfigSchema()
+		}
+	}
+
 	// AdditionalProperties=false at the root rejects any key not in
-	// properties. The shipped templates start with `['$schema']: '...'`
-	// so editors can pick the right schema; without an explicit entry
-	// here that line gets flagged invalid. Declare it as a string so
-	// the template validates without loosening the strict-additional
-	// guarantee on real config keys.
+	// properties. The Config struct already carries a `$schema` field
+	// (so editors can pick the right schema via the templates' leading
+	// `['$schema']: '...'`); overwrite the plainly-reflected string with
+	// a format:uri + description variant. PropertyOrder already lists it
+	// first, as it is the struct's first field.
 	if schema.Properties != nil {
-		schema.Properties.Set("$schema", &jsonschema.Schema{
+		schema.Properties["$schema"] = &jsonschema.Schema{
 			Type:        "string",
 			Format:      "uri",
 			Description: "JSON schema reference. Editors use this to enable validation; ccgate ignores it at runtime.",
-		})
+		}
 		if target == "codex" {
 			for _, key := range claudeOnlyConfigKeys {
-				schema.Properties.Delete(key)
+				delete(schema.Properties, key)
+				schema.PropertyOrder = slices.DeleteFunc(schema.PropertyOrder, func(k string) bool { return k == key })
 			}
 		}
 	}
@@ -109,6 +137,45 @@ func writeSchema(path, target string) error {
 	// Trailing newline so the file is POSIX-friendly.
 	data = append(data, '\n')
 	return os.WriteFile(path, data, 0o644)
+}
+
+// stripNullable rewrites every schema node that lists "null" alongside a
+// single concrete type (google/jsonschema-go's spelling for Go pointers
+// and slices/maps) down to that bare type, recursing through the schema
+// tree. It leaves multi-type unions untouched.
+func stripNullable(s *jsonschema.Schema) {
+	if s == nil {
+		return
+	}
+	if slices.Contains(s.Types, "null") {
+		rest := slices.DeleteFunc(slices.Clone(s.Types), func(t string) bool { return t == "null" })
+		switch len(rest) {
+		case 0:
+			s.Types = nil
+		case 1:
+			s.Type, s.Types = rest[0], nil
+		default:
+			s.Types = rest
+		}
+	}
+	for _, p := range s.Properties {
+		stripNullable(p)
+	}
+	stripNullable(s.Items)
+	stripNullable(s.AdditionalProperties)
+	stripNullable(s.Not)
+	for _, b := range s.PrefixItems {
+		stripNullable(b)
+	}
+	for _, b := range s.OneOf {
+		stripNullable(b)
+	}
+	for _, b := range s.AnyOf {
+		stripNullable(b)
+	}
+	for _, b := range s.AllOf {
+		stripNullable(b)
+	}
 }
 
 // repoRoot returns the directory containing go.mod so the generator can be
