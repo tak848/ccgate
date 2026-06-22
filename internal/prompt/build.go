@@ -60,7 +60,7 @@ func Build(args Args) llm.Prompt {
 	sys.WriteString(target)
 	sys.WriteString(".\n")
 	sys.WriteString("Return one of: allow, deny, fallthrough.\n")
-	sys.WriteString("Decide quickly. Do not deliberate or reconsider.\n\n")
+	sys.WriteString("First put a brief justification in `reason`, then set `behavior` consistent with it. Keep it short; do not over-deliberate.\n\n")
 
 	if args.PlanMode {
 		writePlanModeRules(&sys, args.HasRecentTranscript)

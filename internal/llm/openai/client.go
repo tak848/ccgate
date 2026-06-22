@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/invopop/jsonschema"
 	openaigo "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/packages/param"
@@ -59,7 +58,10 @@ func (c *Client) Decide(ctx context.Context, p llm.Prompt) (llm.Result, error) {
 	}
 	client := openaigo.NewClient(opts...)
 
-	schema, err := outputSchema()
+	// json.RawMessage keeps the schema's property order (reason first)
+	// intact on the wire; a map[string]any would be re-sorted
+	// alphabetically by the JSON encoder. See llm.OutputSchemaRaw.
+	schema, err := llm.OutputSchemaRaw()
 	if err != nil {
 		return llm.Result{}, fmt.Errorf("generate output schema: %w", err)
 	}
@@ -119,21 +121,4 @@ func (c *Client) Decide(ctx context.Context, p llm.Prompt) (llm.Result, error) {
 	}
 
 	return llm.Result{Output: output, Usage: usage}, nil
-}
-
-func outputSchema() (map[string]any, error) {
-	reflector := jsonschema.Reflector{
-		AllowAdditionalProperties: false,
-		DoNotReference:            true,
-	}
-	schema := reflector.Reflect(llm.Output{})
-	data, err := json.Marshal(schema)
-	if err != nil {
-		return nil, fmt.Errorf("marshal schema: %w", err)
-	}
-	var out map[string]any
-	if err := json.Unmarshal(data, &out); err != nil {
-		return nil, fmt.Errorf("unmarshal schema: %w", err)
-	}
-	return out, nil
 }

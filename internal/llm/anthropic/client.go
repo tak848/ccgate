@@ -17,7 +17,6 @@ import (
 	anthropicsdk "github.com/anthropics/anthropic-sdk-go"
 	anthropicconfig "github.com/anthropics/anthropic-sdk-go/config"
 	"github.com/anthropics/anthropic-sdk-go/option"
-	"github.com/invopop/jsonschema"
 
 	"github.com/tak848/ccgate/internal/llm"
 )
@@ -121,7 +120,11 @@ func (c *Client) Decide(ctx context.Context, p llm.Prompt) (llm.Result, error) {
 	}
 	client := anthropicsdk.NewClient(opts...)
 
-	schema, err := outputSchema()
+	// The SDK's Schema field is map[string]any, whose keys the encoder
+	// sorts alphabetically; OutputSchemaMap injects `properties` as a
+	// json.RawMessage so the reason-first property order survives. See
+	// llm.OutputSchemaMap.
+	schema, err := llm.OutputSchemaMap()
 	if err != nil {
 		return llm.Result{}, fmt.Errorf("generate output schema: %w", err)
 	}
@@ -276,23 +279,6 @@ func classifyProfileLoadError(err error) string {
 		return "profile_config_invalid"
 	}
 	return "unknown"
-}
-
-func outputSchema() (map[string]any, error) {
-	reflector := jsonschema.Reflector{
-		AllowAdditionalProperties: false,
-		DoNotReference:            true,
-	}
-	schema := reflector.Reflect(llm.Output{})
-	data, err := json.Marshal(schema)
-	if err != nil {
-		return nil, fmt.Errorf("marshal schema: %w", err)
-	}
-	var out map[string]any
-	if err := json.Unmarshal(data, &out); err != nil {
-		return nil, fmt.Errorf("unmarshal schema: %w", err)
-	}
-	return out, nil
 }
 
 func extractMessageText(message *anthropicsdk.Message) string {
