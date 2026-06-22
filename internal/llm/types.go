@@ -23,9 +23,18 @@ type Prompt struct {
 }
 
 // Output is the structured response from the LLM.
+//
+// Field order is deliberate and load-bearing: providers generate the
+// JSON keys in schema property order (OpenAI follows schema order;
+// Anthropic follows it for required fields, which all of these are).
+// Reason MUST come first so the model writes its justification before
+// committing to a behavior -- emitting behavior first makes weak models
+// (e.g. haiku, kimi) lock in a decision before reasoning, producing
+// reason/behavior contradictions. See internal/llm/schema.go for how
+// the order survives the trip to each SDK.
 type Output struct {
-	Behavior    string `json:"behavior"     jsonschema_description:"One of allow, deny, fallthrough."`
-	Reason      string `json:"reason"       jsonschema_description:"Brief reason for the decision. Always provide this regardless of behavior."`
+	Reason      string `json:"reason"       jsonschema_description:"Brief reason for the decision. Always provide this regardless of behavior. Write this BEFORE deciding behavior."`
+	Behavior    string `json:"behavior"     jsonschema:"enum=allow,enum=deny,enum=fallthrough" jsonschema_description:"One of allow, deny, fallthrough. Must be consistent with reason."`
 	DenyMessage string `json:"deny_message" jsonschema_description:"When behavior is deny, a concise explanation of why. Must not be empty when denying."`
 }
 
