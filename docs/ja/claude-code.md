@@ -46,7 +46,7 @@ Claude Code は標準 PermissionRequest payload を流します ([upstream hooks
 - `referenced_paths`: `tool_input` から best-effort で抽出した path のリスト。対象 tool は `Read` / `Write` / `Edit` / `MultiEdit` / `Glob` / `Grep` / `Bash` のみ。それ以外の tool (MCP / user-interaction tool) では空。LLM は `tool_input_raw` から raw payload を直接読めます
 - `permission_mode`: `"plan"` のとき system prompt を plan mode rule に切替。`"bypassPermissions"` / `"dontAsk"` は ccgate を fallthrough で短絡
 - `cwd`: git context builder (`gitutil.RepoRoot`, branch, worktree) に渡す。working tree の dirty/clean は渡しません
-- `transcript_path`: recent-transcript loader が末尾 N 件を読み、ユーザー意図 context として LLM に渡す
+- `transcript_path`: デフォルトでは recent-transcript loader が末尾 N 件を読み、ユーザー意図 context として LLM に渡す。`include_recent_transcript_in_prompt: false` で省略可能
 - `permission_suggestions`: LLM に背景情報として転送
 - `settings_permissions`: ccgate が `~/.claude/settings.json` を別途読み、ユーザー定義の static allow / deny パターンを LLM に hint として渡す (whitelist 必須ではない、後述「settings.json パターンが whitelist 要件ではない理由」参照)
 
@@ -90,12 +90,12 @@ allow guidance は plan mode で write 操作を allow に promote しません�
 
 ## `recent_transcript` の使われ方
 
-`recent_transcript` は transcript JSONL の末尾 (直近のユーザーメッセージ + tool 呼び出し) を持ちます。system prompt は LLM にこう指示:
+`recent_transcript` は transcript JSONL の末尾 (直近のユーザーメッセージ + tool 呼び出し) を持ちます。デフォルトでは含めますが、`include_recent_transcript_in_prompt: false` で省略できます。含めた場合、system prompt は LLM にこう指示:
 
 - ユーザーが直近の transcript で当該操作を明示的に依頼していた場合、`deny` より `allow` / `fallthrough` を優先せよ
 - ユーザーの明示依頼は `deny` を `fallthrough` に引き上げられるが、`allow` までは引き上げられない (deny guidance は依然として勝つ)
 
-これが LLM に「deny ルールに該当するが、ユーザーが明確に依頼してるので、refuse せず Claude Code の prompt に判断を委ねる」と言わせる唯一の signal です。
+これが LLM に「deny ルールに該当するが、ユーザーが明確に依頼してるので、refuse せず Claude Code の prompt に判断を委ねる」と言わせる唯一の signal です。`include_recent_transcript_in_prompt` が false の場合、ccgate はこの field を省略し、この escalation を使わない prompt rule に切り替えます。
 
 ## `settings.json` パターンが whitelist 要件ではない理由
 
@@ -113,7 +113,7 @@ allow guidance は plan mode で write 操作を allow に promote しません�
 |-----------------------------------|------------------------------------------------------------------------------------------------------------------------------------------|
 | Tool surface                      | `Bash`, `Read`, `Write`, `Edit`, `MultiEdit`, `Glob`, `Grep`, MCP, ユーザー操作 tool (`ExitPlanMode`, `AskUserQuestion`)                  |
 | `permission_mode` の値            | `default` / `acceptEdits` / `plan` / `bypassPermissions` / `dontAsk`。`plan` は system prompt を切替、`bypassPermissions` / `dontAsk` は fallthrough |
-| `recent_transcript`               | `transcript_path` から読み込み、ユーザー意図 context として LLM に渡す (上の「`recent_transcript` の使われ方」参照)                       |
+| `recent_transcript`               | デフォルトでは `transcript_path` から読み込み、ユーザー意図 context として LLM に渡す。`include_recent_transcript_in_prompt: false` で省略 (上の「`recent_transcript` の使われ方」参照) |
 | `settings_permissions`            | hint として LLM に渡す (上の「`settings.json` パターンが whitelist 要件ではない理由」参照)                                                |
 | `permission_suggestions`          | そのまま LLM に転送                                                                                                                       |
 | State path                        | `$XDG_STATE_HOME/ccgate/claude/` (未設定なら `~/.local/state/ccgate/claude/`)                                                              |

@@ -56,6 +56,13 @@
   // the LLM judges purely from allow/deny guidance + tool_input.
   // Default true.
 
+  // include_recent_transcript_in_prompt: false,
+  // ccgate normally reads Claude Code's transcript_path and includes
+  // recent user messages / tool calls in the user payload sent to the
+  // LLM. Set this to false to omit that field and use prompt rules
+  // that do not escalate deny to fallthrough based on explicit user
+  // intent from recent_transcript. Default true.
+
   allow: [
     'Read-Only Operations: Read, Glob, Grep, and other read-only tools that do not modify state.',
     'Local Development: Build, test, lint, format commands in the current repository.',

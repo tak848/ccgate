@@ -32,6 +32,48 @@ func TestProviderAuthOneOfShape(t *testing.T) {
 	}
 }
 
+func TestClaudeOnlyPromptContextKeys(t *testing.T) {
+	t.Parallel()
+
+	root := repoRoot(t)
+	cases := map[string]struct {
+		path    string
+		present bool
+	}{
+		"claude": {
+			path:    filepath.Join(root, "schemas", "claude.schema.json"),
+			present: true,
+		},
+		"codex": {
+			path: filepath.Join(root, "schemas", "codex.schema.json"),
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			data, err := os.ReadFile(tc.path)
+			if err != nil {
+				t.Fatalf("read %s: %v", tc.path, err)
+			}
+			var doc struct {
+				Properties map[string]json.RawMessage `json:"properties"`
+			}
+			if err := json.Unmarshal(data, &doc); err != nil {
+				t.Fatalf("parse %s: %v", tc.path, err)
+			}
+			for _, key := range []string{
+				"include_recent_transcript_in_prompt",
+				"include_settings_permissions_in_prompt",
+			} {
+				_, ok := doc.Properties[key]
+				if ok != tc.present {
+					t.Fatalf("%s presence in %s schema = %v, want %v", key, name, ok, tc.present)
+				}
+			}
+		})
+	}
+}
+
 // assertAuthOneOf checks that `provider.auth.oneOf` has exactly
 // three branches whose `type.const` values cover "exec", "file",
 // and "profile" (in any order), each marked

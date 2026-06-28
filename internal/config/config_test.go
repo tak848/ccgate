@@ -334,6 +334,58 @@ func TestFallthroughStrategy(t *testing.T) {
 	}
 }
 
+func TestPromptContextIncludeFlags(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		jsonnet      string
+		wantSettings bool
+		wantRecent   bool
+		wantNil      bool
+	}{
+		"unset defaults both true": {
+			jsonnet:      `{}`,
+			wantSettings: true,
+			wantRecent:   true,
+			wantNil:      true,
+		},
+		"settings false": {
+			jsonnet:      `{ include_settings_permissions_in_prompt: false }`,
+			wantSettings: false,
+			wantRecent:   true,
+		},
+		"recent false": {
+			jsonnet:      `{ include_recent_transcript_in_prompt: false }`,
+			wantSettings: true,
+			wantRecent:   false,
+		},
+		"both explicit true": {
+			jsonnet:      `{ include_settings_permissions_in_prompt: true, include_recent_transcript_in_prompt: true }`,
+			wantSettings: true,
+			wantRecent:   true,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			cfg := Default()
+			if err := mergeConfigString(tc.jsonnet, &cfg); err != nil {
+				t.Fatalf("merge: %v", err)
+			}
+			if tc.wantNil && (cfg.IncludeSettingsPermissionsInPrompt != nil || cfg.IncludeRecentTranscriptInPrompt != nil) {
+				t.Fatalf("expected nil include pointers, got settings=%v recent=%v",
+					cfg.IncludeSettingsPermissionsInPrompt, cfg.IncludeRecentTranscriptInPrompt)
+			}
+			if got := cfg.ShouldIncludeSettingsPermissionsInPrompt(); got != tc.wantSettings {
+				t.Errorf("ShouldIncludeSettingsPermissionsInPrompt = %v, want %v", got, tc.wantSettings)
+			}
+			if got := cfg.ShouldIncludeRecentTranscriptInPrompt(); got != tc.wantRecent {
+				t.Errorf("ShouldIncludeRecentTranscriptInPrompt = %v, want %v", got, tc.wantRecent)
+			}
+		})
+	}
+}
+
 func TestValidateZeroTimeoutIsValid(t *testing.T) {
 	t.Parallel()
 

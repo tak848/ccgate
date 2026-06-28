@@ -32,6 +32,7 @@ const (
 // effect, so the codex schema strips them to avoid suggesting
 // otherwise to editor users.
 var claudeOnlyConfigKeys = []string{
+	"include_recent_transcript_in_prompt",
 	"include_settings_permissions_in_prompt",
 }
 

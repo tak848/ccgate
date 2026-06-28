@@ -46,7 +46,7 @@ Claude Code delivers the standard PermissionRequest payload (see the upstream [h
 - `referenced_paths`: paths extracted from `tool_input` on a best-effort basis. Supported tools: `Read`, `Write`, `Edit`, `MultiEdit`, `Glob`, `Grep`, `Bash`. Other tools (MCP, user-interaction tools) produce an empty list -- the LLM still sees the raw payload via `tool_input_raw`.
 - `permission_mode`: switches the system prompt to plan-mode rules when `"plan"`. `"bypassPermissions"` and `"dontAsk"` short-circuit ccgate to fallthrough.
 - `cwd`: feeds the git context builder (`gitutil.RepoRoot`, branch, worktree). Working-tree dirty/clean state is not delivered.
-- `transcript_path`: the recent-transcript loader reads up to N tail entries to give the LLM user-intent context.
+- `transcript_path`: by default, the recent-transcript loader reads up to N tail entries to give the LLM user-intent context. Set `include_recent_transcript_in_prompt: false` to omit this context.
 - `permission_suggestions`: forwarded to the LLM as background.
 - `settings_permissions`: ccgate reads `~/.claude/settings.json` separately and surfaces the user's own static allow / deny patterns to the LLM as a hint, not as a whitelist requirement (see "Why settings.json patterns are a hint" below).
 
@@ -90,12 +90,12 @@ This is purely prompt-driven, so there is no hard guarantee.
 
 ## How `recent_transcript` is used
 
-`recent_transcript` carries the most recent user messages and tool calls from the transcript JSONL. The system prompt tells the LLM:
+`recent_transcript` carries the most recent user messages and tool calls from the transcript JSONL. It is included by default; set `include_recent_transcript_in_prompt: false` to omit it. When included, the system prompt tells the LLM:
 
 - If the user explicitly requested the operation in the recent transcript, prefer `allow` or `fallthrough` over `deny`.
 - An explicit user request can only escalate `deny` to `fallthrough`, never to `allow`. Deny guidance still wins.
 
-This is the only signal in the prompt that lets the LLM say "the deny rule matches but the user clearly asked for this, so let the user confirm via Claude Code's prompt instead of refusing outright".
+This is the only signal in the prompt that lets the LLM say "the deny rule matches but the user clearly asked for this, so let the user confirm via Claude Code's prompt instead of refusing outright". When `include_recent_transcript_in_prompt` is false, ccgate omits the field and uses prompt rules that do not perform this escalation.
 
 ## Why `settings.json` patterns are a hint, not a whitelist
 
@@ -113,7 +113,7 @@ Treating `settings_permissions.allow` as a whitelist requirement therefore break
 |-----------------------------|-------|
 | Tool surface                | `Bash`, `Read`, `Write`, `Edit`, `MultiEdit`, `Glob`, `Grep`, MCP, user-interaction tools (`ExitPlanMode`, `AskUserQuestion`) |
 | `permission_mode` values    | `default` / `acceptEdits` / `plan` / `bypassPermissions` / `dontAsk`. `plan` switches the system prompt; `bypassPermissions` / `dontAsk` short-circuit ccgate to fallthrough. |
-| `recent_transcript`         | Loaded from `transcript_path` and forwarded to the LLM as user-intent context (see "How `recent_transcript` is used" above). |
+| `recent_transcript`         | Loaded from `transcript_path` and forwarded to the LLM as user-intent context by default; `include_recent_transcript_in_prompt: false` omits it (see "How `recent_transcript` is used" above). |
 | `settings_permissions`      | Forwarded as a hint -- see "Why `settings.json` patterns are a hint" above. |
 | `permission_suggestions`    | Forwarded verbatim. |
 | State path                  | `$XDG_STATE_HOME/ccgate/claude/` (falls back to `~/.local/state/ccgate/claude/` when unset). |
