@@ -103,6 +103,18 @@ When a rule string needs to embed a host name, an account ID, or any other envir
 
 These run **once per hook invocation, at config-load time**, before ccgate sees `tool_input`. There is no runtime branch-on-`tool_input` mechanism — the LLM does the runtime classification.
 
+### Describing Claude `--add-dir` directories
+
+Claude Code can be launched with `--add-dir` or configured with `permissions.additionalDirectories`, but ccgate does not receive the active add-dir list in the PermissionRequest payload. If a repo-external directory should affect the decision boundary, add explicit `append_environment` guidance. Otherwise the default repo-boundary rules may treat access there as cross-boundary and deny or fall through.
+
+```jsonnet
+{
+  append_environment: [
+    'Additional Claude directory /path/to/shared-lib is read-only reference material. Reads are expected; writes, build/install commands, and deletion there are outside the trusted repo.',
+  ],
+}
+```
+
 ## 5. Iteration workflow
 
 After a day or two of real use, run `ccgate <target> metrics --details N`. The "Top fallthrough commands" / "Top deny commands" drill-downs surface operations a rule could handle. Add one `append_deny` (or `append_allow`) entry, ship it, and re-check the metrics next round.

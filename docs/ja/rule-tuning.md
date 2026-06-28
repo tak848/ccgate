@@ -103,6 +103,18 @@ Codex (`apply_patch` の hunk target を `tool_input_raw` から LLM が読む):
 
 評価は **hook 発火ごとの config load 時** に 1 回だけ行われます (= ccgate が `tool_input` を見る前)。`tool_input` や git state に基づいて runtime に分岐する仕組みではないので注意してください。 runtime の分類は LLM の仕事です。
 
+### Claude の `--add-dir` ディレクトリを説明する
+
+Claude Code は `--add-dir` や `permissions.additionalDirectories` でアクセス可能ディレクトリを追加できますが、ccgate の PermissionRequest payload には現在 add-dir されている一覧は渡りません。repo 外ディレクトリを判定境界に含めたい場合は、`append_environment` で明示してください。書かれていない場合、既定の repo 境界ルールにより越境アクセスとして deny または確認への fallthrough になる可能性があります。
+
+```jsonnet
+{
+  append_environment: [
+    'Additional Claude directory /path/to/shared-lib is read-only reference material. Reads are expected; writes, build/install commands, and deletion there are outside the trusted repo.',
+  ],
+}
+```
+
 ## 5. iteration workflow
 
 1-2 日 ccgate を実利用したら `ccgate <target> metrics --details N` を回します。「Top fallthrough commands」「Top deny commands」のドリルダウンで、ルール追加で削減できる操作が分かります。`append_deny` (もしくは `append_allow`) を 1 件足して metrics を再確認する、を繰り返すのが基本サイクルです。

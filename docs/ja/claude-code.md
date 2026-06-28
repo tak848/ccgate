@@ -48,7 +48,33 @@ Claude Code は標準 PermissionRequest payload を流します ([upstream hooks
 - `cwd`: git context builder (`gitutil.RepoRoot`, branch, worktree) に渡す。working tree の dirty/clean は渡しません
 - `transcript_path`: recent-transcript loader が末尾 N 件を読み、ユーザー意図 context として LLM に渡す
 - `permission_suggestions`: LLM に背景情報として転送
-- `settings_permissions`: ccgate が `~/.claude/settings.json` を別途読み、ユーザー定義の static allow / deny / ask パターンを LLM に hint として渡す (whitelist 必須ではない、後述「settings.json パターンが whitelist 要件ではない理由」参照)
+- `settings_permissions`: ccgate が `~/.claude/settings.json` を別途読み、ユーザー定義の static allow / deny パターンを LLM に hint として渡す (whitelist 必須ではない、後述「settings.json パターンが whitelist 要件ではない理由」参照)
+
+## `--add-dir` / `additionalDirectories` と ccgate の信頼境界
+
+Claude Code の `--add-dir` フラグや `permissions.additionalDirectories` は、Claude Code がアクセスできるディレクトリを広げる設定です。ただし、それだけで ccgate がそのディレクトリを trusted と扱うわけではありません。PermissionRequest payload には現在 add-dir されているディレクトリ一覧が含まれないため、ccgate から見えるのは `cwd`、git context、現在の `tool_input` に出てきた path だけです。
+
+追加ディレクトリを ccgate の判断材料にしたい場合は、`append_environment` で明示してください。ここに書かれていない repo 外 path は、既定ルール上は越境アクセスに見え、deny または確認への fallthrough になる可能性があります。
+
+read-only の参照ディレクトリとして扱う例:
+
+```jsonnet
+{
+  append_environment: [
+    'Additional Claude directory /path/to/shared-lib is read-only reference material. Reads are expected; writes, build/install commands, and deletion there are outside the trusted repo.',
+  ],
+}
+```
+
+同じ trusted workspace として扱う例:
+
+```jsonnet
+{
+  append_environment: [
+    'Additional Claude directory /path/to/shared-lib is part of the same trusted workspace as this repo. Treat reads and local development commands there as expected, unless a deny rule otherwise matches.',
+  ],
+}
+```
 
 ## Plan mode
 
@@ -73,7 +99,7 @@ allow guidance は plan mode で write 操作を allow に promote しません�
 
 ## `settings.json` パターンが whitelist 要件ではない理由
 
-`settings_permissions` は `~/.claude/settings.json` の `permissions.allow / deny / ask` の中身です。Claude Code は PermissionRequest hook を呼ぶ**前に** これらの static パターンを matching するので、ccgate に届いたリクエストは設計上 allow パターンに自動マッチしなかったケースです。よくある原因:
+`settings_permissions` は `~/.claude/settings.json` の `permissions.allow / deny` の中身です。Claude Code は PermissionRequest hook を呼ぶ**前に** これらの static パターンを matching するので、ccgate に届いたリクエストは設計上 allow パターンに自動マッチしなかったケースです。よくある原因:
 
 - `$(...)` 等の合成構文 / pipeline が literal matcher をすり抜ける
 - static matcher の無い MCP tool
