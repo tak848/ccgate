@@ -48,7 +48,33 @@ Claude Code delivers the standard PermissionRequest payload (see the upstream [h
 - `cwd`: feeds the git context builder (`gitutil.RepoRoot`, branch, worktree). Working-tree dirty/clean state is not delivered.
 - `transcript_path`: the recent-transcript loader reads up to N tail entries to give the LLM user-intent context.
 - `permission_suggestions`: forwarded to the LLM as background.
-- `settings_permissions`: ccgate reads `~/.claude/settings.json` separately and surfaces the user's own static allow / deny / ask patterns to the LLM as a hint, not as a whitelist requirement (see "Why settings.json patterns are a hint" below).
+- `settings_permissions`: ccgate reads `~/.claude/settings.json` separately and surfaces the user's own static allow / deny patterns to the LLM as a hint, not as a whitelist requirement (see "Why settings.json patterns are a hint" below).
+
+## `--add-dir` / `additionalDirectories` and ccgate's trust boundary
+
+Claude Code's `--add-dir` flag and `permissions.additionalDirectories` setting expand what Claude Code can access. They do not make ccgate treat those directories as trusted automatically: the PermissionRequest payload does not include the active add-dir list, so ccgate only sees `cwd`, git context, and the paths present in the current `tool_input`.
+
+If an extra directory matters to the policy decision, describe it in `append_environment`. Otherwise a repo-external path may still look like boundary-crossing access to the default rules and can be denied or fall through for confirmation.
+
+Read-only reference directory:
+
+```jsonnet
+{
+  append_environment: [
+    'Additional Claude directory /path/to/shared-lib is read-only reference material. Reads are expected; writes, build/install commands, and deletion there are outside the trusted repo.',
+  ],
+}
+```
+
+Same trusted workspace:
+
+```jsonnet
+{
+  append_environment: [
+    'Additional Claude directory /path/to/shared-lib is part of the same trusted workspace as this repo. Treat reads and local development commands there as expected, unless a deny rule otherwise matches.',
+  ],
+}
+```
 
 ## Plan mode
 
@@ -73,7 +99,7 @@ This is the only signal in the prompt that lets the LLM say "the deny rule match
 
 ## Why `settings.json` patterns are a hint, not a whitelist
 
-`settings_permissions` is what's in your `~/.claude/settings.json` `permissions.allow / deny / ask`. Claude Code matches those static patterns **before** invoking the PermissionRequest hook -- so by design every request that reaches ccgate did **not** auto-match an allow pattern. Common reasons:
+`settings_permissions` is what's in your `~/.claude/settings.json` `permissions.allow / deny`. Claude Code matches those static patterns **before** invoking the PermissionRequest hook -- so by design every request that reaches ccgate did **not** auto-match an allow pattern. Common reasons:
 
 - Composite constructs like `$(...)` substitutions or pipelines slip past literal matchers.
 - MCP tools without a static matcher.
