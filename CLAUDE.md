@@ -23,5 +23,6 @@ mise run vet      # Run go vet
 - Go 1.25
 - Wrap errors with `fmt.Errorf("...: %w", err)`
 - Never silently discard errors
-- Table-driven tests
+- Table-driven tests using `map[string]struct{...}` (the map key is the subtest name)
+- No tautological tests (e.g. asserting a fixed string is present in output); test behavior, not the implementation verbatim
 - Named constants for magic numbers
