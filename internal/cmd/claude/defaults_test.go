@@ -2,6 +2,7 @@ package claude
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	jsonnet "github.com/google/go-jsonnet"
@@ -80,5 +81,28 @@ func TestDefaultsJsonnetStructure(t *testing.T) {
 				t.Errorf("environment is empty; %s must ship environment context", name)
 			}
 		})
+	}
+}
+
+func TestDefaultsDenyGuidanceDoesNotMentionRecentTranscript(t *testing.T) {
+	t.Parallel()
+
+	vm := jsonnet.MakeVM()
+	out, err := vm.EvaluateAnonymousSnippet("claude/defaults.jsonnet", defaultsJsonnet)
+	if err != nil {
+		t.Fatalf("evaluate defaults: %v", err)
+	}
+
+	var got struct {
+		Deny []string `json:"deny"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("unmarshal defaults: %v", err)
+	}
+
+	for _, rule := range got.Deny {
+		if strings.Contains(rule, "recent_transcript") {
+			t.Fatalf("embedded deny guidance must not depend on optional recent_transcript payload field: %q", rule)
+		}
 	}
 }
