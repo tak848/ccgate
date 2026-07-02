@@ -265,4 +265,7 @@ func TestBuildPromptCodexPayloadShape(t *testing.T) {
 	if !strings.Contains(p.System, "Codex CLI") {
 		t.Error("system prompt does not name the target (Codex CLI) -- WithTargetName not wired into prompt.Build")
 	}
+	if !strings.Contains(p.System, "Path scope invariant") || !strings.Contains(p.System, "path-segment boundaries") {
+		t.Fatalf("system prompt missing path scope invariant:\n%s", p.System)
+	}
 }

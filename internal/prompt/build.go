@@ -70,6 +70,7 @@ func Build(args Args) llm.Prompt {
 
 	sys.WriteString("Always provide a brief reason for your decision.\n")
 	sys.WriteString("When deny, provide a concise deny_message. If a deny rule includes a deny_message hint, adapt it to the specific situation.\n")
+	sys.WriteString("Path scope invariant: paths under context.cwd or context.repo_root are inside the current workspace. In a linked git worktree, context.repo_root may be a sibling of context.primary_checkout_root; do not treat it as primary_checkout_root unless the path is actually under that directory using normal path-segment boundaries.\n")
 
 	if args.TargetSection != "" {
 		sys.WriteString(args.TargetSection)
