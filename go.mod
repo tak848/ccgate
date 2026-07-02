@@ -6,11 +6,11 @@ toolchain go1.25.11
 
 require (
 	github.com/alecthomas/kong v1.15.0
-	github.com/anthropics/anthropic-sdk-go v1.50.1
+	github.com/anthropics/anthropic-sdk-go v1.52.0
 	github.com/gofrs/flock v0.13.0
 	github.com/google/go-jsonnet v0.22.0
 	github.com/invopop/jsonschema v0.14.0
-	github.com/openai/openai-go/v3 v3.39.0
+	github.com/openai/openai-go/v3 v3.41.0
 	github.com/pb33f/ordered-map/v2 v2.3.1
 	golang.org/x/sys v0.46.0
 	golang.org/x/term v0.44.0
