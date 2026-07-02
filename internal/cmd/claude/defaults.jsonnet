@@ -56,6 +56,13 @@
   // the LLM judges purely from allow/deny guidance + tool_input.
   // Default true.
 
+  // include_recent_transcript_in_prompt: false,
+  // ccgate normally reads Claude Code's transcript_path and includes
+  // recent user messages / tool calls in the user payload sent to the
+  // LLM. Set this to false to omit that field and use prompt rules
+  // that do not escalate deny to fallthrough based on explicit user
+  // intent from recent_transcript. Default true.
+
   allow: [
     'Read-Only Operations: Read, Glob, Grep, and other read-only tools that do not modify state.',
     'Local Development: Build, test, lint, format commands in the current repository.',
@@ -68,7 +75,7 @@
   deny: [
     'Download and Execute: Piping downloaded content to a shell (curl|bash, wget|sh, etc.), or executing remote scripts without review. deny_message: Downloading and executing remote code is not allowed.',
     'Direct Tool Invocation: Running tools directly via npx, pnpx, pnpm exec, bunx, etc. instead of using project-defined scripts. deny_message: Use project-defined scripts instead.',
-    'Git Destructive: force push (--force, --force-with-lease), deleting remote branches (push --delete), or rewriting published history. Check recent_transcript -- if the user explicitly requested the operation, fallthrough instead of deny. deny_message: Destructive git operation detected. Confirm with user.',
+    'Git Destructive: force push (--force, --force-with-lease), deleting remote branches (push --delete), or rewriting published history. deny_message: Destructive git operation detected. Confirm with user.',
     'Out-of-Repo Deletion: rm -rf or destructive file operations targeting paths outside the current repository (check referenced_paths against repo_root). Deletion within the repository (node_modules, dist, build artifacts) is fine. deny_message: Deletion outside the repository is not allowed.',
     'Sibling Checkout / Worktree Confusion: When is_worktree is true, any access to paths under primary_checkout_root or other sibling checkouts MUST be denied. deny_message: Accessing paths outside the current worktree is not allowed.',
   ],

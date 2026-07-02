@@ -100,6 +100,14 @@ type Config struct {
 	// Code populates a settings_permissions field today; Codex CLI
 	// ignores this flag.
 	IncludeSettingsPermissionsInPrompt *bool `json:"include_settings_permissions_in_prompt,omitempty"`
+	// IncludeRecentTranscriptInPrompt controls whether ccgate reads
+	// Claude Code's transcript_path and puts recent_transcript into the
+	// user payload sent to the LLM. Default true. Set false to omit
+	// recent user/tool context from the prompt; this also switches the
+	// system prompt to rules that do not rely on explicit-user-intent
+	// escalation from recent_transcript. Only Claude Code wires a
+	// recent_transcript reader today; Codex CLI ignores this flag.
+	IncludeRecentTranscriptInPrompt *bool `json:"include_recent_transcript_in_prompt,omitempty"`
 	// Allow / Deny / Environment replace the value carried over from
 	// previous layers when the layer sets them (even to []). Embedded
 	// defaults are always layer 0, so writing `allow: [...]` in your
@@ -141,6 +149,13 @@ func (c Config) ShouldLoadMainWorktreeLocalConfig() bool {
 // payload sent to the LLM. Default true.
 func (c Config) ShouldIncludeSettingsPermissionsInPrompt() bool {
 	return c.IncludeSettingsPermissionsInPrompt == nil || *c.IncludeSettingsPermissionsInPrompt
+}
+
+// ShouldIncludeRecentTranscriptInPrompt reports whether ccgate should
+// read Claude Code's transcript_path and put recent_transcript into the
+// user payload sent to the LLM. Default true.
+func (c Config) ShouldIncludeRecentTranscriptInPrompt() bool {
+	return c.IncludeRecentTranscriptInPrompt == nil || *c.IncludeRecentTranscriptInPrompt
 }
 
 type ProviderConfig struct {
@@ -464,7 +479,8 @@ func DefaultAuthPath(target string) string {
 //     mergeConfigJSON below) — its sub-fields do NOT merge per
 //     field across layers,
 //   - the remaining scalars (`log_*` / `metrics_*` /
-//     `fallthrough_strategy`) overwrite per-field when set.
+//     `fallthrough_strategy` / include_* flags) overwrite per-field
+//     when set.
 //
 // Layers, applied in order:
 //
@@ -742,6 +758,9 @@ func mergeConfigJSON(data string, cfg *Config) error {
 	}
 	if override.IncludeSettingsPermissionsInPrompt != nil {
 		cfg.IncludeSettingsPermissionsInPrompt = override.IncludeSettingsPermissionsInPrompt
+	}
+	if override.IncludeRecentTranscriptInPrompt != nil {
+		cfg.IncludeRecentTranscriptInPrompt = override.IncludeRecentTranscriptInPrompt
 	}
 
 	// Lists: `allow` / `deny` / `environment` REPLACE the value

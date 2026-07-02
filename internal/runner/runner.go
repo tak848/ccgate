@@ -655,6 +655,8 @@ type Context struct {
 }
 
 func buildPrompt(cfg config.Config, in HookInput, ro runtimeOptions) (llm.Prompt, error) {
+	includeRecentTranscript := ro.hasRecentTranscript && cfg.ShouldIncludeRecentTranscriptInPrompt()
+
 	pi := PromptInput{
 		ToolName:              in.ToolName,
 		ToolInput:             in.ToolInput,
@@ -671,7 +673,7 @@ func buildPrompt(cfg config.Config, in HookInput, ro runtimeOptions) (llm.Prompt
 	if ro.loadStaticPermissions != nil && cfg.ShouldIncludeSettingsPermissionsInPrompt() {
 		pi.SettingsPermissions = ro.loadStaticPermissions(in.Cwd)
 	}
-	if ro.loadRecentTranscript != nil && in.TranscriptPath != "" {
+	if includeRecentTranscript && ro.loadRecentTranscript != nil && in.TranscriptPath != "" {
 		pi.RecentTranscript = ro.loadRecentTranscript(in.TranscriptPath)
 	}
 	user, err := json.MarshalIndent(pi, "", "  ")
@@ -685,7 +687,7 @@ func buildPrompt(cfg config.Config, in HookInput, ro runtimeOptions) (llm.Prompt
 	p := prompt.Build(prompt.Args{
 		TargetName:          ro.targetName,
 		PlanMode:            in.PermissionMode == PermissionModePlan,
-		HasRecentTranscript: ro.hasRecentTranscript,
+		HasRecentTranscript: includeRecentTranscript,
 		TargetSection:       targetSection,
 		Allow:               cfg.Allow,
 		Deny:                cfg.Deny,

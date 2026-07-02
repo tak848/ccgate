@@ -140,6 +140,55 @@ func TestBuildPromptClaudePayloadShape(t *testing.T) {
 	}
 }
 
+func TestBuildPromptOmitsRecentTranscriptWhenDisabled(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.Default()
+	disabled := false
+	cfg.IncludeRecentTranscriptInPrompt = &disabled
+
+	in := HookInput{
+		SessionID:      "sess-1",
+		TranscriptPath: "/tmp/transcript.jsonl",
+		Cwd:            "/work/repo",
+		HookEventName:  "PermissionRequest",
+		ToolName:       "Bash",
+		ToolInput:      HookToolInput{Command: "git status"},
+		ToolInputRaw:   json.RawMessage(`{"command":"git status"}`),
+	}
+
+	recentLoaderCalled := false
+	var ro runtimeOptions
+	WithTargetName("Claude Code")(&ro)
+	WithHasRecentTranscript(true)(&ro)
+	WithRecentTranscript(func(string) any {
+		recentLoaderCalled = true
+		return map[string]any{"entries": []string{"hello"}}
+	})(&ro)
+
+	p, err := buildPrompt(cfg, in, ro)
+	if err != nil {
+		t.Fatalf("buildPrompt: %v", err)
+	}
+	if recentLoaderCalled {
+		t.Fatal("recent transcript loader was called even though include_recent_transcript_in_prompt=false")
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(p.User), &payload); err != nil {
+		t.Fatalf("unmarshal user payload: %v\n--- payload ---\n%s", err, p.User)
+	}
+	if _, ok := payload["recent_transcript"]; ok {
+		t.Fatalf("recent_transcript present even though include_recent_transcript_in_prompt=false:\n%s", p.User)
+	}
+	if strings.Contains(p.System, "EXCEPT: if recent_transcript shows") {
+		t.Fatalf("system prompt still uses the recent_transcript escalation rule when disabled:\n%s", p.System)
+	}
+	if !strings.Contains(p.System, "explicit-user-intent escalation") {
+		t.Fatalf("system prompt did not switch to the no-recent-transcript rule:\n%s", p.System)
+	}
+}
+
 // TestBuildPromptCodexPayloadShape locks in the contract Codex sees:
 // same canonical tool_input parsed view + raw bytes + nested context
 // as Claude, plus the Codex-only model / turn_id metadata. The
@@ -215,5 +264,8 @@ func TestBuildPromptCodexPayloadShape(t *testing.T) {
 
 	if !strings.Contains(p.System, "Codex CLI") {
 		t.Error("system prompt does not name the target (Codex CLI) -- WithTargetName not wired into prompt.Build")
+	}
+	if !strings.Contains(p.System, "Path scope invariant") || !strings.Contains(p.System, "path-segment boundaries") {
+		t.Fatalf("system prompt missing path scope invariant:\n%s", p.System)
 	}
 }

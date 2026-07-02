@@ -147,6 +147,9 @@
     "include_settings_permissions_in_prompt": {
       "type": "boolean"
     },
+    "include_recent_transcript_in_prompt": {
+      "type": "boolean"
+    },
     "allow": {
       "items": {
         "type": "string"

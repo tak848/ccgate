@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"strings"
 
 	"github.com/tak848/ccgate/internal/config"
 	"github.com/tak848/ccgate/internal/metrics"
@@ -50,15 +51,14 @@ func LoadOptions() (config.LoadOptions, error) {
 // claudeTargetSection returns the Claude-Code-specific guidance the
 // runner inserts between the decision rules and the allow/deny
 // lists. It teaches the LLM how to read settings_permissions and
-// recent_transcript -- both fields ccgate adds to the user payload
-// only for Claude. Codex has no equivalent to either today and
-// passes no TargetSection.
+// recent_transcript when those fields are enabled in the user payload.
+// Codex has no equivalent to either today and passes no TargetSection.
 //
-// When include_settings_permissions_in_prompt is false the
-// settings_permissions paragraph (and its mention in the header) is
-// dropped, since the field is also omitted from the user payload --
-// leaving the description in would tell the LLM to consult a field
-// it never gets, wasting tokens and inviting hallucinated content.
+// When a prompt-context field is disabled, its paragraph (and header
+// mention) is dropped, since the field is also omitted from the user
+// payload -- leaving the description in would tell the LLM to consult
+// a field it never gets, wasting tokens and inviting hallucinated
+// content.
 // Wording is editorial and intentionally not asserted in tests;
 // only the wiring (that the section reaches the system prompt) is.
 func claudeTargetSection(cfg config.Config) string {
@@ -66,13 +66,28 @@ func claudeTargetSection(cfg config.Config) string {
 
 	const recentTranscriptParagraph = "recent_transcript shows recent user messages and tool calls. Use it to understand what the user asked for. If the user explicitly requested the operation, prefer fallthrough over deny so Claude Code can confirm with the user. Explicit user intent never escalates a deny rule to allow.\n"
 
+	var fields []string
+	var sections []string
 	if cfg.ShouldIncludeSettingsPermissionsInPrompt() {
-		return "The user message includes settings_permissions and recent_transcript as background context.\n" +
-			settingsPermissionsParagraph +
-			recentTranscriptParagraph
+		fields = append(fields, "settings_permissions")
+		sections = append(sections, settingsPermissionsParagraph)
 	}
-	return "The user message includes recent_transcript as background context.\n" +
-		recentTranscriptParagraph
+	if cfg.ShouldIncludeRecentTranscriptInPrompt() {
+		fields = append(fields, "recent_transcript")
+		sections = append(sections, recentTranscriptParagraph)
+	}
+	if len(fields) == 0 {
+		return ""
+	}
+	return "The user message includes " + joinNatural(fields) + " as background context.\n" +
+		strings.Join(sections, "")
+}
+
+func joinNatural(values []string) string {
+	if len(values) <= 1 {
+		return strings.Join(values, "")
+	}
+	return strings.Join(values[:len(values)-1], ", ") + " and " + values[len(values)-1]
 }
 
 // Run reads a single PermissionRequest from stdin and writes the
