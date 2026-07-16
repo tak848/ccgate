@@ -31,6 +31,10 @@ func BuildContext(cwd string) Context {
 		ctx.RepoRoot = repoRoot
 	}
 
+	// GitDir and GitCommonDir mirror git's output verbatim, which may be
+	// relative to cwd (e.g. "../.git" from a subdirectory). They are kept
+	// raw for payload fidelity; any comparison or derivation below resolves
+	// them to absolute first. RepoRoot/PrimaryCheckoutRoot are absolute.
 	gitDir, err := Output(cwd, "rev-parse", "--git-dir")
 	if err == nil {
 		ctx.GitDir = gitDir
