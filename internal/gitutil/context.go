@@ -1,6 +1,7 @@
 package gitutil
 
 import (
+	"os"
 	"path/filepath"
 )
 
@@ -53,11 +54,13 @@ func BuildContext(cwd string) Context {
 	}
 
 	// Worktree detection: in a linked worktree, git-dir and git-common-dir
-	// point at different directories. git may emit either value relative
-	// to cwd (e.g. "../.git" from a subdirectory), so resolve both to
-	// absolute before comparing — otherwise a plain subdirectory of the
-	// main checkout is mistaken for a worktree.
-	if gitDir != "" && gitCommonDir != "" && resolveAbs(cwd, gitDir) != resolveAbs(cwd, gitCommonDir) {
+	// point at different directories. git may emit either value relative to
+	// cwd (e.g. "../.git" from a subdirectory), and the absolute value may
+	// differ cosmetically from a resolved relative one — symlinked temp
+	// dirs (macOS /var vs /private/var) or mixed separators (Windows C:/
+	// vs C:\). Compare by filesystem identity so none of that causes a
+	// plain subdirectory of the main checkout to be mistaken for a worktree.
+	if gitDir != "" && gitCommonDir != "" && !samePath(cwd, gitDir, gitCommonDir) {
 		ctx.IsWorktree = true
 	}
 
@@ -80,4 +83,22 @@ func resolveAbs(base, p string) string {
 		return filepath.Clean(p)
 	}
 	return filepath.Clean(filepath.Join(base, p))
+}
+
+// samePath reports whether two git paths (each possibly relative to cwd)
+// refer to the same filesystem location. Paths are resolved against cwd
+// and compared by os.SameFile so symlinks and path-separator differences
+// do not cause false mismatches. If either path cannot be stat'd, it
+// falls back to a lexical comparison of the resolved absolute paths.
+func samePath(cwd, a, b string) bool {
+	ra, rb := resolveAbs(cwd, a), resolveAbs(cwd, b)
+	if ra == rb {
+		return true
+	}
+	sa, errA := os.Stat(ra)
+	sb, errB := os.Stat(rb)
+	if errA == nil && errB == nil {
+		return os.SameFile(sa, sb)
+	}
+	return false
 }
