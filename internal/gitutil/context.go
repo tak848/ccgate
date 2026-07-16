@@ -1,8 +1,8 @@
 package gitutil
 
 import (
+	"os"
 	"path/filepath"
-	"strings"
 )
 
 // Context is the cwd-derived git information ccgate exposes to the
@@ -32,6 +32,10 @@ func BuildContext(cwd string) Context {
 		ctx.RepoRoot = repoRoot
 	}
 
+	// GitDir and GitCommonDir mirror git's output verbatim, which may be
+	// relative to cwd (e.g. "../.git" from a subdirectory). They are kept
+	// raw for payload fidelity; any comparison or derivation below resolves
+	// them to absolute first. RepoRoot/PrimaryCheckoutRoot are absolute.
 	gitDir, err := Output(cwd, "rev-parse", "--git-dir")
 	if err == nil {
 		ctx.GitDir = gitDir
@@ -40,13 +44,23 @@ func BuildContext(cwd string) Context {
 	gitCommonDir, err := Output(cwd, "rev-parse", "--git-common-dir")
 	if err == nil {
 		ctx.GitCommonDir = gitCommonDir
-		if strings.HasSuffix(gitCommonDir, "/.git") || strings.HasSuffix(gitCommonDir, string(filepath.Separator)+".git") {
-			ctx.PrimaryCheckoutRoot = filepath.Dir(gitCommonDir)
+		// git emits --git-common-dir relative to cwd (e.g. "../.git")
+		// when cwd is a repository subdirectory; resolve it so the
+		// PrimaryCheckoutRoot and the worktree comparison below are
+		// stable regardless of how git printed the path.
+		if abs := resolveAbs(cwd, gitCommonDir); filepath.Base(abs) == ".git" {
+			ctx.PrimaryCheckoutRoot = filepath.Dir(abs)
 		}
 	}
 
-	// Worktree detection: git-dir and git-common-dir differ in worktrees.
-	if gitDir != "" && gitCommonDir != "" && gitDir != gitCommonDir {
+	// Worktree detection: in a linked worktree, git-dir and git-common-dir
+	// point at different directories. git may emit either value relative to
+	// cwd (e.g. "../.git" from a subdirectory), and the absolute value may
+	// differ cosmetically from a resolved relative one — symlinked temp
+	// dirs (macOS /var vs /private/var) or mixed separators (Windows C:/
+	// vs C:\). Compare by filesystem identity so none of that causes a
+	// plain subdirectory of the main checkout to be mistaken for a worktree.
+	if gitDir != "" && gitCommonDir != "" && !samePath(cwd, gitDir, gitCommonDir) {
 		ctx.IsWorktree = true
 	}
 
@@ -55,4 +69,36 @@ func BuildContext(cwd string) Context {
 	}
 
 	return ctx
+}
+
+// resolveAbs returns p as a cleaned absolute path, resolving relative
+// paths against base. git rev-parse emits paths relative to the working
+// directory when cwd is a repository subdirectory, so callers must
+// resolve before comparing or embedding such values.
+func resolveAbs(base, p string) string {
+	if p == "" {
+		return ""
+	}
+	if filepath.IsAbs(p) {
+		return filepath.Clean(p)
+	}
+	return filepath.Clean(filepath.Join(base, p))
+}
+
+// samePath reports whether two git paths (each possibly relative to cwd)
+// refer to the same filesystem location. Paths are resolved against cwd
+// and compared by os.SameFile so symlinks and path-separator differences
+// do not cause false mismatches. If either path cannot be stat'd, it
+// falls back to a lexical comparison of the resolved absolute paths.
+func samePath(cwd, a, b string) bool {
+	ra, rb := resolveAbs(cwd, a), resolveAbs(cwd, b)
+	if ra == rb {
+		return true
+	}
+	sa, errA := os.Stat(ra)
+	sb, errB := os.Stat(rb)
+	if errA == nil && errB == nil {
+		return os.SameFile(sa, sb)
+	}
+	return false
 }
