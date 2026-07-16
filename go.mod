@@ -2,18 +2,18 @@ module github.com/tak848/ccgate
 
 go 1.25.0
 
-toolchain go1.25.11
+toolchain go1.25.12
 
 require (
 	github.com/alecthomas/kong v1.15.0
-	github.com/anthropics/anthropic-sdk-go v1.55.1
+	github.com/anthropics/anthropic-sdk-go v1.57.0
 	github.com/gofrs/flock v0.13.0
 	github.com/google/go-jsonnet v0.22.0
 	github.com/invopop/jsonschema v0.14.0
-	github.com/openai/openai-go/v3 v3.41.0
+	github.com/openai/openai-go/v3 v3.42.0
 	github.com/pb33f/ordered-map/v2 v2.3.1
-	golang.org/x/sys v0.46.0
-	golang.org/x/term v0.44.0
+	golang.org/x/sys v0.47.0
+	golang.org/x/term v0.45.0
 )
 
 require (
