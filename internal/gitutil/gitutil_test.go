@@ -216,6 +216,56 @@ func TestMainWorktreeRootBareRepo(t *testing.T) {
 	}
 }
 
+func TestBuildContextWorktreeDetection(t *testing.T) {
+	t.Run("subdirectory of main checkout is not a worktree", func(t *testing.T) {
+		t.Parallel()
+
+		main := t.TempDir()
+		initGit(t, main)
+
+		// A plain subdirectory of the main checkout, not a linked worktree.
+		// git rev-parse emits --git-common-dir relative to cwd here
+		// (e.g. "../.git"), which used to be string-compared against an
+		// absolute --git-dir and misclassify the directory as a worktree.
+		sub := filepath.Join(main, "sub")
+		if err := os.Mkdir(sub, 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		ctx := BuildContext(sub)
+		if ctx.IsWorktree {
+			t.Fatalf("plain subdirectory misdetected as worktree: git_dir=%q git_common_dir=%q",
+				ctx.GitDir, ctx.GitCommonDir)
+		}
+	})
+
+	t.Run("linked worktree detected", func(t *testing.T) {
+		t.Parallel()
+
+		main := t.TempDir()
+		initGit(t, main)
+		gitRun(t, main, "commit", "--allow-empty", "-m", "init")
+		wt := filepath.Join(filepath.Dir(main), filepath.Base(main)+"-wt")
+		t.Cleanup(func() { _ = os.RemoveAll(wt) })
+		gitRun(t, main, "worktree", "add", "--detach", wt)
+
+		ctx := BuildContext(wt)
+		if !ctx.IsWorktree {
+			t.Fatalf("linked worktree not detected: git_dir=%q git_common_dir=%q",
+				ctx.GitDir, ctx.GitCommonDir)
+		}
+
+		wantMain, _ := filepath.EvalSymlinks(main)
+		gotMain, err := filepath.EvalSymlinks(ctx.PrimaryCheckoutRoot)
+		if err != nil {
+			t.Fatalf("EvalSymlinks(%q): %v", ctx.PrimaryCheckoutRoot, err)
+		}
+		if gotMain != wantMain {
+			t.Fatalf("PrimaryCheckoutRoot=%q, want %q", gotMain, wantMain)
+		}
+	})
+}
+
 func initGit(t *testing.T, dir string) {
 	t.Helper()
 	gitRun(t, dir, "init")

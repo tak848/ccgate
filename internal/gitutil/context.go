@@ -2,7 +2,6 @@ package gitutil
 
 import (
 	"path/filepath"
-	"strings"
 )
 
 // Context is the cwd-derived git information ccgate exposes to the
@@ -40,13 +39,21 @@ func BuildContext(cwd string) Context {
 	gitCommonDir, err := Output(cwd, "rev-parse", "--git-common-dir")
 	if err == nil {
 		ctx.GitCommonDir = gitCommonDir
-		if strings.HasSuffix(gitCommonDir, "/.git") || strings.HasSuffix(gitCommonDir, string(filepath.Separator)+".git") {
-			ctx.PrimaryCheckoutRoot = filepath.Dir(gitCommonDir)
+		// git emits --git-common-dir relative to cwd (e.g. "../.git")
+		// when cwd is a repository subdirectory; resolve it so the
+		// PrimaryCheckoutRoot and the worktree comparison below are
+		// stable regardless of how git printed the path.
+		if abs := resolveAbs(cwd, gitCommonDir); filepath.Base(abs) == ".git" {
+			ctx.PrimaryCheckoutRoot = filepath.Dir(abs)
 		}
 	}
 
-	// Worktree detection: git-dir and git-common-dir differ in worktrees.
-	if gitDir != "" && gitCommonDir != "" && gitDir != gitCommonDir {
+	// Worktree detection: in a linked worktree, git-dir and git-common-dir
+	// point at different directories. git may emit either value relative
+	// to cwd (e.g. "../.git" from a subdirectory), so resolve both to
+	// absolute before comparing — otherwise a plain subdirectory of the
+	// main checkout is mistaken for a worktree.
+	if gitDir != "" && gitCommonDir != "" && resolveAbs(cwd, gitDir) != resolveAbs(cwd, gitCommonDir) {
 		ctx.IsWorktree = true
 	}
 
@@ -55,4 +62,18 @@ func BuildContext(cwd string) Context {
 	}
 
 	return ctx
+}
+
+// resolveAbs returns p as a cleaned absolute path, resolving relative
+// paths against base. git rev-parse emits paths relative to the working
+// directory when cwd is a repository subdirectory, so callers must
+// resolve before comparing or embedding such values.
+func resolveAbs(base, p string) string {
+	if p == "" {
+		return ""
+	}
+	if filepath.IsAbs(p) {
+		return filepath.Clean(p)
+	}
+	return filepath.Clean(filepath.Join(base, p))
 }
