@@ -291,16 +291,25 @@ func Run(stdin io.Reader, stdout io.Writer, opts config.LoadOptions, runOpts ...
 	}
 
 	if runErr != nil {
-		// reasoning_effort rides along because it is the request
+		// The reasoning setting rides along because it is the request
 		// parameter most likely to be behind a 400 and the one the
 		// user is least likely to remember setting: which levels a
 		// model accepts is narrow and version-specific, and the
-		// default sends one. Reporting what was sent beats guessing
-		// from the error text whether that was the cause.
+		// default sends one. Reporting it unconditionally beats
+		// guessing from the error text whether it was the cause.
+		//
+		// The attribute is named after the config key because that is
+		// what it holds -- the resolved setting, not the wire value.
+		// Only openai sends it verbatim: gemini lowers "none" to
+		// "minimal" and anthropic has no such field at all, spelling
+		// the same request as `thinking` plus `output_config.effort`.
+		// docs/providers.md carries the mapping; naming this
+		// `reasoning_effort` would claim a wire shape two of the three
+		// providers never use.
 		slog.Error("decide failed",
 			"error", runErr,
 			"tool", input.ToolName,
-			"reasoning_effort", cfg.Provider.GetReasoningEffort(),
+			"provider.reasoning_effort", cfg.Provider.GetReasoningEffort(),
 			"elapsed_ms", elapsed.Milliseconds())
 		return 1
 	}
