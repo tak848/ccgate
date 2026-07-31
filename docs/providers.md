@@ -20,7 +20,7 @@ Set `provider.name` (and `provider.model` when needed) in any layer:
 {
   provider: {
     name: 'openai',
-    model: 'gpt-4o-mini',
+    model: 'gpt-5.6-luna',
   },
 }
 ```
@@ -41,13 +41,58 @@ Resolution order overall: `provider.auth` (when set) → `CCGATE_*_API_KEY` → 
 
 ## Model selection
 
-ccgate sends each request with structured output and `temperature=0` (deterministic classification). Pick a model that supports both.
+ccgate sends each request with structured output, so pick a model that supports it. Sampling parameters are left alone — ccgate sets no `temperature` — so each model uses its own default.
 
-Reasoning-tier models often require a different parameter shape and add chain-of-thought latency that ccgate's classification does not need. If a model rejects `temperature=0` or otherwise refuses structured output, ccgate falls through to the upstream tool's prompt instead of looping — but the same model will never produce a verdict. Confirm `temperature=0` + structured output support against the provider's model docs before relying on a specific model. Provider model lists:
+Provider model lists:
 
 - Anthropic: <https://docs.anthropic.com/en/docs/about-claude/models/overview>
 - OpenAI: <https://platform.openai.com/docs/models>
 - Gemini: <https://ai.google.dev/gemini-api/docs/models>
+
+## `reasoning_effort`
+
+Classifying one tool call needs no reasoning, so ccgate asks for none by default. Leaving it to the model is not neutral: current models reason by default, which costs latency on every permission check and spends output tokens that the verdict itself needs.
+
+`provider.reasoning_effort` is one setting across providers, and each one asks for as little reasoning as its API can express:
+
+| value | `openai` | `gemini` | `anthropic` |
+|---|---|---|---|
+| unset (= `none`) | `reasoning_effort: "none"` | `reasoning_effort: "minimal"` | `thinking: {type: "disabled"}` |
+| `""` | nothing sent | nothing sent | nothing sent |
+| anything else | `reasoning_effort` verbatim | `reasoning_effort` verbatim | `thinking: {type: "adaptive"}` + `output_config.effort` |
+
+Two providers cannot say "none" literally. Anthropic has no such effort level — its `output_config.effort` is `low`/`medium`/`high`/`xhigh`/`max` — and the parameter that stops Claude from thinking is `thinking`, so `none` disables that instead. Gemini [cannot turn reasoning off](https://ai.google.dev/gemini-api/docs/openai) on its current models at all, so `none` asks for `minimal`, the floor its compatibility layer offers.
+
+**The value is not validated.** `provider.name` only picks which protocol to speak, and `base_url` can point that protocol at anything, so the endpoint on the other end is the only authority on which levels mean something — a proxy fronting a dozen models may accept levels no first-party API defines. `""` and `none` are the only two values ccgate interprets; everything else is forwarded as written, including a typo.
+
+So which values work is narrow, specific to the model's generation, and yours to check. A model with no reasoning parameter at all rejects every value; a reasoning model may accept `low` but not `none`; Anthropic has no `minimal`. When one is rejected the hook exits with the provider's own 400, which usually names the values it does accept, and the log carries a hint pointing at this setting.
+
+Set the value the model accepts:
+
+```jsonnet
+{
+  provider: {
+    name: 'openai',
+    model: 'a-reasoning-model',
+    reasoning_effort: 'low',
+  },
+}
+```
+
+Or opt out entirely for a model that takes no reasoning parameter:
+
+```jsonnet
+{
+  provider: {
+    name: 'openai',
+    model: 'a-non-reasoning-model',
+    reasoning_effort: '',
+  },
+}
+```
+
+> [!NOTE]
+> Reasoning tokens count against the same output budget as the verdict. At higher efforts a model can spend the whole budget thinking and return a truncated response, which ccgate reports as unusable and turns into a fallthrough.
 
 ## `base_url` and compatible proxies
 

@@ -334,6 +334,84 @@ func TestFallthroughStrategy(t *testing.T) {
 	}
 }
 
+func TestReasoningEffort(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		jsonnet string
+		want    string
+		wantNil bool
+	}{
+		"unset defaults to none": {
+			jsonnet: `{}`,
+			want:    ReasoningEffortNone,
+			wantNil: true,
+		},
+		"an explicit level is kept": {
+			jsonnet: `{ provider: { name: 'openai', model: 'gpt-5-mini', reasoning_effort: 'low' } }`,
+			want:    ReasoningEffortLow,
+		},
+		"an explicit empty string is distinct from unset": {
+			jsonnet: `{ provider: { name: 'openai', model: 'gpt-4o-mini', reasoning_effort: '' } }`,
+			want:    ReasoningEffortOff,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			cfg := Default()
+			if err := mergeConfigString(tc.jsonnet, &cfg); err != nil {
+				t.Fatalf("merge: %v", err)
+			}
+			if tc.wantNil && cfg.Provider.ReasoningEffort != nil {
+				t.Fatalf("expected nil pointer, got %q", *cfg.Provider.ReasoningEffort)
+			}
+			if got := cfg.Provider.GetReasoningEffort(); got != tc.want {
+				t.Fatalf("GetReasoningEffort = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestReasoningEffortIsNotValidated pins that ccgate does not police
+// the effort vocabulary. provider.name only selects which protocol to
+// speak, and a base_url can point that protocol at anything, so the
+// endpoint on the other end is the only authority on which values mean
+// something. ccgate interprets exactly two values of its own -- "" to
+// send nothing and "none" for the per-provider "as little as possible"
+// mapping -- and passes everything else through for the provider to
+// accept or reject.
+func TestReasoningEffortIsNotValidated(t *testing.T) {
+	t.Parallel()
+
+	providers := []string{"anthropic", "openai", "gemini"}
+	efforts := map[string]string{
+		"the opt-out":                     ReasoningEffortOff,
+		"none":                            ReasoningEffortNone,
+		"minimal, absent from anthropic":  ReasoningEffortMinimal,
+		"a named level":                   ReasoningEffortXHigh,
+		"a level no provider defines":     "ultra",
+		"a typo":                          "lwo",
+		"a differently cased named level": "LOW",
+	}
+	for effortName, effort := range efforts {
+		for _, provider := range providers {
+			t.Run(effortName+"/"+provider, func(t *testing.T) {
+				t.Parallel()
+				value := effort
+				cfg := Default()
+				cfg.Provider.Name = provider
+				cfg.Provider.Model = "test-model"
+				cfg.Provider.ReasoningEffort = &value
+
+				if err := cfg.Validate(); err != nil {
+					t.Fatalf("Validate() = %v, want nil: the provider decides, not ccgate", err)
+				}
+			})
+		}
+	}
+}
+
 func TestPromptContextIncludeFlags(t *testing.T) {
 	t.Parallel()
 

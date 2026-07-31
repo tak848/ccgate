@@ -21,13 +21,20 @@ import (
 )
 
 const (
-	DefaultTimeoutMS      = 20_000
-	DefaultModel          = string(anthropic.ModelClaudeHaiku4_5)
-	DefaultProvider       = "anthropic"
-	DefaultLogMaxSize     = 5 * 1024 * 1024 // 5MB
-	DefaultMetricsMaxSize = 2 * 1024 * 1024 // 2MB
-	BaseConfigName        = "ccgate.jsonnet"
-	LocalConfigName       = "ccgate.local.jsonnet"
+	DefaultTimeoutMS = 20_000
+	DefaultModel     = string(anthropic.ModelClaudeHaiku4_5)
+	DefaultProvider  = "anthropic"
+	// DefaultReasoningEffort keeps reasoning off. ccgate classifies a
+	// single tool call, which no model needs to think about, and
+	// leaving it unset is not neutral: GPT-5.6 defaults to `medium`
+	// and Claude 5 has thinking on by default, so omitting the
+	// parameter would make every permission check pay for reasoning
+	// it does not use.
+	DefaultReasoningEffort = llm.ReasoningEffortNone
+	DefaultLogMaxSize      = 5 * 1024 * 1024 // 5MB
+	DefaultMetricsMaxSize  = 2 * 1024 * 1024 // 2MB
+	BaseConfigName         = "ccgate.jsonnet"
+	LocalConfigName        = "ccgate.local.jsonnet"
 
 	// DefaultAuthRefreshMarginMS is the early-refresh slack used when
 	// deciding whether a cached helper credential is still valid:
@@ -65,6 +72,20 @@ const (
 	FallthroughStrategyAsk   = llm.FallthroughStrategyAsk
 	FallthroughStrategyAllow = llm.FallthroughStrategyAllow
 	FallthroughStrategyDeny  = llm.FallthroughStrategyDeny
+)
+
+// ReasoningEffort* aliases re-export the canonical values from
+// internal/llm, which owns them because the provider clients read
+// them and cannot import config.
+const (
+	ReasoningEffortOff     = llm.ReasoningEffortOff
+	ReasoningEffortNone    = llm.ReasoningEffortNone
+	ReasoningEffortMinimal = llm.ReasoningEffortMinimal
+	ReasoningEffortLow     = llm.ReasoningEffortLow
+	ReasoningEffortMedium  = llm.ReasoningEffortMedium
+	ReasoningEffortHigh    = llm.ReasoningEffortHigh
+	ReasoningEffortXHigh   = llm.ReasoningEffortXHigh
+	ReasoningEffortMax     = llm.ReasoningEffortMax
 )
 
 type Config struct {
@@ -184,6 +205,18 @@ type ProviderConfig struct {
 	// sources (`type=exec` shell helper, `type=file` rotator file).
 	Auth      *AuthConfig `json:"auth,omitempty"`
 	TimeoutMS *int        `json:"timeout_ms,omitempty"`
+	// ReasoningEffort controls how much the model reasons before
+	// answering. nil means DefaultReasoningEffort ("none"); an
+	// explicit empty string omits the parameter entirely, for models
+	// that reject it. Accepted values are "none", "minimal", "low",
+	// "medium", "high", "xhigh", and "max" — but which of them a
+	// given model actually accepts is model-specific, so ccgate only
+	// validates the anthropic set (see validate.go) and lets the
+	// provider reject the rest.
+	//
+	// Each provider spells the knob differently; see
+	// llm.ReasoningEffort* and docs/providers.md for the mapping.
+	ReasoningEffort *string `json:"reasoning_effort,omitempty"`
 }
 
 // AuthConfig is the discriminated union for short-lived / rotating
@@ -229,6 +262,16 @@ func (p ProviderConfig) GetTimeoutMS() int {
 		return DefaultTimeoutMS
 	}
 	return *p.TimeoutMS
+}
+
+// GetReasoningEffort returns the configured reasoning effort.
+// nil defaults to DefaultReasoningEffort; an explicit empty string
+// means "send nothing" and is returned as-is.
+func (p ProviderConfig) GetReasoningEffort() string {
+	if p.ReasoningEffort == nil {
+		return DefaultReasoningEffort
+	}
+	return *p.ReasoningEffort
 }
 
 // GetRefreshMargin returns the refresh margin as a time.Duration,

@@ -291,7 +291,11 @@ func Run(stdin io.Reader, stdout io.Writer, opts config.LoadOptions, runOpts ...
 	}
 
 	if runErr != nil {
-		slog.Error("decide failed", "error", runErr, "tool", input.ToolName, "elapsed_ms", elapsed.Milliseconds())
+		attrs := []any{"error", runErr, "tool", input.ToolName, "elapsed_ms", elapsed.Milliseconds()}
+		if hint := reasoningEffortHint(cfg.Provider, runErr); hint != "" {
+			attrs = append(attrs, "hint", hint)
+		}
+		slog.Error("decide failed", attrs...)
 		return 1
 	}
 	if !hasDecision {
@@ -507,6 +511,32 @@ func redactProviderError(providerName string, err error) error {
 		return providerAPIError(providerName, oai.StatusCode, oai.Type, oai.Message, "")
 	}
 	return err
+}
+
+// reasoningEffortHint spots a provider rejecting the reasoning
+// parameter ccgate sends by default and names the config key that
+// turns it off. It only adds a log attribute — the error and the
+// exit code are unchanged.
+//
+// Worth a hint because which efforts a model accepts is narrow and
+// undiscoverable from ccgate: gpt-4o has no reasoning_effort at all,
+// gpt-5-mini / o4-mini reject "none" while accepting "low", and
+// pre-adaptive Claude models reject the thinking/effort pair. The
+// provider's own message usually lists what it does accept, so the
+// hint only has to say where to put that value.
+func reasoningEffortHint(p config.ProviderConfig, err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := strings.ToLower(err.Error())
+	if !strings.Contains(msg, "reasoning_effort") &&
+		!strings.Contains(msg, "thinking") &&
+		!strings.Contains(msg, "effort") {
+		return ""
+	}
+	return fmt.Sprintf(
+		"this model rejected reasoning_effort=%q; set provider.reasoning_effort to a value it accepts, or %q to omit the parameter",
+		p.GetReasoningEffort(), config.ReasoningEffortOff)
 }
 
 // providerAPIError formats the redacted, secret-free API error string
@@ -829,13 +859,14 @@ func isKnownProvider(name string) bool {
 }
 
 func newProviderClient(providerName string, p config.ProviderConfig, apiKey, baseURL string) llm.Provider {
+	effort := p.GetReasoningEffort()
 	switch providerName {
 	case "openai":
-		return &openai.Client{APIKey: apiKey, BaseURL: baseURL}
+		return &openai.Client{APIKey: apiKey, BaseURL: baseURL, ReasoningEffort: effort}
 	case "gemini":
-		return &gemini.Client{APIKey: apiKey, BaseURL: baseURL}
+		return &gemini.Client{APIKey: apiKey, BaseURL: baseURL, ReasoningEffort: effort}
 	default: // anthropic
-		cli := &anthropic.Client{APIKey: apiKey, BaseURL: baseURL}
+		cli := &anthropic.Client{APIKey: apiKey, BaseURL: baseURL, ReasoningEffort: effort}
 		// auth.type=profile delegates resolution to the SDK; apiKey
 		// arrives empty in that branch and the Profile field drives
 		// Decide's credential pipeline instead.

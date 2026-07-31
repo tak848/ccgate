@@ -111,6 +111,9 @@
         },
         "timeout_ms": {
           "type": "integer"
+        },
+        "reasoning_effort": {
+          "type": "string"
         }
       },
       "additionalProperties": false,

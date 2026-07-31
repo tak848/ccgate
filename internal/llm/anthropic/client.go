@@ -68,6 +68,11 @@ type Client struct {
 	// to anthropicconfig.LoadConfig (env / active_config / "default").
 	Profile string
 
+	// ReasoningEffort is the cross-provider knob; reasoningParams
+	// turns it into this API's `thinking` / `output_config.effort`
+	// pair. Empty sends neither.
+	ReasoningEffort string
+
 	// UseProfile selects the profile-delegation path: ccgate calls
 	// anthropicconfig.LoadProfile / LoadConfig directly and feeds
 	// the resulting *Config into option.WithConfig. (Env-default
@@ -129,6 +134,12 @@ func (c *Client) Decide(ctx context.Context, p llm.Prompt) (llm.Result, error) {
 		return llm.Result{}, fmt.Errorf("generate output schema: %w", err)
 	}
 
+	thinking, effort := reasoningParams(c.ReasoningEffort)
+
+	// No Temperature: claude-sonnet-5 rejects the field outright
+	// ("`temperature` is deprecated for this model"), so no value is
+	// portable across models and omitting it is the only shape that
+	// works everywhere.
 	message, err := client.Messages.New(ctx, anthropicsdk.MessageNewParams{
 		Model:     anthropicsdk.Model(p.Model),
 		MaxTokens: maxTokens,
@@ -138,8 +149,9 @@ func (c *Client) Decide(ctx context.Context, p llm.Prompt) (llm.Result, error) {
 		},
 		OutputConfig: anthropicsdk.OutputConfigParam{
 			Format: anthropicsdk.JSONOutputFormatParam{Schema: schema},
+			Effort: effort,
 		},
-		Temperature: anthropicsdk.Float(0),
+		Thinking: thinking,
 	})
 	if err != nil {
 		// SDK request-time OAuth refresh / credential resolution
@@ -175,6 +187,44 @@ func (c *Client) Decide(ctx context.Context, p llm.Prompt) (llm.Result, error) {
 	}
 
 	return llm.Result{Output: output, Usage: usage}, nil
+}
+
+// reasoningParams maps the cross-provider reasoning_effort value onto
+// this API's two independent knobs: `thinking` decides whether Claude
+// thinks at all, and `output_config.effort` decides how much work it
+// puts into the whole response (which, in adaptive mode, includes how
+// often and how deeply it thinks).
+//
+// llm.ReasoningEffortNone becomes `thinking: {type: "disabled"}` and
+// nothing else. It cannot become `effort: "low"` for two reasons:
+// low is not off ("Claude minimizes thinking ... will still think on
+// sufficiently difficult problems"), and `effort` is rejected outright
+// by models that predate it — claude-haiku-4-5-20251001 answers
+// "This model does not support the effort parameter." Sending only
+// `thinking` keeps the default working on every model.
+//
+// Every other level pairs `thinking: {type: "adaptive"}` with the
+// effort. Both are needed: on Claude 5 thinking is already on, so
+// `thinking` is redundant there, but on Opus 4.8 / Sonnet 4.6 leaving
+// it out means no thinking happens at all — sending both makes
+// reasoning_effort: "low" mean the same thing across generations.
+// Note this combination is what a model that predates adaptive
+// thinking rejects ("adaptive thinking is not supported on this
+// model"), which is the documented cost of asking an old model to
+// reason.
+func reasoningParams(effort string) (anthropicsdk.ThinkingConfigParamUnion, anthropicsdk.OutputConfigEffort) {
+	switch effort {
+	case llm.ReasoningEffortOff:
+		return anthropicsdk.ThinkingConfigParamUnion{}, ""
+	case llm.ReasoningEffortNone:
+		return anthropicsdk.ThinkingConfigParamUnion{
+			OfDisabled: &anthropicsdk.ThinkingConfigDisabledParam{},
+		}, ""
+	default:
+		return anthropicsdk.ThinkingConfigParamUnion{
+			OfAdaptive: &anthropicsdk.ThinkingConfigAdaptiveParam{},
+		}, anthropicsdk.OutputConfigEffort(effort)
+	}
 }
 
 // resolveProfileOptions runs the profile-mode credential pipeline

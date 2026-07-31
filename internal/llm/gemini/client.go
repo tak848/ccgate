@@ -25,6 +25,10 @@ var ErrNoAPIKey = errors.New("gemini: no API key set (CCGATE_GEMINI_API_KEY / GE
 type Client struct {
 	APIKey  string
 	BaseURL string
+
+	// ReasoningEffort is forwarded to the OpenAI-compatible endpoint
+	// as `reasoning_effort`. Empty omits it.
+	ReasoningEffort string
 }
 
 // Decide delegates to openai.Client pointed at the Gemini endpoint.
@@ -37,8 +41,27 @@ func (c *Client) Decide(ctx context.Context, p llm.Prompt) (llm.Result, error) {
 		baseURL = DefaultBaseURL
 	}
 	inner := &openai.Client{
-		APIKey:  c.APIKey,
-		BaseURL: baseURL,
+		APIKey:          c.APIKey,
+		BaseURL:         baseURL,
+		ReasoningEffort: reasoningEffort(c.ReasoningEffort),
 	}
 	return inner.Decide(ctx, p)
+}
+
+// reasoningEffort lowers llm.ReasoningEffortNone to "minimal", the
+// least Gemini will do.
+//
+// Gemini's compatibility layer maps reasoning_effort onto thinking
+// levels, and its table bottoms out at minimal: "Reasoning cannot be
+// turned off for Gemini 2.5 Pro or 3 models", and every model a new
+// API user can reach is a 3.x one. Sending "none" is a 400 there, so
+// passing it through would break the default on every current model
+// while asking for the same thing minimal already delivers.
+//
+// Other values go out unchanged and Gemini decides.
+func reasoningEffort(effort string) string {
+	if effort == llm.ReasoningEffortNone {
+		return llm.ReasoningEffortMinimal
+	}
+	return effort
 }
