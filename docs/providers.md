@@ -41,13 +41,55 @@ Resolution order overall: `provider.auth` (when set) → `CCGATE_*_API_KEY` → 
 
 ## Model selection
 
-ccgate sends each request with structured output and `temperature=0` (deterministic classification). Pick a model that supports both.
+ccgate sends each request with structured output, so pick a model that supports it. Sampling parameters are left alone — ccgate sets no `temperature` — so each model uses its own default.
 
-Reasoning-tier models often require a different parameter shape and add chain-of-thought latency that ccgate's classification does not need. If a model rejects `temperature=0` or otherwise refuses structured output, ccgate falls through to the upstream tool's prompt instead of looping — but the same model will never produce a verdict. Confirm `temperature=0` + structured output support against the provider's model docs before relying on a specific model. Provider model lists:
+Provider model lists:
 
 - Anthropic: <https://docs.anthropic.com/en/docs/about-claude/models/overview>
 - OpenAI: <https://platform.openai.com/docs/models>
 - Gemini: <https://ai.google.dev/gemini-api/docs/models>
+
+## `reasoning_effort`
+
+Classifying one tool call needs no reasoning, so ccgate asks for none by default. Leaving it to the model is not neutral: current models reason by default, which costs latency on every permission check and spends output tokens that the verdict itself needs.
+
+`provider.reasoning_effort` is one setting across providers, mapped to whatever each API calls it:
+
+| value | `openai` / `gemini` | `anthropic` |
+|---|---|---|
+| unset (= `none`) | `reasoning_effort: "none"` | `thinking: {type: "disabled"}` |
+| `low` `medium` `high` `xhigh` `max` | `reasoning_effort: <value>` | `thinking: {type: "adaptive"}` + `output_config.effort: <value>` |
+| `minimal` | `reasoning_effort: "minimal"` | rejected at config load — Anthropic has no equivalent |
+| `""` | nothing sent | nothing sent |
+
+Which values a model accepts is narrow and specific to its generation, and the provider is the only authority on it. A model that has no reasoning parameter at all rejects every value; a reasoning model may accept `low` but not `none`. When that happens the hook exits with the provider's own 400, which usually names the values it does accept, and the log carries a hint pointing at this setting.
+
+Set the value the model accepts:
+
+```jsonnet
+{
+  provider: {
+    name: 'openai',
+    model: 'a-reasoning-model',
+    reasoning_effort: 'low',
+  },
+}
+```
+
+Or opt out entirely for a model that takes no reasoning parameter:
+
+```jsonnet
+{
+  provider: {
+    name: 'openai',
+    model: 'a-non-reasoning-model',
+    reasoning_effort: '',
+  },
+}
+```
+
+> [!NOTE]
+> Reasoning tokens count against the same output budget as the verdict. At higher efforts a model can spend the whole budget thinking and return a truncated response, which ccgate reports as unusable and turns into a fallthrough.
 
 ## `base_url` and compatible proxies
 

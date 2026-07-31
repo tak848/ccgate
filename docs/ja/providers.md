@@ -41,13 +41,55 @@ ccgate は各 PermissionRequest を provider LLM (default: Claude Haiku) に投�
 
 ## モデル選択
 
-ccgate は structured output と `temperature=0` (決定論的な分類) でリクエストを送ります。どちらにも対応するモデルを選んでください。
+ccgate は structured output でリクエストを送るので、それに対応するモデルを選んでください。sampling パラメータには触れません (`temperature` を設定しません) ので、各モデルの既定値がそのまま使われます。
 
-reasoning 系のモデルは別のパラメータ shape を要求することが多く、 分類タスクには不要な chain-of-thought 遅延が乗ります。 `temperature=0` や structured output を拒否するモデルでは ccgate は loop せず上流ツールの確認画面に fallthrough しますが、 同じモデルで判定が成立することはありません。 特定モデルを採用する前に provider のモデル一覧で `temperature=0` + structured output 対応を確認してください。 provider モデル一覧:
+provider モデル一覧:
 
 - Anthropic: <https://docs.anthropic.com/en/docs/about-claude/models/overview>
 - OpenAI: <https://platform.openai.com/docs/models>
 - Gemini: <https://ai.google.dev/gemini-api/docs/models>
+
+## `reasoning_effort`
+
+tool 呼び出し 1 件の分類に reasoning は要らないので、ccgate は既定で reasoning させません。モデル任せは中立ではなく、現行モデルは既定で reasoning するため、判定のたびに latency が乗り、判定結果そのものに要る output token を消費します。
+
+`provider.reasoning_effort` は provider をまたいだ 1 つの設定で、各 API の呼び方に写像されます。
+
+| 値 | `openai` / `gemini` | `anthropic` |
+|---|---|---|
+| 未指定 (= `none`) | `reasoning_effort: "none"` | `thinking: {type: "disabled"}` |
+| `low` `medium` `high` `xhigh` `max` | `reasoning_effort: <値>` | `thinking: {type: "adaptive"}` + `output_config.effort: <値>` |
+| `minimal` | `reasoning_effort: "minimal"` | config 読み込み時に拒否 — Anthropic に対応する値が無い |
+| `""` | 何も送らない | 何も送らない |
+
+どの値を受理するかはモデルの世代ごとに狭く、判断できるのは provider だけです。reasoning パラメータを持たないモデルはどの値も拒否しますし、reasoning モデルでも `low` は受けるが `none` は受けない、ということがあります。拒否された場合は provider の 400 をそのまま添えて hook が異常終了し、その本文はたいてい受理可能な値を列挙しています。log にはこの設定を指すヒントが載ります。
+
+そのモデルが受理する値を設定してください。
+
+```jsonnet
+{
+  provider: {
+    name: 'openai',
+    model: 'a-reasoning-model',
+    reasoning_effort: 'low',
+  },
+}
+```
+
+reasoning パラメータを持たないモデルなら、送信自体をやめます。
+
+```jsonnet
+{
+  provider: {
+    name: 'openai',
+    model: 'a-non-reasoning-model',
+    reasoning_effort: '',
+  },
+}
+```
+
+> [!NOTE]
+> reasoning token は判定結果と同じ output の枠を食います。effort を上げるとモデルが枠を思考で使い切って応答が truncate され、ccgate はそれを unusable として fallthrough します。
 
 ## `base_url` と互換 proxy
 
