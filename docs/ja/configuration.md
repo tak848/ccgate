@@ -33,7 +33,7 @@ ccgate は target ごとに以下の層を順に読み込みます。各層は�
 | list: `allow` / `deny` / `environment` | 値を設定した layer が前の layer から引き継いだ list を **置き換える** (`[]` でも置換)。設定していない layer は前の値を保持 | embedded `allow: ["A","B"]` + global `allow: ["X"]` → 最終 `allow: ["X"]` |
 | list: `append_allow` / `append_deny` / `append_environment` | 値を設定した layer が前の layer の累積 list の **末尾に追加** | embedded `deny: ["A"]` + project `append_deny: ["P"]` → 最終 `deny: ["A","P"]` |
 | スカラー: `log_*` / `metrics_*` / `fallthrough_strategy` | 各 layer が値を設定していれば per-field で **overwrite**、設定していなければ前の値を保持 | embedded `log_max_size: 5MB` + global `log_max_size: 10MB` → 最終 `log_max_size: 10MB` |
-| ブロック: `provider` (`name` / `model` / `base_url` / `auth` / `timeout_ms` / `reasoning_effort`) | `provider` を書いた layer は **block 全体を置換**。 | embedded `provider: {name: anthropic, model: claude-haiku-4-5}` + global `provider: {name: openai, model: gpt-4o-mini}` → 最終 `provider: {name: openai, model: gpt-4o-mini}`。 |
+| ブロック: `provider` (`name` / `model` / `base_url` / `auth` / `timeout_ms` / `reasoning_effort`) | `provider` を書いた layer は **block 全体を置換**。 | embedded `provider: {name: anthropic, model: claude-haiku-4-5}` + global `provider: {name: openai, model: gpt-5.6-luna}` → 最終 `provider: {name: openai, model: gpt-5.6-luna}`。 |
 
 `provider` を block 全体で置換するのは、 下位 layer の proxy 用 `base_url` や helper 用 `auth.command` が `name` を切り替えただけの上位 layer に残らないようにするためです。 model だけ変えたい場合は `provider: {name: anthropic, model: claude-sonnet-4-6}` のように block 全体を書き直してください。 global で `auth` を設定している場合、 project-local 側で `provider` を上書きするときも `auth` ブロック全体を書き写す必要があります (書き漏らすと当該プロジェクトで helper 設定が silent に消えます)。
 

@@ -20,7 +20,7 @@ Set `provider.name` (and `provider.model` when needed) in any layer:
 {
   provider: {
     name: 'openai',
-    model: 'gpt-4o-mini',
+    model: 'gpt-5.6-luna',
   },
 }
 ```
@@ -53,16 +53,18 @@ Provider model lists:
 
 Classifying one tool call needs no reasoning, so ccgate asks for none by default. Leaving it to the model is not neutral: current models reason by default, which costs latency on every permission check and spends output tokens that the verdict itself needs.
 
-`provider.reasoning_effort` is one setting across providers, mapped to whatever each API calls it:
+`provider.reasoning_effort` is one setting across providers, and each one asks for as little reasoning as its API can express:
 
-| value | `openai` / `gemini` | `anthropic` |
-|---|---|---|
-| unset (= `none`) | `reasoning_effort: "none"` | `thinking: {type: "disabled"}` |
-| `low` `medium` `high` `xhigh` `max` | `reasoning_effort: <value>` | `thinking: {type: "adaptive"}` + `output_config.effort: <value>` |
-| `minimal` | `reasoning_effort: "minimal"` | rejected at config load — Anthropic has no equivalent |
-| `""` | nothing sent | nothing sent |
+| value | `openai` | `gemini` | `anthropic` |
+|---|---|---|---|
+| unset (= `none`) | `reasoning_effort: "none"` | `reasoning_effort: "minimal"` | `thinking: {type: "disabled"}` |
+| `low` `medium` `high` `xhigh` `max` | sent as-is | sent as-is | `thinking: {type: "adaptive"}` + `output_config.effort` |
+| `minimal` | sent as-is | sent as-is | rejected at config load — Anthropic has no equivalent |
+| `""` | nothing sent | nothing sent | nothing sent |
 
-Which values a model accepts is narrow and specific to its generation, and the provider is the only authority on it. A model that has no reasoning parameter at all rejects every value; a reasoning model may accept `low` but not `none`. When that happens the hook exits with the provider's own 400, which usually names the values it does accept, and the log carries a hint pointing at this setting.
+Two providers cannot say "none" literally. Anthropic has no such effort level, and the parameter that stops Claude from thinking is `thinking`, so `none` disables that instead. Gemini [cannot turn reasoning off](https://ai.google.dev/gemini-api/docs/openai) on its current models at all, so `none` asks for `minimal`, the floor its compatibility layer offers.
+
+Beyond that, which values a model accepts is narrow and specific to its generation, and the provider is the only authority on it. A model that has no reasoning parameter at all rejects every value; a reasoning model may accept `low` but not `none`. When that happens the hook exits with the provider's own 400, which usually names the values it does accept, and the log carries a hint pointing at this setting.
 
 Set the value the model accepts:
 
