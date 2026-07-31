@@ -504,6 +504,9 @@ func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOpti
 // Non-SDK errors (transport / context / parse) keep their original
 // shape because we built those messages ourselves and they don't echo
 // provider response bodies.
+//
+// The result is a *providerError, so what survives redaction stays
+// inspectable via errors.As rather than only as a formatted string.
 func redactProviderError(providerName string, err error) error {
 	if err == nil {
 		return nil
@@ -519,22 +522,49 @@ func redactProviderError(providerName string, err error) error {
 	return err
 }
 
-// providerAPIError formats the redacted, secret-free API error string
-// from its already-extracted structured parts. type / message /
-// requestID are appended only when present so a bare body still yields
-// a clean "<provider> API error (status N)".
+// providerError is the redacted form of a provider API failure: the
+// diagnosable fields, without the raw response body.
+//
+// It is a struct rather than a formatted string because redaction is
+// about dropping the body, not about erasing what the API said.
+// Callers past redactProviderError can still errors.As their way to
+// the status instead of parsing Error() back apart -- which is what
+// keeps providerAuthStatus working no matter which side of the
+// redaction it runs on.
+type providerError struct {
+	Provider  string
+	Status    int
+	Type      string
+	Message   string
+	RequestID string
+}
+
+// Error renders the secret-free string that reaches ccgate.log. type /
+// message / requestID are appended only when present, so a body that
+// did not fit the API's error envelope still yields a clean
+// "<provider> API error (status N)".
+func (e *providerError) Error() string {
+	out := fmt.Sprintf("%s API error (status %d)", e.Provider, e.Status)
+	if e.Type != "" {
+		out += fmt.Sprintf(", type=%s", e.Type)
+	}
+	if e.Message != "" {
+		out += ": " + e.Message
+	}
+	if e.RequestID != "" {
+		out += fmt.Sprintf(" (request-id %s)", e.RequestID)
+	}
+	return out
+}
+
 func providerAPIError(providerName string, status int, errType, message, requestID string) error {
-	out := fmt.Sprintf("%s API error (status %d)", providerName, status)
-	if errType != "" {
-		out += fmt.Sprintf(", type=%s", errType)
+	return &providerError{
+		Provider:  providerName,
+		Status:    status,
+		Type:      errType,
+		Message:   message,
+		RequestID: requestID,
 	}
-	if message != "" {
-		out += ": " + message
-	}
-	if requestID != "" {
-		out += fmt.Sprintf(" (request-id %s)", requestID)
-	}
-	return errors.New(out)
 }
 
 // errorEnvelopeMessage pulls the `error.message` field out of the
@@ -580,6 +610,13 @@ func errorEnvelopeMessage(rawJSON string) string {
 func providerAuthStatus(err error) (int, bool) {
 	if err == nil {
 		return 0, false
+	}
+	// Redacted first: an already-redacted error still carries the
+	// status, so this answers the same whichever side of
+	// redactProviderError the caller sits on.
+	var pe *providerError
+	if errors.As(err, &pe) {
+		return pe.Status, pe.Status == http.StatusUnauthorized || pe.Status == http.StatusForbidden
 	}
 	var anth *anthropicsdk.Error
 	if errors.As(err, &anth) {
