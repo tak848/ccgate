@@ -65,7 +65,7 @@ Two providers cannot say "none" literally. Anthropic has no such effort level â€
 
 **The value is not validated.** `provider.name` only picks which protocol to speak, and `base_url` can point that protocol at anything, so the endpoint on the other end is the only authority on which levels mean something â€” a proxy fronting a dozen models may accept levels no first-party API defines. `""` and `none` are the only two values ccgate interprets; everything else is forwarded as written, including a typo.
 
-So which values work is narrow, specific to the model's generation, and yours to check. A model with no reasoning parameter at all rejects every value; a reasoning model may accept `low` but not `none`; Anthropic has no `minimal`. When one is rejected the hook exits with the provider's own 400, which usually names the values it does accept, and the log carries a hint pointing at this setting.
+So which values work is narrow, specific to the model's generation, and yours to check. A model with no reasoning parameter at all rejects every value; a reasoning model may accept `low` but not `none`; Anthropic has no `minimal`. When one is rejected the hook exits with the provider's own 400, which usually names the values it does accept, and the log records the effort that was sent alongside it.
 
 Set the value the model accepts:
 
