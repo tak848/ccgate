@@ -208,14 +208,14 @@ type ProviderConfig struct {
 	// ReasoningEffort controls how much the model reasons before
 	// answering. nil means DefaultReasoningEffort ("none"); an
 	// explicit empty string omits the parameter entirely, for models
-	// that reject it. Accepted values are "none", "minimal", "low",
-	// "medium", "high", "xhigh", and "max" — but which of them a
-	// given model actually accepts is model-specific, so ccgate only
-	// validates the anthropic set (see validate.go) and lets the
-	// provider reject the rest.
+	// that reject it.
 	//
-	// Each provider spells the knob differently; see
-	// llm.ReasoningEffort* and docs/providers.md for the mapping.
+	// The value is never validated. provider.name only picks which
+	// protocol to speak and base_url can point it at anything, so the
+	// endpoint is the only authority on which levels mean something.
+	// "" and "none" are the two values ccgate interprets; the rest are
+	// forwarded verbatim. See llm.ReasoningEffort* and
+	// docs/providers.md for the per-provider mapping.
 	ReasoningEffort *string `json:"reasoning_effort,omitempty"`
 }
 

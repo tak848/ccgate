@@ -63,6 +63,7 @@ func TestReasoningEffortHint(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]struct {
+		effort   *string
 		err      error
 		wantHint bool
 	}{
@@ -85,12 +86,23 @@ func TestReasoningEffortHint(t *testing.T) {
 		"an unrelated failure": {
 			err: errors.New(`openai API error (status 401), type=authentication_error: invalid api key`),
 		},
+		// The bare word shows up in messages that have nothing to do
+		// with the setting; pointing users at it would be a wrong lead.
+		"an unrelated failure that says effort": {
+			err: errors.New(`openai API error (status 400): your effort to upload exceeded the size limit`),
+		},
+		// Nothing was sent, so the failure cannot be about it -- and
+		// `rejected reasoning_effort=""` would contradict itself.
+		"the opt-out, whatever the message says": {
+			effort: ptr(llm.ReasoningEffortOff),
+			err:    errors.New(`openai API error (status 400): Unrecognized request argument supplied: reasoning_effort`),
+		},
 		"no error at all": {},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			p := config.ProviderConfig{Name: "openai", Model: "m"}
+			p := config.ProviderConfig{Name: "openai", Model: "m", ReasoningEffort: tc.effort}
 			got := reasoningEffortHint(p, tc.err)
 			if tc.wantHint && got == "" {
 				t.Fatal("no hint, want one naming provider.reasoning_effort")

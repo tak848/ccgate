@@ -528,15 +528,23 @@ func reasoningEffortHint(p config.ProviderConfig, err error) string {
 	if err == nil {
 		return ""
 	}
+	effort := p.GetReasoningEffort()
+	if effort == config.ReasoningEffortOff {
+		// Nothing was sent, so the failure cannot be about it.
+		return ""
+	}
+	// Match the phrasings the providers actually use, not the bare
+	// word "effort": that appears in unrelated messages and would
+	// point users at a knob that had nothing to do with the failure.
 	msg := strings.ToLower(err.Error())
 	if !strings.Contains(msg, "reasoning_effort") &&
 		!strings.Contains(msg, "thinking") &&
-		!strings.Contains(msg, "effort") {
+		!strings.Contains(msg, "effort parameter") {
 		return ""
 	}
 	return fmt.Sprintf(
 		"this model rejected reasoning_effort=%q; set provider.reasoning_effort to a value it accepts, or %q to omit the parameter",
-		p.GetReasoningEffort(), config.ReasoningEffortOff)
+		effort, config.ReasoningEffortOff)
 }
 
 // providerAPIError formats the redacted, secret-free API error string
