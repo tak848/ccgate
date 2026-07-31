@@ -362,3 +362,105 @@ func TestPreflightStatFailure(t *testing.T) {
 		t.Fatalf("err message = %q, want credentials stat failed", err.Error())
 	}
 }
+
+// newCapturingServer replies like newMockAnthropicServer but hands the
+// decoded request body back so tests can assert the wire shape.
+func newCapturingServer(t *testing.T, captured *map[string]any) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request body: %v", err)
+			http.Error(w, "bad body", http.StatusBadRequest)
+			return
+		}
+		*captured = body
+
+		resp := map[string]any{
+			"id":          "msg_test",
+			"type":        "message",
+			"role":        "assistant",
+			"model":       "claude-test",
+			"content":     []map[string]any{{"type": "text", "text": `{"reason":"ok","behavior":"allow"}`}},
+			"stop_reason": "end_turn",
+			"usage":       map[string]any{"input_tokens": 10, "output_tokens": 3},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// TestDecideRequestShape pins the two things this API is picky about:
+// temperature must never be sent (claude-sonnet-5 rejects the field
+// outright), and reasoning_effort has to become the thinking /
+// output_config.effort pair rather than a single knob. "none" in
+// particular must NOT carry an effort — models older than the
+// parameter answer "This model does not support the effort parameter."
+func TestDecideRequestShape(t *testing.T) {
+	tests := map[string]struct {
+		effort       string
+		wantThinking string // "" = the key must be absent
+		wantEffort   string // "" = the key must be absent
+	}{
+		"none disables thinking without asking for an effort": {
+			effort:       llm.ReasoningEffortNone,
+			wantThinking: "disabled",
+		},
+		"a named level pairs adaptive thinking with the effort": {
+			effort:       llm.ReasoningEffortLow,
+			wantThinking: "adaptive",
+			wantEffort:   "low",
+		},
+		"the highest level maps the same way": {
+			effort:       llm.ReasoningEffortMax,
+			wantThinking: "adaptive",
+			wantEffort:   "max",
+		},
+		"the opt-out sends neither": {
+			effort: llm.ReasoningEffortOff,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			var body map[string]any
+			srv := newCapturingServer(t, &body)
+
+			c := &Client{APIKey: "test-key", BaseURL: srv.URL, ReasoningEffort: tc.effort}
+			if _, err := c.Decide(context.Background(), classificationPrompt("claude-test", 5_000)); err != nil {
+				t.Fatalf("Decide: %v", err)
+			}
+
+			if _, ok := body["temperature"]; ok {
+				t.Errorf("request carried temperature=%v; it must never be sent", body["temperature"])
+			}
+
+			gotThinking, _ := body["thinking"].(map[string]any)
+			switch {
+			case tc.wantThinking == "" && gotThinking != nil:
+				t.Errorf("thinking = %v, want the key to be absent", gotThinking)
+			case tc.wantThinking != "" && gotThinking == nil:
+				t.Errorf("thinking absent, want type %q", tc.wantThinking)
+			case tc.wantThinking != "" && gotThinking["type"] != tc.wantThinking:
+				t.Errorf("thinking.type = %v, want %q", gotThinking["type"], tc.wantThinking)
+			}
+
+			outputConfig, _ := body["output_config"].(map[string]any)
+			if outputConfig == nil {
+				t.Fatal("output_config absent; the structured-output format must always be sent")
+			}
+			if _, ok := outputConfig["format"]; !ok {
+				t.Error("output_config.format absent; structured output was dropped")
+			}
+			gotEffort, hasEffort := outputConfig["effort"]
+			switch {
+			case tc.wantEffort == "" && hasEffort:
+				t.Errorf("output_config.effort = %v, want the key to be absent", gotEffort)
+			case tc.wantEffort != "" && gotEffort != tc.wantEffort:
+				t.Errorf("output_config.effort = %v, want %q", gotEffort, tc.wantEffort)
+			}
+		})
+	}
+}

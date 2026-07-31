@@ -334,6 +334,84 @@ func TestFallthroughStrategy(t *testing.T) {
 	}
 }
 
+func TestReasoningEffort(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		jsonnet string
+		want    string
+		wantNil bool
+	}{
+		"unset defaults to none": {
+			jsonnet: `{}`,
+			want:    ReasoningEffortNone,
+			wantNil: true,
+		},
+		"an explicit level is kept": {
+			jsonnet: `{ provider: { name: 'openai', model: 'gpt-5-mini', reasoning_effort: 'low' } }`,
+			want:    ReasoningEffortLow,
+		},
+		"an explicit empty string is distinct from unset": {
+			jsonnet: `{ provider: { name: 'openai', model: 'gpt-4o-mini', reasoning_effort: '' } }`,
+			want:    ReasoningEffortOff,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			cfg := Default()
+			if err := mergeConfigString(tc.jsonnet, &cfg); err != nil {
+				t.Fatalf("merge: %v", err)
+			}
+			if tc.wantNil && cfg.Provider.ReasoningEffort != nil {
+				t.Fatalf("expected nil pointer, got %q", *cfg.Provider.ReasoningEffort)
+			}
+			if got := cfg.Provider.GetReasoningEffort(); got != tc.want {
+				t.Fatalf("GetReasoningEffort = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestValidateReasoningEffortMinimal covers the one value ccgate can
+// prove wrong ahead of the request: anthropic has no "minimal" at any
+// layer, while openai values stay unvalidated because model support is
+// too narrow to encode in an allowlist.
+func TestValidateReasoningEffortMinimal(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		provider string
+		effort   string
+		wantErr  bool
+	}{
+		"anthropic rejects minimal":               {provider: "anthropic", effort: ReasoningEffortMinimal, wantErr: true},
+		"anthropic accepts none":                  {provider: "anthropic", effort: ReasoningEffortNone},
+		"anthropic accepts a named level":         {provider: "anthropic", effort: ReasoningEffortXHigh},
+		"anthropic accepts the opt-out":           {provider: "anthropic", effort: ReasoningEffortOff},
+		"openai keeps minimal":                    {provider: "openai", effort: ReasoningEffortMinimal},
+		"openai keeps a value ccgate cannot know": {provider: "openai", effort: "ultra"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			effort := tc.effort
+			cfg := Default()
+			cfg.Provider.Name = tc.provider
+			cfg.Provider.Model = "test-model"
+			cfg.Provider.ReasoningEffort = &effort
+
+			err := cfg.Validate()
+			if tc.wantErr && err == nil {
+				t.Fatalf("Validate() = nil, want an error for %s + %q", tc.provider, tc.effort)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("Validate() = %v, want nil", err)
+			}
+		})
+	}
+}
+
 func TestPromptContextIncludeFlags(t *testing.T) {
 	t.Parallel()
 
