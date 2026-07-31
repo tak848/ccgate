@@ -14,7 +14,9 @@ ccgate calls a provider LLM (default: Claude Haiku) to classify each PermissionR
 
 ## Switching providers
 
-Set `provider.name` (and `provider.model` when needed) in any layer:
+Set `provider.name` (and `provider.model` when needed) in any layer, then export the matching API key (see [API keys](#api-keys) below). If the key is missing, ccgate falls through to the upstream tool's permission prompt, so a wrong provider name cannot break the hook.
+
+OpenAI with `gpt-5.6-luna`:
 
 ```jsonnet
 {
@@ -25,7 +27,11 @@ Set `provider.name` (and `provider.model` when needed) in any layer:
 }
 ```
 
-Export the matching API key (see [API keys](#api-keys) below). If the key is missing, ccgate falls through to the upstream tool's permission prompt, so a wrong provider name cannot break the hook.
+```sh
+export CCGATE_OPENAI_API_KEY=sk-...
+```
+
+This model takes ccgate's default `reasoning_effort`, so nothing else is needed; [some models reject it](#reasoning_effort).
 
 ## API keys
 

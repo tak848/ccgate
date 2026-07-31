@@ -91,6 +91,8 @@ brew install tak848/tap/ccgate
 
 ccgate は default で Anthropic の Claude Haiku を呼びます。 `CCGATE_ANTHROPIC_API_KEY` (`ANTHROPIC_API_KEY` でも可) を export してください。 OpenAI / Gemini に切り替える場合や、 各 provider の発行ページと環境変数の解決順は [docs/ja/providers.md#api-キー](providers.md#api-キー) を参照。
 
+[Provider の切り替え](providers.md#provider-の切り替え) に OpenAI の `gpt-5.6-luna` の設定ブロックがあります。
+
 ここまでで ccgate は組み込みデフォルトで動き始めます。allow / deny を自分で書きたい場合は [docs/ja/rule-tuning.md](rule-tuning.md) を、ルールの仕組みを先に押さえたい場合は [コンセプト](#コンセプト) を参照してください。
 
 ## クイックスタート — Codex CLI
@@ -142,7 +144,7 @@ lookup 順序、 project-local overlay、 in-tree dev build 用の `go run` レ�
 
 ### 2. API キー
 
-provider の API キーを export してください — [docs/ja/providers.md#api-キー](providers.md#api-キー) を参照。
+provider の API キーを export してください — [docs/ja/providers.md#api-キー](providers.md#api-キー) を参照。 default は Anthropic の Claude Haiku で、 [Provider の切り替え](providers.md#provider-の切り替え) に OpenAI の `gpt-5.6-luna` の設定ブロックがあります。
 
 ここまでで ccgate は組み込みデフォルトで動き始めます。allow / deny を自分で書きたい場合は [docs/ja/rule-tuning.md](rule-tuning.md) を、ルールの仕組みを先に押さえたい場合は [コンセプト](#コンセプト) を参照してください。
 

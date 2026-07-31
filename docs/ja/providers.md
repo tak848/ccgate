@@ -14,7 +14,9 @@ ccgate は各 PermissionRequest を provider LLM (default: Claude Haiku) に投�
 
 ## Provider の切り替え
 
-任意の layer で `provider.name` (必要なら `provider.model` も) を書き換えます:
+任意の layer で `provider.name` (必要なら `provider.model` も) を書き換え、対応する API キー (下の [API キー](#api-キー) 参照) を export してください。キーが見つからない場合 ccgate は上流ツールの確認画面に fallthrough するので、 provider 切替で hook が壊れることはありません。
+
+OpenAI の `gpt-5.6-luna` の場合:
 
 ```jsonnet
 {
@@ -25,7 +27,11 @@ ccgate は各 PermissionRequest を provider LLM (default: Claude Haiku) に投�
 }
 ```
 
-対応する API キー (下の [API キー](#api-キー) 参照) を export してください。キーが見つからない場合 ccgate は上流ツールの確認画面に fallthrough するので、 provider 切替で hook が壊れることはありません。
+```sh
+export CCGATE_OPENAI_API_KEY=sk-...
+```
+
+このモデルは ccgate の既定 `reasoning_effort` をそのまま受理するので、他に設定は要りません。[拒否するモデルもあります](#reasoning_effort)。
 
 ## API キー
 
