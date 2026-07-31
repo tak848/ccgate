@@ -291,11 +291,17 @@ func Run(stdin io.Reader, stdout io.Writer, opts config.LoadOptions, runOpts ...
 	}
 
 	if runErr != nil {
-		attrs := []any{"error", runErr, "tool", input.ToolName, "elapsed_ms", elapsed.Milliseconds()}
-		if hint := reasoningEffortHint(cfg.Provider, runErr); hint != "" {
-			attrs = append(attrs, "hint", hint)
-		}
-		slog.Error("decide failed", attrs...)
+		// reasoning_effort rides along because it is the request
+		// parameter most likely to be behind a 400 and the one the
+		// user is least likely to remember setting: which levels a
+		// model accepts is narrow and version-specific, and the
+		// default sends one. Reporting what was sent beats guessing
+		// from the error text whether that was the cause.
+		slog.Error("decide failed",
+			"error", runErr,
+			"tool", input.ToolName,
+			"reasoning_effort", cfg.Provider.GetReasoningEffort(),
+			"elapsed_ms", elapsed.Milliseconds())
 		return 1
 	}
 	if !hasDecision {
@@ -511,40 +517,6 @@ func redactProviderError(providerName string, err error) error {
 		return providerAPIError(providerName, oai.StatusCode, oai.Type, oai.Message, "")
 	}
 	return err
-}
-
-// reasoningEffortHint spots a provider rejecting the reasoning
-// parameter ccgate sends by default and names the config key that
-// turns it off. It only adds a log attribute — the error and the
-// exit code are unchanged.
-//
-// Worth a hint because which efforts a model accepts is narrow and
-// undiscoverable from ccgate: gpt-4o has no reasoning_effort at all,
-// gpt-5-mini / o4-mini reject "none" while accepting "low", and
-// pre-adaptive Claude models reject the thinking/effort pair. The
-// provider's own message usually lists what it does accept, so the
-// hint only has to say where to put that value.
-func reasoningEffortHint(p config.ProviderConfig, err error) string {
-	if err == nil {
-		return ""
-	}
-	effort := p.GetReasoningEffort()
-	if effort == config.ReasoningEffortOff {
-		// Nothing was sent, so the failure cannot be about it.
-		return ""
-	}
-	// Match the phrasings the providers actually use, not the bare
-	// word "effort": that appears in unrelated messages and would
-	// point users at a knob that had nothing to do with the failure.
-	msg := strings.ToLower(err.Error())
-	if !strings.Contains(msg, "reasoning_effort") &&
-		!strings.Contains(msg, "thinking") &&
-		!strings.Contains(msg, "effort parameter") {
-		return ""
-	}
-	return fmt.Sprintf(
-		"this model rejected reasoning_effort=%q; set provider.reasoning_effort to a value it accepts, or %q to omit the parameter",
-		effort, config.ReasoningEffortOff)
 }
 
 // providerAPIError formats the redacted, secret-free API error string
