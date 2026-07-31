@@ -58,9 +58,8 @@ func testPrompt() llm.Prompt {
 // settings.
 func TestDecideRequestShape(t *testing.T) {
 	tests := map[string]struct {
-		effort           string
-		wantEffort       any // nil = key must be absent
-		wantEffortAbsent bool
+		effort     string
+		wantEffort any // nil = the key must be absent
 	}{
 		"none is sent verbatim": {
 			effort:     llm.ReasoningEffortNone,
@@ -70,9 +69,15 @@ func TestDecideRequestShape(t *testing.T) {
 			effort:     llm.ReasoningEffortLow,
 			wantEffort: "low",
 		},
+		// Nothing rejects an unknown value client-side: the SDK types
+		// the effort as a plain string with named constants, and a
+		// proxy speaking this protocol may define its own levels.
+		"an unknown level still reaches the wire": {
+			effort:     "ultra",
+			wantEffort: "ultra",
+		},
 		"the opt-out omits the parameter": {
-			effort:           llm.ReasoningEffortOff,
-			wantEffortAbsent: true,
+			effort: llm.ReasoningEffortOff,
 		},
 	}
 
@@ -92,11 +97,11 @@ func TestDecideRequestShape(t *testing.T) {
 
 			got, ok := body["reasoning_effort"]
 			switch {
-			case tc.wantEffortAbsent && ok:
+			case tc.wantEffort == nil && ok:
 				t.Errorf("reasoning_effort = %v, want the key to be absent", got)
-			case !tc.wantEffortAbsent && !ok:
+			case tc.wantEffort != nil && !ok:
 				t.Errorf("reasoning_effort absent, want %v", tc.wantEffort)
-			case !tc.wantEffortAbsent && got != tc.wantEffort:
+			case tc.wantEffort != nil && got != tc.wantEffort:
 				t.Errorf("reasoning_effort = %v, want %v", got, tc.wantEffort)
 			}
 		})

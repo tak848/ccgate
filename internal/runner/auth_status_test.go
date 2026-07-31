@@ -128,6 +128,51 @@ func TestRedactProviderError(t *testing.T) {
 	}
 }
 
+// TestRedactedErrorStaysInspectable pins that redaction drops the
+// response body without dropping the structure. Callers downstream of
+// redactProviderError must be able to reach the status through
+// errors.As instead of parsing Error() back apart -- providerAuthStatus
+// in particular has to give the same answer on either side of it, or
+// moving the redaction earlier would silently stop 401s from
+// invalidating the cached credential.
+func TestRedactedErrorStaysInspectable(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		err        error
+		wantStatus int
+		wantAuth   bool
+	}{
+		"anthropic 401": {err: &anthropicsdk.Error{StatusCode: 401}, wantStatus: 401, wantAuth: true},
+		"openai 403":    {err: &openaisdk.Error{StatusCode: 403}, wantStatus: 403, wantAuth: true},
+		"openai 400":    {err: &openaisdk.Error{StatusCode: 400}, wantStatus: 400},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			redacted := redactProviderError("test", tc.err)
+
+			var pe *providerError
+			if !errors.As(redacted, &pe) {
+				t.Fatalf("redacted error is not inspectable: %T", redacted)
+			}
+			if pe.Status != tc.wantStatus {
+				t.Errorf("Status = %d, want %d", pe.Status, tc.wantStatus)
+			}
+
+			rawStatus, rawAuth := providerAuthStatus(tc.err)
+			gotStatus, gotAuth := providerAuthStatus(redacted)
+			if gotStatus != rawStatus || gotAuth != rawAuth {
+				t.Errorf("providerAuthStatus after redaction = (%d, %v), before = (%d, %v); must not depend on the order",
+					gotStatus, gotAuth, rawStatus, rawAuth)
+			}
+			if gotAuth != tc.wantAuth {
+				t.Errorf("credential-rejected = %v, want %v", gotAuth, tc.wantAuth)
+			}
+		})
+	}
+}
+
 // TestErrorEnvelopeMessage pins that we lift ONLY the error.message
 // field out of the standard provider envelope — never a sibling field
 // a misbehaving proxy might use to echo a credential / header.

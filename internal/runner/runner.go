@@ -291,11 +291,26 @@ func Run(stdin io.Reader, stdout io.Writer, opts config.LoadOptions, runOpts ...
 	}
 
 	if runErr != nil {
-		attrs := []any{"error", runErr, "tool", input.ToolName, "elapsed_ms", elapsed.Milliseconds()}
-		if hint := reasoningEffortHint(cfg.Provider, runErr); hint != "" {
-			attrs = append(attrs, "hint", hint)
-		}
-		slog.Error("decide failed", attrs...)
+		// The reasoning setting rides along because it is the request
+		// parameter most likely to be behind a 400 and the one the
+		// user is least likely to remember setting: which levels a
+		// model accepts is narrow and version-specific, and the
+		// default sends one. Reporting it unconditionally beats
+		// guessing from the error text whether it was the cause.
+		//
+		// The attribute is named after the config key because that is
+		// what it holds -- the resolved setting, not the wire value.
+		// Only openai sends it verbatim: gemini lowers "none" to
+		// "minimal" and anthropic has no such field at all, spelling
+		// the same request as `thinking` plus `output_config.effort`.
+		// docs/providers.md carries the mapping; naming this
+		// `reasoning_effort` would claim a wire shape two of the three
+		// providers never use.
+		slog.Error("decide failed",
+			"error", runErr,
+			"tool", input.ToolName,
+			"provider.reasoning_effort", cfg.Provider.GetReasoningEffort(),
+			"elapsed_ms", elapsed.Milliseconds())
 		return 1
 	}
 	if !hasDecision {
@@ -498,6 +513,9 @@ func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOpti
 // Non-SDK errors (transport / context / parse) keep their original
 // shape because we built those messages ourselves and they don't echo
 // provider response bodies.
+//
+// The result is a *providerError, so what survives redaction stays
+// inspectable via errors.As rather than only as a formatted string.
 func redactProviderError(providerName string, err error) error {
 	if err == nil {
 		return nil
@@ -513,48 +531,49 @@ func redactProviderError(providerName string, err error) error {
 	return err
 }
 
-// reasoningEffortHint spots a provider rejecting the reasoning
-// parameter ccgate sends by default and names the config key that
-// turns it off. It only adds a log attribute — the error and the
-// exit code are unchanged.
+// providerError is the redacted form of a provider API failure: the
+// diagnosable fields, without the raw response body.
 //
-// Worth a hint because which efforts a model accepts is narrow and
-// undiscoverable from ccgate: gpt-4o has no reasoning_effort at all,
-// gpt-5-mini / o4-mini reject "none" while accepting "low", and
-// pre-adaptive Claude models reject the thinking/effort pair. The
-// provider's own message usually lists what it does accept, so the
-// hint only has to say where to put that value.
-func reasoningEffortHint(p config.ProviderConfig, err error) string {
-	if err == nil {
-		return ""
-	}
-	msg := strings.ToLower(err.Error())
-	if !strings.Contains(msg, "reasoning_effort") &&
-		!strings.Contains(msg, "thinking") &&
-		!strings.Contains(msg, "effort") {
-		return ""
-	}
-	return fmt.Sprintf(
-		"this model rejected reasoning_effort=%q; set provider.reasoning_effort to a value it accepts, or %q to omit the parameter",
-		p.GetReasoningEffort(), config.ReasoningEffortOff)
+// It is a struct rather than a formatted string because redaction is
+// about dropping the body, not about erasing what the API said.
+// Callers past redactProviderError can still errors.As their way to
+// the status instead of parsing Error() back apart -- which is what
+// keeps providerAuthStatus working no matter which side of the
+// redaction it runs on.
+type providerError struct {
+	Provider  string
+	Status    int
+	Type      string
+	Message   string
+	RequestID string
 }
 
-// providerAPIError formats the redacted, secret-free API error string
-// from its already-extracted structured parts. type / message /
-// requestID are appended only when present so a bare body still yields
-// a clean "<provider> API error (status N)".
+// Error renders the secret-free string that reaches ccgate.log. type /
+// message / requestID are appended only when present, so a body that
+// did not fit the API's error envelope still yields a clean
+// "<provider> API error (status N)".
+func (e *providerError) Error() string {
+	out := fmt.Sprintf("%s API error (status %d)", e.Provider, e.Status)
+	if e.Type != "" {
+		out += fmt.Sprintf(", type=%s", e.Type)
+	}
+	if e.Message != "" {
+		out += ": " + e.Message
+	}
+	if e.RequestID != "" {
+		out += fmt.Sprintf(" (request-id %s)", e.RequestID)
+	}
+	return out
+}
+
 func providerAPIError(providerName string, status int, errType, message, requestID string) error {
-	out := fmt.Sprintf("%s API error (status %d)", providerName, status)
-	if errType != "" {
-		out += fmt.Sprintf(", type=%s", errType)
+	return &providerError{
+		Provider:  providerName,
+		Status:    status,
+		Type:      errType,
+		Message:   message,
+		RequestID: requestID,
 	}
-	if message != "" {
-		out += ": " + message
-	}
-	if requestID != "" {
-		out += fmt.Sprintf(" (request-id %s)", requestID)
-	}
-	return errors.New(out)
 }
 
 // errorEnvelopeMessage pulls the `error.message` field out of the
@@ -600,6 +619,13 @@ func errorEnvelopeMessage(rawJSON string) string {
 func providerAuthStatus(err error) (int, bool) {
 	if err == nil {
 		return 0, false
+	}
+	// Redacted first: an already-redacted error still carries the
+	// status, so this answers the same whichever side of
+	// redactProviderError the caller sits on.
+	var pe *providerError
+	if errors.As(err, &pe) {
+		return pe.Status, pe.Status == http.StatusUnauthorized || pe.Status == http.StatusForbidden
 	}
 	var anth *anthropicsdk.Error
 	if errors.As(err, &anth) {

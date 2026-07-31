@@ -1,8 +1,6 @@
 package runner
 
 import (
-	"errors"
-	"strings"
 	"testing"
 
 	"github.com/tak848/ccgate/internal/config"
@@ -51,55 +49,6 @@ func TestNewProviderClientCarriesReasoningEffort(t *testing.T) {
 			}
 			if got != tc.want {
 				t.Fatalf("ReasoningEffort = %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
-// TestReasoningEffortHint checks that a provider rejecting the
-// reasoning parameter produces the pointer to the config key, and that
-// unrelated failures stay quiet.
-func TestReasoningEffortHint(t *testing.T) {
-	t.Parallel()
-
-	cases := map[string]struct {
-		err      error
-		wantHint bool
-	}{
-		"openai rejecting the parameter": {
-			err:      errors.New(`openai API error (status 400), type=invalid_request_error: Unrecognized request argument supplied: reasoning_effort`),
-			wantHint: true,
-		},
-		"openai rejecting the value": {
-			err:      errors.New(`openai API error (status 400): Unsupported value: 'reasoning_effort' does not support 'none' with this model.`),
-			wantHint: true,
-		},
-		"anthropic rejecting adaptive thinking": {
-			err:      errors.New(`anthropic API error (status 400): adaptive thinking is not supported on this model`),
-			wantHint: true,
-		},
-		"anthropic rejecting the effort parameter": {
-			err:      errors.New(`anthropic API error (status 400): This model does not support the effort parameter.`),
-			wantHint: true,
-		},
-		"an unrelated failure": {
-			err: errors.New(`openai API error (status 401), type=authentication_error: invalid api key`),
-		},
-		"no error at all": {},
-	}
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			p := config.ProviderConfig{Name: "openai", Model: "m"}
-			got := reasoningEffortHint(p, tc.err)
-			if tc.wantHint && got == "" {
-				t.Fatal("no hint, want one naming provider.reasoning_effort")
-			}
-			if !tc.wantHint && got != "" {
-				t.Fatalf("hint = %q, want none", got)
-			}
-			if tc.wantHint && !strings.Contains(got, "provider.reasoning_effort") {
-				t.Fatalf("hint = %q, want it to name the config key", got)
 			}
 		})
 	}
