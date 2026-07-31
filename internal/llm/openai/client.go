@@ -15,6 +15,7 @@ import (
 	openaigo "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/packages/param"
+	"github.com/openai/openai-go/v3/shared"
 
 	"github.com/tak848/ccgate/internal/llm"
 )
@@ -34,6 +35,13 @@ var ErrNoAPIKey = errors.New("openai: no API key set (CCGATE_OPENAI_API_KEY / OP
 type Client struct {
 	APIKey  string
 	BaseURL string
+
+	// ReasoningEffort goes out verbatim as `reasoning_effort`. Empty
+	// omits the parameter, which is the escape hatch for models that
+	// reject it outright — omitting is not the same as "none", since
+	// a reasoning model with no effort set falls back to its own
+	// default (medium for GPT-5.6).
+	ReasoningEffort string
 }
 
 // Decide sends a single classification request and parses the
@@ -66,7 +74,12 @@ func (c *Client) Decide(ctx context.Context, p llm.Prompt) (llm.Result, error) {
 		return llm.Result{}, fmt.Errorf("generate output schema: %w", err)
 	}
 
-	message, err := client.Chat.Completions.New(ctx, openaigo.ChatCompletionNewParams{
+	// No Temperature: sampling params are left at whatever the model
+	// defaults to. Pinning temperature=0 is rejected outright by
+	// newer models ("does not support 0 with this model. Only the
+	// default (1) value is supported"), and there is no single value
+	// that every model accepts — omission is the only portable shape.
+	params := openaigo.ChatCompletionNewParams{
 		Model: openaigo.ChatModel(p.Model),
 		Messages: []openaigo.ChatCompletionMessageParamUnion{
 			openaigo.SystemMessage(p.System),
@@ -82,8 +95,12 @@ func (c *Client) Decide(ctx context.Context, p llm.Prompt) (llm.Result, error) {
 			},
 		},
 		MaxCompletionTokens: param.NewOpt(int64(maxTokens)),
-		Temperature:         param.NewOpt(float64(0)),
-	})
+	}
+	if c.ReasoningEffort != llm.ReasoningEffortOff {
+		params.ReasoningEffort = shared.ReasoningEffort(c.ReasoningEffort)
+	}
+
+	message, err := client.Chat.Completions.New(ctx, params)
 	if err != nil {
 		return llm.Result{}, fmt.Errorf("openai API: %w", err)
 	}

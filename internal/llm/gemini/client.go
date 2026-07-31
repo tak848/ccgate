@@ -25,6 +25,10 @@ var ErrNoAPIKey = errors.New("gemini: no API key set (CCGATE_GEMINI_API_KEY / GE
 type Client struct {
 	APIKey  string
 	BaseURL string
+
+	// ReasoningEffort is forwarded to the OpenAI-compatible endpoint
+	// as `reasoning_effort`. Empty omits it.
+	ReasoningEffort string
 }
 
 // Decide delegates to openai.Client pointed at the Gemini endpoint.
@@ -37,8 +41,9 @@ func (c *Client) Decide(ctx context.Context, p llm.Prompt) (llm.Result, error) {
 		baseURL = DefaultBaseURL
 	}
 	inner := &openai.Client{
-		APIKey:  c.APIKey,
-		BaseURL: baseURL,
+		APIKey:          c.APIKey,
+		BaseURL:         baseURL,
+		ReasoningEffort: c.ReasoningEffort,
 	}
 	return inner.Decide(ctx, p)
 }

@@ -30,6 +30,9 @@ func (c Config) Validate() error {
 			errs = append(errs, fmt.Errorf(`provider.auth.type=%q is only supported when provider.name="anthropic"`, AuthTypeProfile))
 		}
 	}
+	if err := validateReasoningEffort(c.Provider); err != nil {
+		errs = append(errs, err)
+	}
 	if c.LogMaxSize != nil && *c.LogMaxSize < 0 {
 		errs = append(errs, fmt.Errorf("log_max_size must not be negative, got %d", *c.LogMaxSize))
 	}
@@ -45,6 +48,36 @@ func (c Config) Validate() error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// validateReasoningEffort rejects the one value that provably cannot
+// work, rather than policing the whole vocabulary.
+//
+// Only the anthropic branch is checked. Anthropic has no "minimal"
+// level anywhere — neither `thinking` nor `output_config.effort` can
+// express it — so a config asking for it is broken no matter which
+// model it names, and catching that at load time beats a 400 on the
+// first hook fire.
+//
+// openai / gemini are deliberately not validated: which efforts a
+// model accepts is model-specific (a non-reasoning model may reject
+// every value, a new model may gain one), so a ccgate-side allowlist
+// would either lag the provider or reject configs that work. Those
+// values go out as-is and the provider decides.
+func validateReasoningEffort(p ProviderConfig) error {
+	if p.ReasoningEffort == nil {
+		return nil
+	}
+	if strings.ToLower(strings.TrimSpace(p.Name)) != "anthropic" {
+		return nil
+	}
+	switch *p.ReasoningEffort {
+	case ReasoningEffortMinimal:
+		return fmt.Errorf(`provider.reasoning_effort=%q has no anthropic equivalent; use %q to disable thinking or one of %q, %q, %q, %q, %q`,
+			ReasoningEffortMinimal, ReasoningEffortNone,
+			ReasoningEffortLow, ReasoningEffortMedium, ReasoningEffortHigh, ReasoningEffortXHigh, ReasoningEffortMax)
+	}
+	return nil
 }
 
 // validateAuth enforces the discriminated-union shape of provider.auth.
