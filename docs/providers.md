@@ -58,13 +58,14 @@ Classifying one tool call needs no reasoning, so ccgate asks for none by default
 | value | `openai` | `gemini` | `anthropic` |
 |---|---|---|---|
 | unset (= `none`) | `reasoning_effort: "none"` | `reasoning_effort: "minimal"` | `thinking: {type: "disabled"}` |
-| `low` `medium` `high` `xhigh` `max` | sent as-is | sent as-is | `thinking: {type: "adaptive"}` + `output_config.effort` |
-| `minimal` | sent as-is | sent as-is | rejected at config load — Anthropic has no equivalent |
 | `""` | nothing sent | nothing sent | nothing sent |
+| anything else | `reasoning_effort` verbatim | `reasoning_effort` verbatim | `thinking: {type: "adaptive"}` + `output_config.effort` |
 
-Two providers cannot say "none" literally. Anthropic has no such effort level, and the parameter that stops Claude from thinking is `thinking`, so `none` disables that instead. Gemini [cannot turn reasoning off](https://ai.google.dev/gemini-api/docs/openai) on its current models at all, so `none` asks for `minimal`, the floor its compatibility layer offers.
+Two providers cannot say "none" literally. Anthropic has no such effort level — its `output_config.effort` is `low`/`medium`/`high`/`xhigh`/`max` — and the parameter that stops Claude from thinking is `thinking`, so `none` disables that instead. Gemini [cannot turn reasoning off](https://ai.google.dev/gemini-api/docs/openai) on its current models at all, so `none` asks for `minimal`, the floor its compatibility layer offers.
 
-Beyond that, which values a model accepts is narrow and specific to its generation, and the provider is the only authority on it. A model that has no reasoning parameter at all rejects every value; a reasoning model may accept `low` but not `none`. When that happens the hook exits with the provider's own 400, which usually names the values it does accept, and the log carries a hint pointing at this setting.
+**The value is not validated.** `provider.name` only picks which protocol to speak, and `base_url` can point that protocol at anything, so the endpoint on the other end is the only authority on which levels mean something — a proxy fronting a dozen models may accept levels no first-party API defines. `""` and `none` are the only two values ccgate interprets; everything else is forwarded as written, including a typo.
+
+So which values work is narrow, specific to the model's generation, and yours to check. A model with no reasoning parameter at all rejects every value; a reasoning model may accept `low` but not `none`; Anthropic has no `minimal`. When one is rejected the hook exits with the provider's own 400, which usually names the values it does accept, and the log carries a hint pointing at this setting.
 
 Set the value the model accepts:
 

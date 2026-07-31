@@ -418,6 +418,15 @@ func TestDecideRequestShape(t *testing.T) {
 			wantThinking: "adaptive",
 			wantEffort:   "max",
 		},
+		// The SDK types the effort as a plain string with named
+		// constants, so nothing rejects an unknown value client-side.
+		// It has to reach the wire for the endpoint to answer -- a
+		// proxy speaking this protocol may well define its own levels.
+		"an unknown level still reaches the wire": {
+			effort:       "ultra",
+			wantThinking: "adaptive",
+			wantEffort:   "ultra",
+		},
 		"the opt-out sends neither": {
 			effort: llm.ReasoningEffortOff,
 		},

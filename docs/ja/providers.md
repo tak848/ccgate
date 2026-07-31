@@ -58,13 +58,14 @@ tool 呼び出し 1 件の分類に reasoning は要らないので、ccgate は
 | 値 | `openai` | `gemini` | `anthropic` |
 |---|---|---|---|
 | 未指定 (= `none`) | `reasoning_effort: "none"` | `reasoning_effort: "minimal"` | `thinking: {type: "disabled"}` |
-| `low` `medium` `high` `xhigh` `max` | そのまま送信 | そのまま送信 | `thinking: {type: "adaptive"}` + `output_config.effort` |
-| `minimal` | そのまま送信 | そのまま送信 | config 読み込み時に拒否 — Anthropic に対応する値が無い |
 | `""` | 何も送らない | 何も送らない | 何も送らない |
+| それ以外 | `reasoning_effort` にそのまま | `reasoning_effort` にそのまま | `thinking: {type: "adaptive"}` + `output_config.effort` |
 
-2 つの provider は "none" をそのまま言えません。Anthropic にはその effort level が無く、Claude の思考を止めるパラメータは `thinking` なので `none` はそちらを無効化します。Gemini は現行モデルで [reasoning を切れない](https://ai.google.dev/gemini-api/docs/openai) ので、`none` は互換レイヤの下限である `minimal` を要求します。
+2 つの provider は "none" をそのまま言えません。Anthropic にはその effort level が無く (`output_config.effort` は `low`/`medium`/`high`/`xhigh`/`max`)、Claude の思考を止めるパラメータは `thinking` なので `none` はそちらを無効化します。Gemini は現行モデルで [reasoning を切れない](https://ai.google.dev/gemini-api/docs/openai) ので、`none` は互換レイヤの下限である `minimal` を要求します。
 
-それ以外は、どの値を受理するかはモデルの世代ごとに狭く、判断できるのは provider だけです。reasoning パラメータを持たないモデルはどの値も拒否しますし、reasoning モデルでも `low` は受けるが `none` は受けない、ということがあります。拒否された場合は provider の 400 をそのまま添えて hook が異常終了し、その本文はたいてい受理可能な値を列挙しています。log にはこの設定を指すヒントが載ります。
+**値の検証はしません。** `provider.name` はどちらのプロトコルを喋るかを選ぶだけで、`base_url` でその接続先は何にでも向けられます。どの level が意味を持つかを知っているのは接続先だけで、複数モデルを束ねる proxy がどの first-party API にも無い level を受理することもあります。ccgate が解釈するのは `""` と `none` の 2 つだけで、それ以外はタイポも含めて書いたとおりに送ります。
+
+したがって、どの値が通るかはモデルの世代ごとに狭く、確認する責任は設定する側にあります。reasoning パラメータを持たないモデルはどの値も拒否しますし、reasoning モデルでも `low` は受けるが `none` は受けない、Anthropic には `minimal` が無い、といった具合です。拒否された場合は provider の 400 をそのまま添えて hook が異常終了し、その本文はたいてい受理可能な値を列挙しています。log にはこの設定を指すヒントが載ります。
 
 そのモデルが受理する値を設定してください。
 

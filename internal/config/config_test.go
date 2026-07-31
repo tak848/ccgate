@@ -373,42 +373,42 @@ func TestReasoningEffort(t *testing.T) {
 	}
 }
 
-// TestValidateReasoningEffortMinimal covers the one value ccgate can
-// prove wrong ahead of the request: anthropic has no "minimal" at any
-// layer, while openai values stay unvalidated because model support is
-// too narrow to encode in an allowlist.
-func TestValidateReasoningEffortMinimal(t *testing.T) {
+// TestReasoningEffortIsNotValidated pins that ccgate does not police
+// the effort vocabulary. provider.name only selects which protocol to
+// speak, and a base_url can point that protocol at anything, so the
+// endpoint on the other end is the only authority on which values mean
+// something. ccgate interprets exactly two values of its own -- "" to
+// send nothing and "none" for the per-provider "as little as possible"
+// mapping -- and passes everything else through for the provider to
+// accept or reject.
+func TestReasoningEffortIsNotValidated(t *testing.T) {
 	t.Parallel()
 
-	cases := map[string]struct {
-		provider string
-		effort   string
-		wantErr  bool
-	}{
-		"anthropic rejects minimal":               {provider: "anthropic", effort: ReasoningEffortMinimal, wantErr: true},
-		"anthropic accepts none":                  {provider: "anthropic", effort: ReasoningEffortNone},
-		"anthropic accepts a named level":         {provider: "anthropic", effort: ReasoningEffortXHigh},
-		"anthropic accepts the opt-out":           {provider: "anthropic", effort: ReasoningEffortOff},
-		"openai keeps minimal":                    {provider: "openai", effort: ReasoningEffortMinimal},
-		"openai keeps a value ccgate cannot know": {provider: "openai", effort: "ultra"},
+	providers := []string{"anthropic", "openai", "gemini"}
+	efforts := map[string]string{
+		"the opt-out":                     ReasoningEffortOff,
+		"none":                            ReasoningEffortNone,
+		"minimal, absent from anthropic":  ReasoningEffortMinimal,
+		"a named level":                   ReasoningEffortXHigh,
+		"a level no provider defines":     "ultra",
+		"a typo":                          "lwo",
+		"a differently cased named level": "LOW",
 	}
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			effort := tc.effort
-			cfg := Default()
-			cfg.Provider.Name = tc.provider
-			cfg.Provider.Model = "test-model"
-			cfg.Provider.ReasoningEffort = &effort
+	for effortName, effort := range efforts {
+		for _, provider := range providers {
+			t.Run(effortName+"/"+provider, func(t *testing.T) {
+				t.Parallel()
+				value := effort
+				cfg := Default()
+				cfg.Provider.Name = provider
+				cfg.Provider.Model = "test-model"
+				cfg.Provider.ReasoningEffort = &value
 
-			err := cfg.Validate()
-			if tc.wantErr && err == nil {
-				t.Fatalf("Validate() = nil, want an error for %s + %q", tc.provider, tc.effort)
-			}
-			if !tc.wantErr && err != nil {
-				t.Fatalf("Validate() = %v, want nil", err)
-			}
-		})
+				if err := cfg.Validate(); err != nil {
+					t.Fatalf("Validate() = %v, want nil: the provider decides, not ccgate", err)
+				}
+			})
+		}
 	}
 }
 
