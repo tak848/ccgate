@@ -17,7 +17,7 @@
     model: 'claude-haiku-4-5',
     // Alternatives:
     //   name: 'openai',  model: 'gpt-5.6-luna',          (env: OPENAI_API_KEY)
-    //   name: 'gemini',  model: 'gemini-flash-lite-latest', (env: GEMINI_API_KEY)
+    //   name: 'gemini',  model: 'gemini-3.5-flash-lite', (env: GEMINI_API_KEY)
     // base_url:  route through an OpenAI-/Anthropic-compatible proxy.
     //            See https://github.com/tak848/ccgate/blob/main/docs/providers.md#base_url-and-compatible-proxies
     // timeout_ms: API timeout in ms, default 20000.
