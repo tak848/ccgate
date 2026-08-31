@@ -28,7 +28,6 @@
       managerFilePatterns: ["/(^|/)flake\\.nix$/"],
       matchStrings: ["go_(?<goMajor>\\d+)_(?<goMinor>\\d+)"],
       depNameTemplate: "go",
-      depTypeTemplate: "golang",
       currentValueTemplate: "{{{goMajor}}}.{{{goMinor}}}.0",
       autoReplaceStringTemplate: "go_{{{newMajor}}}_{{{newMinor}}}",
       datasourceTemplate: "golang-version",
@@ -46,10 +45,9 @@
       lockFileMaintenance: { enabled: true },
     },
     {
-      description: "Minor-only go pins (go.mod directive, flake.nix): only the .0 release",
+      description: "flake.nix pins Go by minor, so only .0 releases apply",
       matchDepNames: ["go"],
-      matchManagers: ["gomod", "custom.regex"],
-      matchDepTypes: ["golang"],
+      matchManagers: ["custom.regex"],
       allowedVersions: "/^\\d+\\.\\d+\\.0$/",
     },
     {
