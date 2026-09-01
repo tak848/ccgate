@@ -56,11 +56,11 @@ func TestValidateErrors(t *testing.T) {
 	}{
 		{
 			name: "empty provider name",
-			cfg:  Config{Provider: ProviderConfig{Name: "", Model: "m", TimeoutMS: intPtr(1000)}},
+			cfg:  Config{Provider: ProviderConfig{Name: "", Model: "m", TimeoutMS: new(1000)}},
 		},
 		{
 			name: "empty model",
-			cfg:  Config{Provider: ProviderConfig{Name: "anthropic", Model: "", TimeoutMS: intPtr(1000)}},
+			cfg:  Config{Provider: ProviderConfig{Name: "anthropic", Model: "", TimeoutMS: new(1000)}},
 		},
 		{
 			name: "negative timeout",
@@ -69,7 +69,7 @@ func TestValidateErrors(t *testing.T) {
 		{
 			name: "invalid fallthrough_strategy",
 			cfg: Config{
-				Provider:            ProviderConfig{Name: "anthropic", Model: "m", TimeoutMS: intPtr(1000)},
+				Provider:            ProviderConfig{Name: "anthropic", Model: "m", TimeoutMS: new(1000)},
 				FallthroughStrategy: &bogusStrategy,
 			},
 		},
@@ -93,7 +93,7 @@ func TestValidateAuthFields(t *testing.T) {
 		return Config{Provider: ProviderConfig{
 			Name:      "anthropic",
 			Model:     "m",
-			TimeoutMS: intPtr(1000),
+			TimeoutMS: new(1000),
 			Auth:      a,
 		}}
 	}
@@ -120,36 +120,36 @@ func TestValidateAuthFields(t *testing.T) {
 		// type=exec: command required, refresh_margin/timeout/cache_key optional.
 		"exec ok":                 {auth: &AuthConfig{Type: "exec", Command: "echo"}, wantErr: false},
 		"exec missing command":    {auth: &AuthConfig{Type: "exec"}, wantErr: true},
-		"exec with path":          {auth: &AuthConfig{Type: "exec", Command: "x", Path: stringPtr("y")}, wantErr: true},
+		"exec with path":          {auth: &AuthConfig{Type: "exec", Command: "x", Path: new("y")}, wantErr: true},
 		"exec with cache_key":     {auth: &AuthConfig{Type: "exec", Command: "x", CacheKey: "prod"}, wantErr: false},
 		"exec with cache_key var": {auth: &AuthConfig{Type: "exec", Command: "x", CacheKey: "${AWS_PROFILE}"}, wantErr: false},
 
 		// refresh_margin_ms: >= 0 accepted, 0 allowed (disables guard),
 		// negative rejected.
-		"refresh_margin 30000": {auth: &AuthConfig{Type: "exec", Command: "x", RefreshMarginMS: intPtr(30000)}, wantErr: false},
-		"refresh_margin 0":     {auth: &AuthConfig{Type: "exec", Command: "x", RefreshMarginMS: intPtr(0)}, wantErr: false},
-		"refresh_margin -1":    {auth: &AuthConfig{Type: "exec", Command: "x", RefreshMarginMS: intPtr(-1)}, wantErr: true},
+		"refresh_margin 30000": {auth: &AuthConfig{Type: "exec", Command: "x", RefreshMarginMS: new(30000)}, wantErr: false},
+		"refresh_margin 0":     {auth: &AuthConfig{Type: "exec", Command: "x", RefreshMarginMS: new(0)}, wantErr: false},
+		"refresh_margin -1":    {auth: &AuthConfig{Type: "exec", Command: "x", RefreshMarginMS: new(-1)}, wantErr: true},
 
 		// timeout_ms: > 0 required, 0 rejected (would wedge hot path).
-		"timeout 5000":     {auth: &AuthConfig{Type: "exec", Command: "x", TimeoutMS: intPtr(5000)}, wantErr: false},
-		"timeout 0":        {auth: &AuthConfig{Type: "exec", Command: "x", TimeoutMS: intPtr(0)}, wantErr: true},
-		"timeout negative": {auth: &AuthConfig{Type: "exec", Command: "x", TimeoutMS: intPtr(-1)}, wantErr: true},
+		"timeout 5000":     {auth: &AuthConfig{Type: "exec", Command: "x", TimeoutMS: new(5000)}, wantErr: false},
+		"timeout 0":        {auth: &AuthConfig{Type: "exec", Command: "x", TimeoutMS: new(0)}, wantErr: true},
+		"timeout negative": {auth: &AuthConfig{Type: "exec", Command: "x", TimeoutMS: new(-1)}, wantErr: true},
 
 		// type=file: path required (absolute or ~/), command/timeout_ms/cache_key forbidden,
 		// refresh_margin_ms allowed (minimum-remaining-TTL guard).
-		"file abs":               {auth: &AuthConfig{Type: "file", Path: stringPtr(absKey)}, wantErr: false},
-		"file home":              {auth: &AuthConfig{Type: "file", Path: stringPtr("~/.ccgate/key")}, wantErr: false},
-		"file relative dot":      {auth: &AuthConfig{Type: "file", Path: stringPtr("./key")}, wantErr: false},
-		"file relative bare":     {auth: &AuthConfig{Type: "file", Path: stringPtr("key")}, wantErr: false},
+		"file abs":               {auth: &AuthConfig{Type: "file", Path: new(absKey)}, wantErr: false},
+		"file home":              {auth: &AuthConfig{Type: "file", Path: new("~/.ccgate/key")}, wantErr: false},
+		"file relative dot":      {auth: &AuthConfig{Type: "file", Path: new("./key")}, wantErr: false},
+		"file relative bare":     {auth: &AuthConfig{Type: "file", Path: new("key")}, wantErr: false},
 		"file path omitted":      {auth: &AuthConfig{Type: "file"}, wantErr: false},
-		"file path empty string": {auth: &AuthConfig{Type: "file", Path: stringPtr("")}, wantErr: true},
-		"file bare ~":            {auth: &AuthConfig{Type: "file", Path: stringPtr("~")}, wantErr: true},
-		"file bare ~/":           {auth: &AuthConfig{Type: "file", Path: stringPtr("~/")}, wantErr: true},
-		"file with command":      {auth: &AuthConfig{Type: "file", Path: stringPtr(absKey), Command: "x"}, wantErr: true},
-		"file with timeout":      {auth: &AuthConfig{Type: "file", Path: stringPtr(absKey), TimeoutMS: intPtr(5000)}, wantErr: false},
-		"file with zero timeout": {auth: &AuthConfig{Type: "file", Path: stringPtr(absKey), TimeoutMS: intPtr(0)}, wantErr: true},
-		"file with cache_key":    {auth: &AuthConfig{Type: "file", Path: stringPtr(absKey), CacheKey: "x"}, wantErr: true},
-		"file refresh_margin":    {auth: &AuthConfig{Type: "file", Path: stringPtr(absKey), RefreshMarginMS: intPtr(60000)}, wantErr: false},
+		"file path empty string": {auth: &AuthConfig{Type: "file", Path: new("")}, wantErr: true},
+		"file bare ~":            {auth: &AuthConfig{Type: "file", Path: new("~")}, wantErr: true},
+		"file bare ~/":           {auth: &AuthConfig{Type: "file", Path: new("~/")}, wantErr: true},
+		"file with command":      {auth: &AuthConfig{Type: "file", Path: new(absKey), Command: "x"}, wantErr: true},
+		"file with timeout":      {auth: &AuthConfig{Type: "file", Path: new(absKey), TimeoutMS: new(5000)}, wantErr: false},
+		"file with zero timeout": {auth: &AuthConfig{Type: "file", Path: new(absKey), TimeoutMS: new(0)}, wantErr: true},
+		"file with cache_key":    {auth: &AuthConfig{Type: "file", Path: new(absKey), CacheKey: "x"}, wantErr: true},
+		"file refresh_margin":    {auth: &AuthConfig{Type: "file", Path: new(absKey), RefreshMarginMS: new(60000)}, wantErr: false},
 
 		// Unknown type values are rejected — keeps the discriminator
 		// closed so editors and validate agree on what's accepted.
@@ -166,15 +166,15 @@ func TestValidateAuthFields(t *testing.T) {
 		"profile ok with profile":         {auth: &AuthConfig{Type: "profile", Profile: "ccgate"}, wantErr: false},
 		"profile profile whitespace only": {auth: &AuthConfig{Type: "profile", Profile: "   "}, wantErr: true},
 		"profile with command":            {auth: &AuthConfig{Type: "profile", Command: "x"}, wantErr: true},
-		"profile with path":               {auth: &AuthConfig{Type: "profile", Path: stringPtr(absKey)}, wantErr: true},
+		"profile with path":               {auth: &AuthConfig{Type: "profile", Path: new(absKey)}, wantErr: true},
 		"profile with shell":              {auth: &AuthConfig{Type: "profile", Shell: AuthShellBash}, wantErr: true},
-		"profile with refresh_margin":     {auth: &AuthConfig{Type: "profile", RefreshMarginMS: intPtr(30000)}, wantErr: true},
-		"profile with timeout_ms":         {auth: &AuthConfig{Type: "profile", Profile: "ccgate", TimeoutMS: intPtr(60000)}, wantErr: true},
+		"profile with refresh_margin":     {auth: &AuthConfig{Type: "profile", RefreshMarginMS: new(30000)}, wantErr: true},
+		"profile with timeout_ms":         {auth: &AuthConfig{Type: "profile", Profile: "ccgate", TimeoutMS: new(60000)}, wantErr: true},
 		"profile with cache_key":          {auth: &AuthConfig{Type: "profile", CacheKey: "prod"}, wantErr: true},
 
 		// Cross-type guards: profile field is profile-only.
 		"exec with profile": {auth: &AuthConfig{Type: "exec", Command: "x", Profile: "ccgate"}, wantErr: true},
-		"file with profile": {auth: &AuthConfig{Type: "file", Path: stringPtr(absKey), Profile: "ccgate"}, wantErr: true},
+		"file with profile": {auth: &AuthConfig{Type: "file", Path: new(absKey), Profile: "ccgate"}, wantErr: true},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -212,7 +212,7 @@ func TestProfileAuthCrossFieldProvider(t *testing.T) {
 			cfg := Config{Provider: ProviderConfig{
 				Name:      tc.providerName,
 				Model:     "m",
-				TimeoutMS: intPtr(1000),
+				TimeoutMS: new(1000),
 				Auth:      &AuthConfig{Type: "profile", Profile: "ccgate"},
 			}}
 			err := cfg.Validate()
@@ -239,8 +239,8 @@ func TestAuthDurationDefaults(t *testing.T) {
 		t.Fatalf("GetTimeout() default = %s, want %s", got, wantTimeout)
 	}
 
-	a.RefreshMarginMS = intPtr(90000)
-	a.TimeoutMS = intPtr(12000)
+	a.RefreshMarginMS = new(90000)
+	a.TimeoutMS = new(12000)
 	if got := a.GetRefreshMargin(); got != 90*time.Second {
 		t.Fatalf("GetRefreshMargin() = %s, want 90s", got)
 	}
@@ -468,7 +468,7 @@ func TestValidateZeroTimeoutIsValid(t *testing.T) {
 	t.Parallel()
 
 	cfg := Default()
-	cfg.Provider.TimeoutMS = intPtr(0)
+	cfg.Provider.TimeoutMS = new(0)
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("timeout_ms=0 should be valid (unlimited), got: %v", err)
 	}

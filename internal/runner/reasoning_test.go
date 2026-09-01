@@ -25,10 +25,10 @@ func TestNewProviderClientCarriesReasoningEffort(t *testing.T) {
 		"openai gets the default":     {provider: "openai", want: config.DefaultReasoningEffort},
 		"gemini gets the default":     {provider: "gemini", want: config.DefaultReasoningEffort},
 		"anthropic gets the default":  {provider: "anthropic", want: config.DefaultReasoningEffort},
-		"openai gets an explicit set": {provider: "openai", effort: ptr(llm.ReasoningEffortLow), want: llm.ReasoningEffortLow},
-		"the opt-out reaches openai":  {provider: "openai", effort: ptr(llm.ReasoningEffortOff), want: llm.ReasoningEffortOff},
-		"the opt-out reaches gemini":  {provider: "gemini", effort: ptr(llm.ReasoningEffortOff), want: llm.ReasoningEffortOff},
-		"the opt-out reaches claude":  {provider: "anthropic", effort: ptr(llm.ReasoningEffortOff), want: llm.ReasoningEffortOff},
+		"openai gets an explicit set": {provider: "openai", effort: new(llm.ReasoningEffortLow), want: llm.ReasoningEffortLow},
+		"the opt-out reaches openai":  {provider: "openai", effort: new(llm.ReasoningEffortOff), want: llm.ReasoningEffortOff},
+		"the opt-out reaches gemini":  {provider: "gemini", effort: new(llm.ReasoningEffortOff), want: llm.ReasoningEffortOff},
+		"the opt-out reaches claude":  {provider: "anthropic", effort: new(llm.ReasoningEffortOff), want: llm.ReasoningEffortOff},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -53,5 +53,3 @@ func TestNewProviderClientCarriesReasoningEffort(t *testing.T) {
 		})
 	}
 }
-
-func ptr[T any](v T) *T { return &v }

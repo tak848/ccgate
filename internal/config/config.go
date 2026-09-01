@@ -320,7 +320,7 @@ func (AuthConfig) JSONSchema() *jsonschema.Schema {
 func authExecBranchSchema() *jsonschema.Schema {
 	props := orderedmap.New[string, *jsonschema.Schema]()
 	props.Set("type", &jsonschema.Schema{Type: "string", Const: AuthTypeExec})
-	props.Set("command", &jsonschema.Schema{Type: "string", MinLength: ptr(uint64(1)), Description: "Shell command. Stdout is the credential. Run via the configured shell (default bash)."})
+	props.Set("command", &jsonschema.Schema{Type: "string", MinLength: new(uint64(1)), Description: "Shell command. Stdout is the credential. Run via the configured shell (default bash)."})
 	props.Set("shell", &jsonschema.Schema{Type: "string", Enum: []any{AuthShellBash, AuthShellPowerShell}, Description: "Shell that runs `command`. \"bash\" runs `bash -c <command>`. \"powershell\" runs `pwsh -Command <command>` when pwsh is on PATH (PowerShell 7+, cross-platform) and falls back to `powershell -Command <command>` (Windows PowerShell 5.1) otherwise. Default: bash."})
 	props.Set("refresh_margin_ms", &jsonschema.Schema{Type: "integer", Minimum: json.Number("0"), Description: "Cache early-refresh threshold + minimum remaining TTL guard for fresh credentials, in milliseconds. Default: 60000."})
 	props.Set("timeout_ms", &jsonschema.Schema{Type: "integer", Minimum: json.Number("1"), Description: "Hard cap on one Resolve call (lock + helper exec), in milliseconds. Default: 30000."})
@@ -336,7 +336,7 @@ func authExecBranchSchema() *jsonschema.Schema {
 func authFileBranchSchema() *jsonschema.Schema {
 	props := orderedmap.New[string, *jsonschema.Schema]()
 	props.Set("type", &jsonschema.Schema{Type: "string", Const: AuthTypeFile})
-	props.Set("path", &jsonschema.Schema{Type: "string", MinLength: ptr(uint64(1)), Description: "Path to the credential file. Absolute, ~/-prefixed, or relative (relative paths resolve from the hook's working directory at fire time, not the config file's directory). Omit the field to use the default $XDG_STATE_HOME/ccgate/<target>/auth_key.json; do not set it to an empty string."})
+	props.Set("path", &jsonschema.Schema{Type: "string", MinLength: new(uint64(1)), Description: "Path to the credential file. Absolute, ~/-prefixed, or relative (relative paths resolve from the hook's working directory at fire time, not the config file's directory). Omit the field to use the default $XDG_STATE_HOME/ccgate/<target>/auth_key.json; do not set it to an empty string."})
 	props.Set("refresh_margin_ms", &jsonschema.Schema{Type: "integer", Minimum: json.Number("0"), Description: "Minimum remaining TTL guard for file output, in milliseconds. Default: 60000."})
 	props.Set("timeout_ms", &jsonschema.Schema{Type: "integer", Minimum: json.Number("1"), Description: "Hard cap on the file read so a stalled mount surfaces as reason=timeout. Default: 30000."})
 	return &jsonschema.Schema{
@@ -359,8 +359,6 @@ func authProfileBranchSchema() *jsonschema.Schema {
 	}
 }
 
-func ptr[T any](v T) *T { return &v }
-
 // Default returns a Config seeded with the provider/log/metrics
 // defaults common to every target. LogPath / MetricsPath are left
 // empty on purpose — Load fills them from LoadOptions so each
@@ -372,16 +370,12 @@ func Default() Config {
 		Provider: ProviderConfig{
 			Name:      DefaultProvider,
 			Model:     DefaultModel,
-			TimeoutMS: intPtr(DefaultTimeoutMS),
+			TimeoutMS: new(DefaultTimeoutMS),
 		},
-		LogMaxSize:     int64Ptr(DefaultLogMaxSize),
-		MetricsMaxSize: int64Ptr(DefaultMetricsMaxSize),
+		LogMaxSize:     new(int64(DefaultLogMaxSize)),
+		MetricsMaxSize: new(int64(DefaultMetricsMaxSize)),
 	}
 }
-
-func intPtr(v int) *int          { return &v }
-func int64Ptr(v int64) *int64    { return &v }
-func stringPtr(v string) *string { return &v }
 
 // GetTimeoutMS returns the provider timeout in milliseconds.
 // nil defaults to DefaultTimeoutMS.

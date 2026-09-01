@@ -520,12 +520,10 @@ func redactProviderError(providerName string, err error) error {
 	if err == nil {
 		return nil
 	}
-	var anth *anthropicsdk.Error
-	if errors.As(err, &anth) {
+	if anth, ok := errors.AsType[*anthropicsdk.Error](err); ok {
 		return providerAPIError(providerName, anth.StatusCode, string(anth.Type()), errorEnvelopeMessage(anth.RawJSON()), anth.RequestID)
 	}
-	var oai *openaisdk.Error
-	if errors.As(err, &oai) {
+	if oai, ok := errors.AsType[*openaisdk.Error](err); ok {
 		return providerAPIError(providerName, oai.StatusCode, oai.Type, oai.Message, "")
 	}
 	return err
@@ -623,19 +621,16 @@ func providerAuthStatus(err error) (int, bool) {
 	// Redacted first: an already-redacted error still carries the
 	// status, so this answers the same whichever side of
 	// redactProviderError the caller sits on.
-	var pe *providerError
-	if errors.As(err, &pe) {
+	if pe, ok := errors.AsType[*providerError](err); ok {
 		return pe.Status, pe.Status == http.StatusUnauthorized || pe.Status == http.StatusForbidden
 	}
-	var anth *anthropicsdk.Error
-	if errors.As(err, &anth) {
+	if anth, ok := errors.AsType[*anthropicsdk.Error](err); ok {
 		if anth.StatusCode == http.StatusUnauthorized || anth.StatusCode == http.StatusForbidden {
 			return anth.StatusCode, true
 		}
 		return anth.StatusCode, false
 	}
-	var oai *openaisdk.Error
-	if errors.As(err, &oai) {
+	if oai, ok := errors.AsType[*openaisdk.Error](err); ok {
 		if oai.StatusCode == http.StatusUnauthorized || oai.StatusCode == http.StatusForbidden {
 			return oai.StatusCode, true
 		}
