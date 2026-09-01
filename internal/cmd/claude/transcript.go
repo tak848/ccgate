@@ -83,10 +83,7 @@ func readTail(path string, n int64) ([]byte, error) {
 	}
 
 	size := info.Size()
-	offset := size - n
-	if offset < 0 {
-		offset = 0
-	}
+	offset := max(size-n, 0)
 	if _, err := f.Seek(offset, 0); err != nil {
 		return nil, err
 	}

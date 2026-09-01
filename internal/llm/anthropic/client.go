@@ -321,8 +321,7 @@ func classifyProfileLoadError(err error) string {
 	if errors.Is(err, fs.ErrNotExist) {
 		return "profile_config_missing"
 	}
-	var syntaxErr *json.SyntaxError
-	if errors.As(err, &syntaxErr) {
+	if _, ok := errors.AsType[*json.SyntaxError](err); ok {
 		return "profile_config_parse"
 	}
 	if err != nil {
