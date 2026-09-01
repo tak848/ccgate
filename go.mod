@@ -1,6 +1,6 @@
 module github.com/tak848/ccgate
 
-go 1.25.12
+go 1.27.0
 
 require (
 	github.com/alecthomas/kong v1.16.1
