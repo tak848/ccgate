@@ -21,6 +21,18 @@
   gitIgnoredAuthors: [
     "github-actions[bot]@users.noreply.github.com",
   ],
+  customManagers: [
+    {
+      customType: "regex",
+      description: "flake.nix pins the Go minor as a nixpkgs attribute (go_1_25)",
+      managerFilePatterns: ["/(^|/)flake\\.nix$/"],
+      matchStrings: ["go_(?<goMajor>\\d+)_(?<goMinor>\\d+)"],
+      depNameTemplate: "go",
+      currentValueTemplate: "{{{goMajor}}}.{{{goMinor}}}.0",
+      autoReplaceStringTemplate: "go_{{{newMajor}}}_{{{newMinor}}}",
+      datasourceTemplate: "golang-version",
+    },
+  ],
   packageRules: [
     {
       description: "Rename the allNonMajor group (avoid 'non-major' wording)",
@@ -33,24 +45,20 @@
       lockFileMaintenance: { enabled: true },
     },
     {
-      description: "go directive: keep pinned at 1.25.0",
+      description: "flake.nix pins Go by minor, so only .0 releases apply",
       matchDepNames: ["go"],
-      matchManagers: ["gomod"],
-      matchDepTypes: ["golang"],
-      enabled: false,
+      matchManagers: ["custom.regex"],
+      allowedVersions: "/^\\d+\\.\\d+\\.0$/",
     },
     {
-      description: "go toolchain: follow 1.25.x patches only",
+      description: "A Go minor is effectively a major: raise it on its own PR",
       matchDepNames: ["go"],
-      matchManagers: ["gomod"],
-      matchDepTypes: ["toolchain"],
-      allowedVersions: "<{{major}}.{{add minor 1}}",
-    },
-    {
-      description: "mise go: follow 1.25.x patches only",
-      matchDepNames: ["go"],
-      matchManagers: ["mise"],
-      allowedVersions: "<{{major}}.{{add minor 1}}",
+      matchManagers: ["gomod", "mise", "custom.regex"],
+      matchUpdateTypes: ["minor"],
+      groupName: "go minor",
+      prBodyNotes: [
+        "`README.md`, `docs/ja/README.md` and `CLAUDE.md` mention the Go minor in prose. Update them in this PR.",
+      ],
     },
   ],
 }
