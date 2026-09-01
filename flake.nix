@@ -25,7 +25,7 @@
           name = "ccgate";
 
           packages = with pkgs; [
-            go_1_25
+            go_1_27
             gopls
             gotools
             go-tools
