@@ -1,14 +1,14 @@
 module github.com/tak848/ccgate
 
-go 1.27.0
+go 1.27.1
 
 require (
 	github.com/alecthomas/kong v1.16.1
-	github.com/anthropics/anthropic-sdk-go v1.68.0
-	github.com/gofrs/flock v0.13.0
+	github.com/anthropics/anthropic-sdk-go v1.69.0
+	github.com/gofrs/flock v0.13.1
 	github.com/google/go-jsonnet v0.22.0
 	github.com/invopop/jsonschema v0.14.0
-	github.com/openai/openai-go/v3 v3.54.0
+	github.com/openai/openai-go/v3 v3.56.0
 	github.com/pb33f/ordered-map/v2 v2.3.1
 	golang.org/x/sys v0.47.0
 	golang.org/x/term v0.45.0
@@ -17,8 +17,6 @@ require (
 require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.2 // indirect
-	github.com/kr/text v0.2.0 // indirect
-	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/standard-webhooks/standard-webhooks/libraries v0.0.1 // indirect
 	github.com/tidwall/gjson v1.19.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
