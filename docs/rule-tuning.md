@@ -9,16 +9,18 @@ Once provider setup and hook registration are done, the next thing to learn is h
 ```bash
 ccgate claude init | less                                # Read the embedded Claude defaults.
 ccgate codex  init | less                                # Same for Codex.
+ccgate devin  init | less                                # Same for Devin.
 ccgate claude init -p > .claude/ccgate.local.jsonnet     # Project-local skeleton you can extend.
 ccgate codex  init -p > .codex/ccgate.local.jsonnet      # Same for Codex.
+ccgate devin  init -p > .devin/ccgate.local.jsonnet      # Same for Devin.
 ```
 
 The `-p` skeleton ships with commented-out provider and `fallthrough_strategy` examples, so it is easier to start from than an empty file.
 
 ## 2. Where to put the file
 
-- Global: `~/.claude/ccgate.jsonnet` or `~/.codex/ccgate.jsonnet`.
-- Project-local: `<repo>/.claude/ccgate.local.jsonnet` or `<repo>/.codex/ccgate.local.jsonnet`, untracked-only.
+- Global: `~/.claude/ccgate.jsonnet`, `~/.codex/ccgate.jsonnet`, or `~/.config/devin/ccgate.jsonnet`.
+- Project-local: `<repo>/.claude/ccgate.local.jsonnet`, `<repo>/.codex/ccgate.local.jsonnet`, or `<repo>/.devin/ccgate.local.jsonnet`, untracked-only.
 
 For layer composition see [docs/configuration.md](configuration.md#where-ccgate-looks-for-config). At a glance: embedded defaults → global → main-worktree project-local → current-worktree project-local, with later layers stacked on top.
 
@@ -55,7 +57,7 @@ Claude:
 }
 ```
 
-Codex (the LLM reads `apply_patch` hunk targets from `tool_input_raw`):
+Codex / Devin (the LLM reads `apply_patch` hunk targets from `tool_input_raw`):
 
 ```jsonnet
 {
@@ -127,3 +129,4 @@ Metrics column meanings, the JSON output schema, and the credential-failure aggr
 - [docs/api-key-helper.md](api-key-helper.md) — `provider.auth` (refreshable credentials, helper contract, 401/403 behaviour, recovery checklist)
 - [docs/claude-code.md](claude-code.md) — Claude Code-specific HookInput fields
 - [docs/codex-cli.md](codex-cli.md) — Codex CLI-specific HookInput fields
+- [docs/devin-cli.md](devin-cli.md) — Devin-specific HookInput fields

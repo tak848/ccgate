@@ -1,11 +1,11 @@
 // Command genschema regenerates the per-target JSON schemas under
-// schemas/. Invoked via `go generate ./...` (see internal/cmd/{claude,
-// codex}/schema_gen.go) and from `mise run schema`.
+// schemas/. Invoked via `go generate ./schemas/...` (see
+// schemas/doc.go) and from `mise run schema`.
 //
-// Both targets share config.Config today, but they get separate schema
+// All targets share config.Config today, but they get separate schema
 // files anyway so editor users get a target-specific $id and so we can
-// diverge the schema later (e.g. when codex grows codex-specific
-// fields) without breaking claude users' editor integrations.
+// diverge the schema later (e.g. when a target grows target-specific
+// fields) without breaking other targets' editor integrations.
 package main
 
 import (
@@ -28,8 +28,8 @@ const (
 // claudeOnlyConfigKeys lists Config struct json keys that are
 // meaningful only for the Claude Code target today. They live on
 // the shared Config struct so the loader / merger does not need
-// per-target plumbing, but writing them in a codex config has no
-// effect, so the codex schema strips them to avoid suggesting
+// per-target plumbing, but writing them in a codex or devin config
+// has no effect, so those schemas strip them to avoid suggesting
 // otherwise to editor users.
 var claudeOnlyConfigKeys = []string{
 	"include_recent_transcript_in_prompt",
@@ -56,6 +56,7 @@ func run() error {
 	for _, t := range []struct{ name, file string }{
 		{"claude", "claude.schema.json"},
 		{"codex", "codex.schema.json"},
+		{"devin", "devin.schema.json"},
 	} {
 		if err := writeSchema(filepath.Join(outDir, t.file), t.name); err != nil {
 			return fmt.Errorf("write %s: %w", t.file, err)
@@ -96,7 +97,7 @@ func writeSchema(path, target string) error {
 			Format:      "uri",
 			Description: "JSON schema reference. Editors use this to enable validation; ccgate ignores it at runtime.",
 		})
-		if target == "codex" {
+		if target != "claude" {
 			for _, key := range claudeOnlyConfigKeys {
 				schema.Properties.Delete(key)
 			}

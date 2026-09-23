@@ -12,12 +12,15 @@ ccgate は target ごとに以下の層を順に読み込みます。各層は�
 2. **グローバル設定**: 存在すれば埋込デフォルトの上に重ねる:
    - Claude Code: `~/.claude/ccgate.jsonnet`
    - Codex CLI:   `~/.codex/ccgate.jsonnet`
+   - Devin:       `~/.config/devin/ccgate.jsonnet`
 3. **main worktree のプロジェクトローカル**: ccgate が linked git worktree (`git worktree add ...`) の中で動作するときのみ。tracked file は無視される (後述「tracked file が無視される理由」):
    - Claude Code: `{main_worktree}/.claude/ccgate.local.jsonnet`
    - Codex CLI:   `{main_worktree}/.codex/ccgate.local.jsonnet`
+   - Devin:       `{main_worktree}/.devin/ccgate.local.jsonnet`
 4. **current worktree のプロジェクトローカル**: tracked file は無視される:
    - Claude Code: `{repo_root}/.claude/ccgate.local.jsonnet`
    - Codex CLI:   `{repo_root}/.codex/ccgate.local.jsonnet`
+   - Devin:       `{repo_root}/.devin/ccgate.local.jsonnet`
 
 `{repo_root}` は git repo root で、hook の `cwd` から `git rev-parse --show-toplevel` で解決します。`{main_worktree}` は同じ repo の main worktree の root で、`git rev-parse --git-common-dir` から求めます。git repo 外では `cwd` 自体が使われます。
 
@@ -72,7 +75,7 @@ repo 全体に効くポリシーが必要なら、自前 fork の埋込デフォ
 | `append_deny`            | string[]                          | `[]`                                                                            | 引き継いだ deny list の末尾に追加。                                                                        |
 | `append_environment`     | string[]                          | `[]`                                                                            | 引き継いだ environment list の末尾に追加。                                                                 |
 
-`<target>` は Claude / Codex どちらの hook が呼ばれたかで `claude` / `codex` になります。`XDG_STATE_HOME` が未設定の場合は `~/.local/state/ccgate/<target>/...` が fallback として使われます。
+`<target>` は Claude / Codex / Devin どれの hook が呼ばれたかで `claude` / `codex` / `devin` になります。`XDG_STATE_HOME` が未設定の場合は `~/.local/state/ccgate/<target>/...` が fallback として使われます。
 
 ## `fallthrough_strategy` -- LLM 判定迷い時の挙動
 
@@ -82,7 +85,7 @@ LLM は `allow` / `deny` / `fallthrough` のいずれかを返します。`fallt
 
 | 値        | 挙動                                                                                                  | 選ぶ場面                                                                          |
 |-----------|-------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------|
-| `ask`     | デフォルト。上流ツール (Claude Code / Codex) の確認 prompt にそのまま流す                              | 対話セッション                                                                     |
+| `ask`     | デフォルト。上流ツール (Claude Code / Codex / Devin) の確認 prompt にそのまま流す                    | 対話セッション                                                                     |
 | `deny`    | 自動拒否。deny メッセージが「user に聞くな、別コマンドで回避するな」と AI に指示する                    | 無人実行で「許可待ちで止まる」より「失敗で抜ける」を選びたいとき                    |
 | `allow`   | 自動許可                                                                                              | 完全自律実行で「LLM が迷ったケースも進めたい」リスクを受容できるとき                |
 
@@ -96,7 +99,7 @@ LLM は `allow` / `deny` / `fallthrough` のいずれかを返します。`fallt
 - API キー未設定 (`no_apikey`)
 - `provider.name` が `anthropic` / `openai` / `gemini` のいずれでもない (`unknown_provider`)
 - Claude `permission_mode == "bypassPermissions"` または `"dontAsk"`
-- Claude `tool_name` が `{ExitPlanMode, AskUserQuestion}` (ユーザーインタラクション専用 tool)
+- Claude `tool_name` が `{ExitPlanMode, AskUserQuestion}`、Devin `tool_name` が `{exit_plan_mode, ask_user_question}` (ユーザーインタラクション専用 tool)
 
 これは意図的: `allow` は「LLM が躊躇したら自律実行を進める」用途であり、「LLM が判定すらしてないリクエストを silent に通す」用途ではありません。
 
@@ -115,6 +118,7 @@ ccgate claude metrics --json           # JSON 出力 (機械可読)
 ccgate claude metrics --details 5      # 上位 5 件の fallthrough / deny コマンド
 ccgate claude metrics --details 0      # ドリルダウン節を非表示
 ccgate codex  metrics --days 7         # codex 側も同 shape
+ccgate devin  metrics --days 7         # devin 側も同 shape
 ```
 
 ### 日次テーブル列

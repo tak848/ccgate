@@ -13,6 +13,7 @@ Supported targets:
 
 - **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)**
 - **[OpenAI Codex CLI](https://developers.openai.com/codex/hooks)**
+- **[Devin CLI](https://docs.devin.ai/cli/extensibility/hooks/overview)**
 
 [日本語ドキュメント](docs/ja/README.md)
 
@@ -148,6 +149,38 @@ Export the provider API key — see [docs/providers.md#api-keys](docs/providers.
 
 That's it — ccgate is now running with its embedded defaults. To customize what is allowed or denied, see [docs/rule-tuning.md](docs/rule-tuning.md); for background on how rules work, see [Concepts](#concepts).
 
+## Quick start — Devin
+
+### 1. Register as a Devin hook
+
+Devin reads hooks from `<repo>/.devin/hooks.v1.json`, the `"hooks"` key of `<repo>/.devin/config.json` / `.devin/config.local.json` (project level), and the `"hooks"` key of `~/.config/devin/config.json` (user level). `.claude/settings.json` hook entries are picked up automatically as well.
+
+`<repo>/.devin/hooks.v1.json`:
+
+```json
+{
+  "PermissionRequest": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "ccgate devin"
+        }
+      ]
+    }
+  ]
+}
+```
+
+See [docs/devin-cli.md](docs/devin-cli.md) for the full lookup order, user-level registration, and a `go run` recipe for in-tree dev builds.
+
+### 2. API key
+
+Export the provider API key — see [docs/providers.md#api-keys](docs/providers.md#api-keys). The default is Anthropic's Claude Haiku; [Switching providers](docs/providers.md#switching-providers) has a copy-pasteable block for OpenAI with `gpt-5.6-luna`.
+
+That's it — ccgate is now running with its embedded defaults. To customize what is allowed or denied, see [docs/rule-tuning.md](docs/rule-tuning.md); for background on how rules work, see [Concepts](#concepts).
+
 ## Concepts
 
 ccgate's `allow` / `deny` / `environment` lists are **strings of natural-language guidance** that get embedded into a system prompt and sent to the LLM. They are not patterns matched by a deterministic engine — every PermissionRequest goes through the LLM, and the LLM classifies it as `allow`, `deny`, or `fallthrough` based on the rules plus the request context.
@@ -156,7 +189,7 @@ Evaluation flow:
 
 ```mermaid
 flowchart TD
-  A["Claude Code / Codex CLI"] --> B{"Resolved by the upstream tool's static rules?"}
+  A["Claude Code / Codex CLI / Devin"] --> B{"Resolved by the upstream tool's static rules?"}
   B -->|Yes| C["Run / refuse upstream"]
   B -->|No| D["PermissionRequest hook<br/>(stdin: HookInput JSON)"]
   D --> E["ccgate"]
@@ -173,21 +206,21 @@ What ccgate puts in front of the LLM (representative fields):
 
 - `tool_name`, `tool_input`, and `tool_input_raw` (the original JSON payload, passed through verbatim).
 - `cwd`, `repo_root`, `branch_name`, and worktree info from `gitutil.Context`. The working-tree dirty/clean state is **not** delivered.
-- `referenced_paths` — paths extracted from `tool_input` on a best-effort basis. Supported tools: `Read`, `Write`, `Edit`, `MultiEdit`, `Glob`, `Grep`, `Bash`. For `apply_patch` (Codex) and MCP tools, `referenced_paths` is empty; the LLM reads `tool_input_raw` directly to see hunk targets or call arguments.
+- `referenced_paths` — paths extracted from `tool_input` on a best-effort basis. Supported tools: `Read`, `Write`, `Edit`, `MultiEdit`, `Glob`, `Grep`, `Bash` (Claude) and `read`, `write`, `edit`, `glob`, `grep`, `exec` (Devin). For `apply_patch` (Codex / Devin) and MCP tools, `referenced_paths` is empty; the LLM reads `tool_input_raw` directly to see hunk targets or call arguments.
 - Claude-only: `permission_mode` (switches the prompt to plan-mode rules when `"plan"`), `permission_suggestions`, `recent_transcript`, and `settings_permissions` (treated as a hint, not a whitelist).
 
-For the complete input list per target, see [docs/claude-code.md](docs/claude-code.md) and [docs/codex-cli.md](docs/codex-cli.md).
+For the complete input list per target, see [docs/claude-code.md](docs/claude-code.md), [docs/codex-cli.md](docs/codex-cli.md), and [docs/devin-cli.md](docs/devin-cli.md).
 
 ## Configuration
 
 ### Config file loading order
 
-| Order | Claude Code | Codex CLI |
-|------:|-------------|-----------|
-| 1     | Embedded defaults (always applied as the base) | Embedded defaults |
-| 2     | `~/.claude/ccgate.jsonnet` (global) | `~/.codex/ccgate.jsonnet` |
-| 3     | `{main_worktree}/.claude/ccgate.local.jsonnet` (linked worktree only, untracked-only) | `{main_worktree}/.codex/ccgate.local.jsonnet` |
-| 4     | `{repo_root}/.claude/ccgate.local.jsonnet` (untracked-only) | `{repo_root}/.codex/ccgate.local.jsonnet` |
+| Order | Claude Code | Codex CLI | Devin |
+|------:|-------------|-----------|-------|
+| 1     | Embedded defaults (always applied as the base) | Embedded defaults | Embedded defaults |
+| 2     | `~/.claude/ccgate.jsonnet` (global) | `~/.codex/ccgate.jsonnet` | `~/.config/devin/ccgate.jsonnet` |
+| 3     | `{main_worktree}/.claude/ccgate.local.jsonnet` (linked worktree only, untracked-only) | `{main_worktree}/.codex/ccgate.local.jsonnet` | `{main_worktree}/.devin/ccgate.local.jsonnet` |
+| 4     | `{repo_root}/.claude/ccgate.local.jsonnet` (untracked-only) | `{repo_root}/.codex/ccgate.local.jsonnet` | `{repo_root}/.devin/ccgate.local.jsonnet` |
 
 Merge rules at a glance:
 
@@ -203,11 +236,11 @@ Full merge details and the complete field reference are in [docs/configuration.m
 
 Once provider setup is done, this is the entry point for `allow` / `deny` / `append_*`.
 
-- **Inspect defaults**: `ccgate claude init | less` / `ccgate codex init | less` (`-p` writes a `.local.jsonnet` skeleton).
-- **Where to put it**: global `~/.<target>/ccgate.jsonnet`, project-local `<repo>/.<target>/ccgate.local.jsonnet` (untracked-only).
+- **Inspect defaults**: `ccgate claude init | less` / `ccgate codex init | less` / `ccgate devin init | less` (`-p` writes a `.local.jsonnet` skeleton).
+- **Where to put it**: global `~/.<target>/ccgate.jsonnet` (`~/.config/devin/ccgate.jsonnet` for Devin), project-local `<repo>/.<target>/ccgate.local.jsonnet` (untracked-only).
 - **Replace vs append**: `append_allow` / `append_deny` / `append_environment` keep the embedded defaults and add your entries. `allow:` / `deny:` replaces the list wholesale (only your entries are in effect).
 
-The full guide — rule-writing patterns for Claude / Codex (`append_allow`, `append_deny`, full replace), `deny_message:` hints, `std.native('env')` / `must_env` for env-derived values, the `ccgate <target> metrics --details N` iteration workflow — lives in [docs/rule-tuning.md](docs/rule-tuning.md).
+The full guide — rule-writing patterns per target (`append_allow`, `append_deny`, full replace), `deny_message:` hints, `std.native('env')` / `must_env` for env-derived values, the `ccgate <target> metrics --details N` iteration workflow — lives in [docs/rule-tuning.md](docs/rule-tuning.md).
 
 ## Providers and credentials
 
@@ -254,6 +287,7 @@ When the LLM is not confident enough to decide, ccgate returns `fallthrough` and
 ccgate claude metrics                 # last 7 days, TTY table
 ccgate claude metrics --details 5     # drill into the top-5 fallthrough / deny commands
 ccgate codex  metrics --json          # machine-readable output
+ccgate devin  metrics                 # same shape, Devin side
 ```
 
 Column meanings, the JSON entry schema, and the credential-failure aggregation are in [docs/configuration.md#metrics-output](docs/configuration.md#metrics-output).
@@ -272,6 +306,7 @@ Column meanings, the JSON entry schema, and the credential-failure aggregation a
 - [docs/api-key-helper.md](docs/api-key-helper.md) — `provider.auth` reference (helper contract, caching, 401/403 behaviour, recovery checklist)
 - [docs/claude-code.md](docs/claude-code.md) — Claude Code-specific HookInput
 - [docs/codex-cli.md](docs/codex-cli.md) — Codex CLI-specific HookInput
+- [docs/devin-cli.md](docs/devin-cli.md) — Devin-specific HookInput
 - [日本語ドキュメント (docs/ja/)](docs/ja/README.md)
 
 ## CLI reference
@@ -284,6 +319,9 @@ ccgate claude metrics [...]                  Show Claude Code usage metrics.
 ccgate codex                                 Read HookInput JSON from stdin (Codex CLI hook).
 ccgate codex init [-p] [-o FILE] [-f]        Output the embedded Codex CLI defaults.
 ccgate codex metrics [...]                   Show Codex CLI usage metrics.
+ccgate devin                                 Read HookInput JSON from stdin (Devin hook).
+ccgate devin init [-p] [-o FILE] [-f]        Output the embedded Devin defaults.
+ccgate devin metrics [...]                   Show Devin usage metrics.
 ```
 
 Top-level `ccgate init` and `ccgate metrics` are not real subcommands — they print a one-line pointer to the per-target form and exit `2`.
@@ -294,7 +332,7 @@ Top-level `ccgate init` and `ccgate metrics` are not real subcommands — they p
 mise run build    # Build binary
 mise run test     # Run tests
 mise run vet      # Run go vet
-mise run schema   # Regenerate schemas/{claude,codex}.schema.json
+mise run schema   # Regenerate schemas/{claude,codex,devin}.schema.json
 ```
 
 ### Nix (flakes)

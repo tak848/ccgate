@@ -9,16 +9,18 @@ provider と hook の登録が済んだら、ここから先は「`allow` / `den
 ```bash
 ccgate claude init | less                                # Claude embedded defaults を読む
 ccgate codex  init | less                                # Codex も同じ
+ccgate devin  init | less                                # Devin も同じ
 ccgate claude init -p > .claude/ccgate.local.jsonnet     # プロジェクトローカルのスケルトン (空雛形)
 ccgate codex  init -p > .codex/ccgate.local.jsonnet      # Codex も同じ
+ccgate devin  init -p > .devin/ccgate.local.jsonnet      # Devin も同じ
 ```
 
 `-p` で吐ける雛形には provider 設定や `fallthrough_strategy` のコメントアウト例が入っているので、空ファイルから書き始めるより楽です。
 
 ## 2. どこに書くか
 
-- グローバル: `~/.claude/ccgate.jsonnet` / `~/.codex/ccgate.jsonnet`
-- プロジェクトローカル: `<repo>/.claude/ccgate.local.jsonnet` / `<repo>/.codex/ccgate.local.jsonnet` (Git 未追跡のみ)
+- グローバル: `~/.claude/ccgate.jsonnet` / `~/.codex/ccgate.jsonnet` / `~/.config/devin/ccgate.jsonnet`
+- プロジェクトローカル: `<repo>/.claude/ccgate.local.jsonnet` / `<repo>/.codex/ccgate.local.jsonnet` / `<repo>/.devin/ccgate.local.jsonnet` (Git 未追跡のみ)
 
 layer の合成順は [設定リファレンス](configuration.md#ccgate-が-config-を探す場所) 参照。 ざっくり: embedded defaults → グローバル → main worktree project-local → current worktree project-local の順で上書きされていきます。
 
@@ -55,7 +57,7 @@ Claude:
 }
 ```
 
-Codex (`apply_patch` の hunk target を `tool_input_raw` から LLM が読む):
+Codex / Devin (`apply_patch` の hunk target を `tool_input_raw` から LLM が読む):
 
 ```jsonnet
 {
@@ -127,3 +129,4 @@ metrics の列の意味、JSON 出力の schema、credential failure の集計�
 - [Refresh される credential (api-key-helper.md)](api-key-helper.md) — `provider.auth` の helper 契約、 401/403 挙動、復旧手順
 - [Claude Code 固有 (claude-code.md)](claude-code.md) — Claude Code の HookInput
 - [Codex CLI 固有 (codex-cli.md)](codex-cli.md) — Codex CLI の HookInput
+- [Devin 固有 (devin-cli.md)](devin-cli.md) — Devin の HookInput

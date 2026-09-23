@@ -6,6 +6,7 @@
 //	ccgate claude                                       -> claude.Run     (explicit)
 //	ccgate claude init                                  -> claude.Init
 //	ccgate claude metrics                               -> claude.Metrics
+//	ccgate codex / devin                                -> codex.Run / devin.Run (+ init / metrics)
 //	ccgate init / ccgate metrics                        -> deprecated     (exit 2 with migration hint)
 //
 // Bare `ccgate` is the canonical Claude Code hook invocation and will
@@ -23,6 +24,7 @@ import (
 
 	"github.com/tak848/ccgate/internal/cmd/claude"
 	"github.com/tak848/ccgate/internal/cmd/codex"
+	"github.com/tak848/ccgate/internal/cmd/devin"
 )
 
 // CLI is the kong-bound root command tree.
@@ -31,10 +33,12 @@ type CLI struct {
 
 	Claude  ClaudeCmd            `cmd:"" help:"Run the Claude Code PermissionRequest hook (or manage its config / metrics). With no sub-sub-command, runs the hook from stdin."`
 	Codex   CodexCmd             `cmd:"" help:"Run the OpenAI Codex CLI PermissionRequest hook (experimental). With no sub-sub-command, runs the hook from stdin."`
+	Devin   DevinCmd             `cmd:"" help:"Run the Devin PermissionRequest hook. With no sub-sub-command, runs the hook from stdin."`
 	Clm     ClaudeMetricsCmd     `cmd:"" help:"Shortcut for 'ccgate claude metrics'."`
 	Com     CodexMetricsCmd      `cmd:"" help:"Shortcut for 'ccgate codex metrics'."`
-	Init    DeprecatedInitCmd    `cmd:"" help:"[removed in v0.6] Use 'ccgate claude init' or 'ccgate codex init' instead."`
-	Metrics DeprecatedMetricsCmd `cmd:"" help:"[removed in v0.6] Use 'ccgate claude metrics' or 'ccgate codex metrics' instead."`
+	Dvm     DevinMetricsCmd      `cmd:"" help:"Shortcut for 'ccgate devin metrics'."`
+	Init    DeprecatedInitCmd    `cmd:"" help:"[removed in v0.6] Use 'ccgate claude init', 'ccgate codex init', or 'ccgate devin init' instead."`
+	Metrics DeprecatedMetricsCmd `cmd:"" help:"[removed in v0.6] Use 'ccgate claude metrics', 'ccgate codex metrics', or 'ccgate devin metrics' instead."`
 }
 
 // Run is the binary entry point. main() should call cli.Run with the
@@ -57,7 +61,7 @@ func Run(version string, args []string, stdin io.Reader, stdout, stderr io.Write
 	var cli CLI
 	parser, err := kong.New(&cli,
 		kong.Name("ccgate"),
-		kong.Description("ccgate -- PermissionRequest hook for AI coding tools (Claude Code, OpenAI Codex CLI).\nNo args + stdin pipe = Claude Code hook (legacy invocation, permanent)."),
+		kong.Description("ccgate -- PermissionRequest hook for AI coding tools (Claude Code, OpenAI Codex CLI, Devin).\nNo args + stdin pipe = Claude Code hook (legacy invocation, permanent)."),
 		kong.Vars{"version": version},
 		kong.Writers(stdout, stderr),
 		kong.Exit(func(code int) {
@@ -142,6 +146,28 @@ func dispatch(kctx *kong.Context, cli *CLI, version string, stdin io.Reader, std
 			AsJSON:     cli.Codex.Metrics.JSON,
 			DetailsTop: cli.Codex.Metrics.Details,
 		})
+	case "devin", "devin hook":
+		if isTerminal(stdin) {
+			printUsage(stderr, version)
+			return 0
+		}
+		return devin.Run(stdin, stdout)
+	case "devin init":
+		return devin.Init(stdout, stderr, devin.InitOptions{
+			Project: cli.Devin.Init.Project,
+			Output:  cli.Devin.Init.Output,
+			Force:   cli.Devin.Init.Force,
+		})
+	case "devin metrics":
+		cwd, err := os.Getwd()
+		if err != nil {
+			fmt.Fprintf(stderr, "warning: failed to get working directory: %v\n", err)
+		}
+		return devin.Metrics(stdout, stderr, cwd, devin.MetricsOptions{
+			Days:       cli.Devin.Metrics.Days,
+			AsJSON:     cli.Devin.Metrics.JSON,
+			DetailsTop: cli.Devin.Metrics.Details,
+		})
 	case "clm":
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -161,6 +187,16 @@ func dispatch(kctx *kong.Context, cli *CLI, version string, stdin io.Reader, std
 			Days:       cli.Com.Days,
 			AsJSON:     cli.Com.JSON,
 			DetailsTop: cli.Com.Details,
+		})
+	case "dvm":
+		cwd, err := os.Getwd()
+		if err != nil {
+			fmt.Fprintf(stderr, "warning: failed to get working directory: %v\n", err)
+		}
+		return devin.Metrics(stdout, stderr, cwd, devin.MetricsOptions{
+			Days:       cli.Dvm.Days,
+			AsJSON:     cli.Dvm.JSON,
+			DetailsTop: cli.Dvm.Details,
 		})
 	case "init":
 		return runDeprecatedInit(stderr)
@@ -196,8 +232,13 @@ Usage:
   ccgate codex init [-p] [-o FILE] [-f]      Output the embedded Codex CLI defaults.
   ccgate codex metrics [--days N] [--json]   Show Codex CLI metrics.
 
+  ccgate devin                               Read HookInput JSON from stdin (Devin hook).
+  ccgate devin init [-p] [-o FILE] [-f]      Output the embedded Devin defaults.
+  ccgate devin metrics [--days N] [--json]   Show Devin metrics.
+
   ccgate clm [--days N] [--json]             Shortcut for 'ccgate claude metrics'.
   ccgate com [--days N] [--json]             Shortcut for 'ccgate codex metrics'.
+  ccgate dvm [--days N] [--json]             Shortcut for 'ccgate devin metrics'.
 
 Flags:
   --version    Print version and exit

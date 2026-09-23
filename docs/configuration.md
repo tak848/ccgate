@@ -12,12 +12,15 @@ ccgate evaluates these layers, in order, per target. Every layer composes with t
 2. **Global config**, layered on top of the embedded defaults if present:
    - Claude Code: `~/.claude/ccgate.jsonnet`
    - Codex CLI:   `~/.codex/ccgate.jsonnet`
+   - Devin:       `~/.config/devin/ccgate.jsonnet`
 3. **Main-worktree project-local**, only when ccgate runs in a linked git worktree (`git worktree add ...`). Tracked files are ignored (see "Why tracked files are skipped" below):
    - Claude Code: `{main_worktree}/.claude/ccgate.local.jsonnet`
    - Codex CLI:   `{main_worktree}/.codex/ccgate.local.jsonnet`
+   - Devin:       `{main_worktree}/.devin/ccgate.local.jsonnet`
 4. **Current-worktree project-local.** Tracked files are ignored:
    - Claude Code: `{repo_root}/.claude/ccgate.local.jsonnet`
    - Codex CLI:   `{repo_root}/.codex/ccgate.local.jsonnet`
+   - Devin:       `{repo_root}/.devin/ccgate.local.jsonnet`
 
 `{repo_root}` is the git repo root, resolved via `git rev-parse --show-toplevel` from the hook's `cwd`. `{main_worktree}` is the same repo's main worktree root, derived from `git rev-parse --git-common-dir`. Outside a git repo the `cwd` itself is used.
 
@@ -72,7 +75,7 @@ If you want repo-wide policy that everyone gets, ship it in your own fork's embe
 | `append_deny`            | string[]                          | `[]`                                                                          | Deny guidance rules appended on top of the carried-over list.                                          |
 | `append_environment`     | string[]                          | `[]`                                                                          | Environment context appended on top of the carried-over list.                                          |
 
-`<target>` is `claude` or `codex` depending on which hook is invoked. When `XDG_STATE_HOME` is unset, ccgate falls back to `~/.local/state/ccgate/<target>/...`.
+`<target>` is `claude`, `codex`, or `devin` depending on which hook is invoked. When `XDG_STATE_HOME` is unset, ccgate falls back to `~/.local/state/ccgate/<target>/...`.
 
 ## `fallthrough_strategy` -- choosing what to do on LLM uncertainty
 
@@ -82,7 +85,7 @@ The LLM returns one of: `allow`, `deny`, `fallthrough`. `fallthrough` is the LLM
 
 | Value     | Behavior                                                                                            | When to choose                                                            |
 |-----------|-----------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------|
-| `ask`     | Default. Pass through to the upstream tool's permission prompt (Claude Code / Codex).               | Interactive sessions.                                                     |
+| `ask`     | Default. Pass through to the upstream tool's permission prompt (Claude Code / Codex / Devin).      | Interactive sessions.                                                     |
 | `deny`    | Auto-deny. The deny message tells the AI not to re-ask and not to attempt workarounds.              | Unattended runs that should fail safely instead of waiting for approval.  |
 | `allow`   | Auto-allow.                                                                                         | Fully autonomous runs where you accept the risk that the LLM was unsure.  |
 
@@ -96,7 +99,7 @@ Only LLM-driven uncertainty is affected. The runtime-mode fallthroughs continue 
 - No API key set (`no_apikey`)
 - `provider.name` is not one of `anthropic` / `openai` / `gemini` (`unknown_provider`)
 - Claude `permission_mode == "bypassPermissions"` or `"dontAsk"`
-- Claude `tool_name` in `{ExitPlanMode, AskUserQuestion}` (user-interaction tools)
+- `tool_name` in `{ExitPlanMode, AskUserQuestion}` (Claude) or `{exit_plan_mode, ask_user_question}` (Devin) — user-interaction tools
 
 This is intentional: `allow` is meant to keep autonomous runs moving when the LLM hesitated, not to silently auto-approve a request the LLM never actually classified.
 
@@ -115,6 +118,7 @@ ccgate claude metrics --json           # machine-readable output
 ccgate claude metrics --details 5      # top-5 fallthrough / deny commands
 ccgate claude metrics --details 0      # suppress the drill-down sections
 ccgate codex  metrics --days 7         # same shape, codex side
+ccgate devin  metrics --days 7         # same shape, devin side
 ```
 
 ### Daily table columns
