@@ -1,0 +1,6 @@
+{
+  "name": "ccgate",
+  "description": "AI-assisted setup, rule tuning, deny / 401 debug, and health check for ccgate.",
+  "version": "0.9.1",
+  "author": { "name": "tak848" }
+}
