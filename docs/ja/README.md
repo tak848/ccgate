@@ -13,6 +13,7 @@ ccgate は組み込みのデフォルトルールを持っているので、設�
 
 - **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)**
 - **[OpenAI Codex CLI](https://developers.openai.com/codex/hooks)**
+- **[Devin CLI](https://docs.devin.ai/cli/extensibility/hooks/overview)**
 
 [English README](../../README.md)
 
@@ -148,6 +149,38 @@ provider の API キーを export してください — [docs/ja/providers.md#a
 
 ここまでで ccgate は組み込みデフォルトで動き始めます。allow / deny を自分で書きたい場合は [docs/ja/rule-tuning.md](rule-tuning.md) を、ルールの仕組みを先に押さえたい場合は [コンセプト](#コンセプト) を参照してください。
 
+## クイックスタート — Devin
+
+### 1. Devin hook として登録
+
+Devin は `<repo>/.devin/hooks.v1.json`、 `<repo>/.devin/config.json` / `.devin/config.local.json` の `"hooks"` key (project level)、 `~/.config/devin/config.json` の `"hooks"` key (user level) から hook を読み込みます。 `.claude/settings.json` の hook も自動で拾われます。
+
+`<repo>/.devin/hooks.v1.json`:
+
+```json
+{
+  "PermissionRequest": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "ccgate devin"
+        }
+      ]
+    }
+  ]
+}
+```
+
+lookup 順序、 user level の登録方法、 in-tree dev build 用の `go run` レシピは [docs/devin-cli.md](devin-cli.md) を参照。
+
+### 2. API キー
+
+provider の API キーを export してください — [docs/ja/providers.md#api-キー](providers.md#api-キー) を参照。 default は Anthropic の Claude Haiku で、 [Provider の切り替え](providers.md#provider-の切り替え) に OpenAI の `gpt-5.6-luna` の設定ブロックがあります。
+
+ここまでで ccgate は組み込みデフォルトで動き始めます。allow / deny を自分で書きたい場合は [docs/ja/rule-tuning.md](rule-tuning.md) を、ルールの仕組みを先に押さえたい場合は [コンセプト](#コンセプト) を参照してください。
+
 ## コンセプト
 
 ccgate の `allow` / `deny` / `environment` はいずれも **自然言語の文字列リスト**です。これらが system prompt に埋め込まれて LLM に送られ、LLM が `allow` / `deny` / `fallthrough` のいずれかを返します。jsonnet 側で deterministic にマッチする engine ではなく、すべての PermissionRequest が LLM を経由する設計です。
@@ -156,7 +189,7 @@ ccgate の `allow` / `deny` / `environment` はいずれも **自然言語の文
 
 ```mermaid
 flowchart TD
-  A["Claude Code / Codex CLI"] --> B{"上流側の静的ルールで解決できる?"}
+  A["Claude Code / Codex CLI / Devin"] --> B{"上流側の静的ルールで解決できる?"}
   B -->|Yes| C["そのまま実行 / 拒否"]
   B -->|No| D["PermissionRequest hook<br/>(stdin: HookInput JSON)"]
   D --> E["ccgate"]
@@ -173,21 +206,21 @@ ccgate が LLM に渡す情報 (代表項目):
 
 - `tool_name`, `tool_input`, `tool_input_raw` (元の JSON payload をそのまま渡す)。
 - `cwd`, `repo_root`, `branch_name`, worktree info (`gitutil.Context` から)。working tree の dirty/clean は **渡していない**。
-- `referenced_paths` — `tool_input` から best-effort で抽出した path リスト。対象 tool は `Read` / `Write` / `Edit` / `MultiEdit` / `Glob` / `Grep` / `Bash` のみ。`apply_patch` (Codex) や MCP tool では空で、LLM は `tool_input_raw` の hunk / args を直接読む。
+- `referenced_paths` — `tool_input` から best-effort で抽出した path リスト。対象 tool は `Read` / `Write` / `Edit` / `MultiEdit` / `Glob` / `Grep` / `Bash` (Claude)、`read` / `write` / `edit` / `glob` / `grep` / `exec` (Devin)。`apply_patch` (Codex / Devin) や MCP tool では空で、LLM は `tool_input_raw` の hunk / args を直接読む。
 - Claude のみ: `permission_mode` (`"plan"` で system prompt が plan mode rule に切替), `permission_suggestions`, `recent_transcript`, `settings_permissions` hint (whitelist ではなく hint 扱い)。
 
-target ごとの完全な入力一覧は [docs/claude-code.md](claude-code.md) / [docs/codex-cli.md](codex-cli.md) を参照してください。
+target ごとの完全な入力一覧は [docs/claude-code.md](claude-code.md) / [docs/codex-cli.md](codex-cli.md) / [docs/devin-cli.md](devin-cli.md) を参照してください。
 
 ## 設定
 
 ### 設定ファイルの読み込み順序
 
-| 順序 | Claude Code | Codex CLI |
-|----:|-------------|-----------|
-| 1 | 組み込みデフォルト (常にベースとして適用) | 同じ |
-| 2 | `~/.claude/ccgate.jsonnet` (グローバル) | `~/.codex/ccgate.jsonnet` |
-| 3 | `{main_worktree}/.claude/ccgate.local.jsonnet` (linked worktree のときのみ、Git 未追跡のみ) | `{main_worktree}/.codex/ccgate.local.jsonnet` |
-| 4 | `{repo_root}/.claude/ccgate.local.jsonnet` (Git 未追跡のみ) | `{repo_root}/.codex/ccgate.local.jsonnet` |
+| 順序 | Claude Code | Codex CLI | Devin |
+|----:|-------------|-----------|-------|
+| 1 | 組み込みデフォルト (常にベースとして適用) | 同じ | 同じ |
+| 2 | `~/.claude/ccgate.jsonnet` (グローバル) | `~/.codex/ccgate.jsonnet` | `~/.config/devin/ccgate.jsonnet` |
+| 3 | `{main_worktree}/.claude/ccgate.local.jsonnet` (linked worktree のときのみ、Git 未追跡のみ) | `{main_worktree}/.codex/ccgate.local.jsonnet` | `{main_worktree}/.devin/ccgate.local.jsonnet` |
+| 4 | `{repo_root}/.claude/ccgate.local.jsonnet` (Git 未追跡のみ) | `{repo_root}/.codex/ccgate.local.jsonnet` | `{repo_root}/.devin/ccgate.local.jsonnet` |
 
 合成ルール (要点):
 
@@ -201,8 +234,8 @@ target ごとの完全な入力一覧は [docs/claude-code.md](claude-code.md) /
 
 provider と hook の登録が済んでから、自分の `allow` / `deny` / `append_*` を書きたくなったらここから。
 
-- **defaults を確認**: `ccgate claude init | less` / `ccgate codex init | less` (`-p` 付きで `.local.jsonnet` の雛形も出せる)。
-- **どこに書く**: グローバル `~/.<target>/ccgate.jsonnet`、プロジェクトローカル `<repo>/.<target>/ccgate.local.jsonnet` (Git 未追跡のみ)。
+- **defaults を確認**: `ccgate claude init | less` / `ccgate codex init | less` / `ccgate devin init | less` (`-p` 付きで `.local.jsonnet` の雛形も出せる)。
+- **どこに書く**: グローバル `~/.<target>/ccgate.jsonnet` (Devin は `~/.config/devin/ccgate.jsonnet`)、プロジェクトローカル `<repo>/.<target>/ccgate.local.jsonnet` (Git 未追跡のみ)。
 - **置換 vs 追加**: 基本は `append_allow` / `append_deny` / `append_environment` (embedded defaults を残して自分のエントリを追加)。 `allow:` / `deny:` は完全置換 (defaults を捨てて自分の list だけが有効)。
 
 書き方の典型例 (Claude / Codex 別の append_allow / append_deny / 完全置換)、`deny_message:` ヒントの形式、`std.native('env')` / `must_env` で env を埋め込む方法、`ccgate <target> metrics --details N` を使った iteration workflow、`fallthrough_strategy` を含むその他の細部は [docs/rule-tuning.md](rule-tuning.md) に集約してあります。
@@ -252,6 +285,7 @@ LLM が判定に自信を持てないと `fallthrough` を返し、上流ツー�
 ccgate claude metrics                 # 直近 7 日、TTY テーブル
 ccgate claude metrics --details 5     # fallthrough / deny の上位 5 コマンドをドリルダウン
 ccgate codex  metrics --json          # JSON 出力 (機械可読)
+ccgate devin  metrics                 # Devin 側も同じ形
 ```
 
 列の意味、JSON エントリ schema、credential 障害集計は [docs/ja/configuration.md#メトリクス出力](configuration.md#メトリクス出力) を参照。
@@ -270,6 +304,7 @@ ccgate codex  metrics --json          # JSON 出力 (機械可読)
 - [api-key-helper.md](api-key-helper.md) — `provider.auth` リファレンス (helper の契約、 キャッシュ、 401/403 挙動、 復旧手順)
 - [claude-code.md](claude-code.md) — Claude Code 固有の HookInput
 - [codex-cli.md](codex-cli.md) — Codex CLI 固有の HookInput
+- [devin-cli.md](devin-cli.md) — Devin 固有の HookInput
 - [English README](../../README.md)
 
 ## CLI リファレンス
@@ -282,6 +317,9 @@ ccgate claude metrics [...]                  Claude Code のメトリクス集�
 ccgate codex                                 stdin から HookInput JSON を読み込む (Codex CLI hook)
 ccgate codex init [-p] [-o FILE] [-f]        Codex CLI 用の埋込デフォルトを出力
 ccgate codex metrics [...]                   Codex CLI のメトリクス集計
+ccgate devin                                 stdin から HookInput JSON を読み込む (Devin hook)
+ccgate devin init [-p] [-o FILE] [-f]        Devin 用の埋込デフォルトを出力
+ccgate devin metrics [...]                   Devin のメトリクス集計
 ```
 
 top-level の `ccgate init` / `ccgate metrics` は実 subcommand ではなく、 per-target 形式への 1 行案内を出して exit `2` します。
@@ -292,7 +330,7 @@ top-level の `ccgate init` / `ccgate metrics` は実 subcommand ではなく、
 mise run build    # バイナリビルド
 mise run test     # テスト実行
 mise run vet      # go vet
-mise run schema   # schemas/{claude,codex}.schema.json を再生成
+mise run schema   # schemas/{claude,codex,devin}.schema.json を再生成
 ```
 
 ### Nix (flakes)

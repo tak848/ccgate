@@ -1,12 +1,17 @@
 // Package runner is the entire ccgate PermissionRequest hook
-// orchestration. There is no per-target adapter layer: stdin/stdout
-// shapes are shared across Claude Code and Codex CLI (both deliver
-// session_id / transcript_path / cwd / hook_event_name / tool_name /
-// tool_input on stdin and the same hookSpecificOutput.decision shape
-// on stdout). Per-target differences are handled here directly:
+// orchestration. There is no per-target adapter layer: stdin shapes
+// are shared across Claude Code, Codex CLI, and Devin (all deliver
+// session_id / hook_event_name / tool_name / tool_input on stdin;
+// Devin omits cwd/transcript_path and adds prompt_id/tool_use_id).
+// The stdout shape is per-target: Claude Code and Codex CLI expect
+// hookSpecificOutput.decision, while Devin reads a flat
+// {"decision": "approve"|"block", "reason": ...} object -- the caller
+// picks the encoder via WithOutputEncoder. Other per-target
+// differences are handled here directly:
 //
 //   - Claude-only fields: permission_mode, permission_suggestions
 //   - Codex-only fields: model, turn_id
+//   - Devin-only fields: prompt_id, tool_use_id
 //
 // cmd/<target>/ packages stay tiny -- they only hand a config.LoadOptions
 // (where to read the per-user config / write the per-target log+metrics)
@@ -76,6 +81,10 @@ type HookInput struct {
 	// Codex-only
 	Model  string `json:"model,omitempty"`
 	TurnID string `json:"turn_id,omitempty"`
+
+	// Devin-only (correlation ids; not forwarded to the LLM)
+	PromptID  string `json:"prompt_id,omitempty"`
+	ToolUseID string `json:"tool_use_id,omitempty"`
 }
 
 // HookToolInput is the canonical parsed view of tool_input shared by
@@ -124,7 +133,8 @@ func (h *HookInput) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// HookOutput is the JSON response shape Claude Code and Codex both expect.
+// HookOutput is the JSON response shape Claude Code and Codex both
+// expect. Devin takes a different shape -- see WithOutputEncoder.
 type HookOutput struct {
 	HookSpecificOutput hookSpecificOutput `json:"hookSpecificOutput"`
 }
@@ -162,6 +172,8 @@ type Option func(*runtimeOptions)
 type runtimeOptions struct {
 	targetName            string
 	cacheTarget           string
+	cwdEnv                string
+	encodeOutput          func(eventName string, d llm.Decision) any
 	promptSection         func(cfg config.Config) string
 	hasRecentTranscript   bool
 	loadStaticPermissions func(cwd string) any
@@ -179,6 +191,23 @@ type runtimeOptions struct {
 // back to a generic phrasing if unset.
 func WithTargetName(name string) Option {
 	return func(o *runtimeOptions) { o.targetName = name }
+}
+
+// WithCwdEnv names an environment variable the target sets to the
+// project root (Devin: DEVIN_PROJECT_DIR). Consulted only when the
+// HookInput itself carries no cwd; the process working directory is
+// the universal last resort for every target.
+func WithCwdEnv(name string) Option {
+	return func(o *runtimeOptions) { o.cwdEnv = name }
+}
+
+// WithOutputEncoder replaces the stdout response shape. The default
+// encoder emits the Claude-Code-style hookSpecificOutput.decision
+// object that Claude Code and Codex CLI both consume. Devin reads a
+// flat {"decision": "approve"|"block", "reason": ...} object instead,
+// so cmd/devin passes its own encoder.
+func WithOutputEncoder(fn func(eventName string, d llm.Decision) any) Option {
+	return func(o *runtimeOptions) { o.encodeOutput = fn }
 }
 
 // WithCacheTarget sets the per-target subdirectory name used for the
@@ -262,6 +291,14 @@ func Run(stdin io.Reader, stdout io.Writer, opts config.LoadOptions, runOpts ...
 		return 1
 	}
 
+	// Devin delivers no cwd on the wire -- it sets DEVIN_PROJECT_DIR
+	// (and runs the hook from the project root) instead. An empty cwd
+	// would silently disable git context and project-local config
+	// loading, so fall back before either consumer sees it.
+	if input.Cwd == "" {
+		input.Cwd = resolveCwdFallback(ro.cwdEnv)
+	}
+
 	lr, err := config.Load(opts, input.Cwd)
 	if err != nil {
 		slog.Error("failed to load config", "error", err)
@@ -319,11 +356,32 @@ func Run(stdin io.Reader, stdout io.Writer, opts config.LoadOptions, runOpts ...
 	}
 
 	slog.Info("decision made", "behavior", decision.Behavior, "message", decision.Message, "tool", input.ToolName, "elapsed_ms", elapsed.Milliseconds())
-	if err := json.NewEncoder(stdout).Encode(newHookOutput(input.HookEventName, decision)); err != nil {
+	encode := ro.encodeOutput
+	if encode == nil {
+		encode = func(eventName string, d llm.Decision) any { return newHookOutput(eventName, d) }
+	}
+	if err := json.NewEncoder(stdout).Encode(encode(input.HookEventName, decision)); err != nil {
 		slog.Error("failed to encode response to stdout", "error", err)
 		return 1
 	}
 	return 0
+}
+
+// resolveCwdFallback fills in a missing HookInput.Cwd: first the
+// target-supplied env var (WithCwdEnv), then the process working
+// directory -- host tools spawn the hook with cwd at the project
+// root, so os.Getwd() is a safe universal last resort. Returns ""
+// only when every source fails.
+func resolveCwdFallback(envName string) string {
+	if envName != "" {
+		if dir := strings.TrimSpace(os.Getenv(envName)); dir != "" {
+			return dir
+		}
+	}
+	if wd, err := os.Getwd(); err == nil {
+		return wd
+	}
+	return ""
 }
 
 // decide returns: the resolved Decision, whether the hook should
@@ -336,8 +394,11 @@ func Run(stdin io.Reader, stdout io.Writer, opts config.LoadOptions, runOpts ...
 // hook exit 1).
 func decide(ctx context.Context, cfg config.Config, in HookInput, ro runtimeOptions) (llm.Decision, bool, string, string, string, *llm.Usage, error) {
 	// Tools that require user interaction must never be auto-decided.
+	// The list is shared across targets: PascalCase names are Claude
+	// Code's, snake_case ones Devin's; a name another target never
+	// emits simply never matches.
 	switch in.ToolName {
-	case "ExitPlanMode", "AskUserQuestion":
+	case "ExitPlanMode", "AskUserQuestion", "exit_plan_mode", "ask_user_question":
 		slog.Info("user interaction tool: falling through", "tool", in.ToolName)
 		return llm.Decision{}, false, llm.FallthroughKindUserInteraction, "", "", nil, nil
 	}

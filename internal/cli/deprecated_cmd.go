@@ -21,12 +21,14 @@ const (
 		"Use one of:\n" +
 		"  ccgate claude init   (Claude Code)\n" +
 		"  ccgate codex init    (OpenAI Codex CLI)\n" +
+		"  ccgate devin init    (Devin)\n" +
 		"See: " + releaseURL + "\n"
 
 	deprecatedMetricsMessage = "'ccgate metrics' has been removed in v0.6.0.\n" +
 		"Use one of:\n" +
 		"  ccgate claude metrics   (Claude Code)\n" +
 		"  ccgate codex metrics    (OpenAI Codex CLI)\n" +
+		"  ccgate devin metrics    (Devin)\n" +
 		"See: " + releaseURL + "\n"
 )
 

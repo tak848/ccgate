@@ -24,6 +24,7 @@ func TestProviderAuthOneOfShape(t *testing.T) {
 	for _, path := range []string{
 		filepath.Join(root, "schemas", "claude.schema.json"),
 		filepath.Join(root, "schemas", "codex.schema.json"),
+		filepath.Join(root, "schemas", "devin.schema.json"),
 	} {
 		t.Run(filepath.Base(path), func(t *testing.T) {
 			t.Parallel()
@@ -46,6 +47,9 @@ func TestClaudeOnlyPromptContextKeys(t *testing.T) {
 		},
 		"codex": {
 			path: filepath.Join(root, "schemas", "codex.schema.json"),
+		},
+		"devin": {
+			path: filepath.Join(root, "schemas", "devin.schema.json"),
 		},
 	}
 	for name, tc := range cases {

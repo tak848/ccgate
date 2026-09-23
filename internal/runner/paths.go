@@ -7,15 +7,20 @@ import (
 	"strings"
 )
 
+// referencedPaths extracts filesystem paths from tool_input on a
+// best-effort basis. The case list is shared across targets: PascalCase
+// names are Claude Code's, snake_case ones Devin's (exec, edit, ...).
+// Tool shapes ccgate does not model here (apply_patch hunks, MCP
+// arguments, notebook_path) reach the LLM via tool_input_raw instead.
 func referencedPaths(input HookInput) []string {
 	switch input.ToolName {
-	case "Read", "Write", "Edit", "MultiEdit":
+	case "Read", "Write", "Edit", "MultiEdit", "read", "write", "edit":
 		return uniqueNonEmpty(expandPaths(input.Cwd, input.ToolInput.FilePath))
-	case "Glob":
+	case "Glob", "glob":
 		return uniqueNonEmpty(expandPaths(input.Cwd, input.ToolInput.Path, input.ToolInput.Pattern))
-	case "Grep":
+	case "Grep", "grep":
 		return uniqueNonEmpty(expandPaths(input.Cwd, input.ToolInput.Path))
-	case "Bash":
+	case "Bash", "exec":
 		return uniqueNonEmpty(extractBashPaths(input.Cwd, input.ToolInput.Command))
 	default:
 		return nil
