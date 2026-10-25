@@ -46,11 +46,24 @@ func TestShellSplit(t *testing.T) {
 			input: "a\tb\nc",
 			want:  []string{"a", "b", "c"},
 		},
+		{
+			name:  "unquoted redirection splits the word",
+			input: "cat ./a>/tmp/out 2>&1",
+			want:  []string{"cat", "./a", ">", "/tmp/out", ">&", "1"},
+		},
+		{
+			name:  "quoted redirection characters stay in the word",
+			input: `printf 'hi >/tmp/out' "a<b"`,
+			want:  []string{"printf", "hi >/tmp/out", "a<b"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := shellSplit(tt.input)
+			var got []string
+			for _, w := range shellSplit(tt.input) {
+				got = append(got, w.text)
+			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Fatalf("shellSplit(%q) = %v, want %v", tt.input, got, tt.want)
 			}
@@ -225,6 +238,34 @@ func TestExtractBashPathsFindsTargets(t *testing.T) {
 		"URL query value is not a path": {
 			command: `curl 'https://example.com/api?path=/etc/passwd' -o ./out.json`,
 			raw:     []string{"./out.json"},
+		},
+		"relative redirection target": {
+			command: `echo hi > out.txt`,
+			raw:     []string{"out.txt"},
+		},
+		"here-doc delimiter is not a file": {
+			command: `cat <<EOF`,
+			raw:     nil,
+		},
+		"quoted redirection is text": {
+			command: `printf '%s\n' 'hi >/tmp/out'`,
+			raw:     nil,
+		},
+		"quoted > inside a path keeps the path whole": {
+			command: `rm -rf './a>/etc/passwd'`,
+			raw:     []string{"./a>/etc/passwd"},
+		},
+		"single-quoted HOME is literal text": {
+			command: `rg '$HOME' ./README.md`,
+			raw:     []string{"./README.md"},
+		},
+		"quoted tilde is literal text": {
+			command: `ls "~/docs"`,
+			raw:     nil,
+		},
+		"path containing = stays one path": {
+			command: `rm -rf ./cache=/etc`,
+			raw:     []string{"./cache=/etc"},
 		},
 	}
 

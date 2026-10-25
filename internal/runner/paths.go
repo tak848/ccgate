@@ -1,9 +1,9 @@
 package runner
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -27,9 +27,8 @@ func referencedPaths(input HookInput) []string {
 	}
 }
 
-// homePrefixes are the spellings of the home directory a shell command
-// commonly starts a path with. shellSplit keeps `$HOME` literal, so
-// they are expanded here.
+// homePrefixes are the spellings of the home directory a path commonly
+// starts with.
 var homePrefixes = []string{"~", "$HOME", "${HOME}"}
 
 // cutHomePrefix reports whether value starts with a home-directory
@@ -59,87 +58,105 @@ func expandHome(value string) string {
 	return filepath.Join(home, rest)
 }
 
+// resolvePath makes p absolute against cwd when it is relative, and
+// cleans it.
+func resolvePath(cwd, p string) string {
+	if filepath.IsAbs(p) || cwd == "" {
+		return filepath.Clean(p)
+	}
+	return filepath.Clean(filepath.Join(cwd, p))
+}
+
+// expandPaths resolves path-valued tool_input fields (not shell words,
+// which extractBashPaths handles with their quoting).
 func expandPaths(cwd string, values ...string) []string {
 	var out []string
 	for _, value := range values {
 		if value == "" {
 			continue
 		}
-		value = expandHome(value)
-		if filepath.IsAbs(value) {
-			out = append(out, filepath.Clean(value))
-			continue
-		}
-		if cwd != "" {
-			out = append(out, filepath.Clean(filepath.Join(cwd, value)))
-			continue
-		}
-		out = append(out, filepath.Clean(value))
+		out = append(out, resolvePath(cwd, expandHome(value)))
 	}
 	return out
 }
 
 func extractBashPaths(cwd string, command string) []string {
-	tokens := shellSplit(command)
-	if len(tokens) == 0 {
-		return nil
-	}
+	words := shellSplit(command)
+	var out []string
+	add := func(p string) { out = append(out, resolvePath(cwd, p)) }
 
-	var candidates []string
-	for i := 0; i < len(tokens); i++ {
-		token := tokens[i]
-		if token == "" {
-			continue
-		}
+	for i := 0; i < len(words); i++ {
+		w := words[i]
 
-		if token == "git" && i+2 < len(tokens) && tokens[i+1] == "-C" {
-			candidates = append(candidates, tokens[i+2])
-			i += 2
-			continue
-		}
-		if token == "git" && i+1 < len(tokens) && strings.HasPrefix(tokens[i+1], "-C") && len(tokens[i+1]) > 2 {
-			candidates = append(candidates, strings.TrimPrefix(tokens[i+1], "-C"))
-			i++
-			continue
-		}
-		// Redirections written without a space (`>/etc/x`, `2>>~/log`,
-		// `cmd>/x`): the target follows the operator inside the token.
-		if before, target, ok := splitRedirect(token); ok {
-			for _, part := range []string{before, target} {
-				if looksLikePathToken(part) {
-					candidates = append(candidates, part)
+		// The word after a redirection operator is the file it reads or
+		// writes, whatever it looks like (`> out.txt`), except for fd
+		// duplication (`2>&1`) and here-doc delimiters (`<<EOF`).
+		if w.redirect {
+			if i+1 < len(words) && !words[i+1].redirect {
+				if redirectNamesFile(w.text) {
+					target := words[i+1]
+					if p, ok := target.pathAt(0); ok {
+						add(p)
+					} else {
+						add(target.text)
+					}
 				}
+				i++
 			}
 			continue
 		}
-		// `--file=/x`, `of=/dev/sda`, `PREFIX=~/opt`: the value after `=`.
-		// URLs are skipped: `?path=/etc/x` in a query string names no
-		// local file.
-		if _, rhs, found := strings.Cut(token, "="); found && !strings.Contains(token, "://") && looksLikePathToken(rhs) {
-			candidates = append(candidates, rhs)
+
+		if w.text == "git" && i+2 < len(words) && words[i+1].text == "-C" {
+			add(words[i+2].pathOrText())
+			i += 2
 			continue
 		}
-		if looksLikePathToken(token) {
-			candidates = append(candidates, token)
+		if w.text == "git" && i+1 < len(words) && strings.HasPrefix(words[i+1].text, "-C") && len(words[i+1].text) > 2 {
+			if p, ok := words[i+1].pathAt(len("-C")); ok {
+				add(p)
+			} else {
+				add(strings.TrimPrefix(words[i+1].text, "-C"))
+			}
+			i++
+			continue
+		}
+
+		// A word that is itself a path wins over the `=` rule below, so
+		// `./cache=/etc` stays one path.
+		if p, ok := w.pathAt(0); ok {
+			add(p)
+			continue
+		}
+		// `--file=/x`, `of=/dev/sda`, `PREFIX=~/opt`: the value after `=`
+		// of an option or assignment. Other words containing `=` (URLs
+		// with `?path=/etc/x`) name no local file.
+		if k := assignmentValueIndex(w.text); k >= 0 {
+			if p, ok := w.pathAt(k); ok {
+				add(p)
+			}
 		}
 	}
-
-	return expandPaths(cwd, candidates...)
+	return out
 }
 
-// splitRedirect splits a token at its first shell redirection operator
-// (`>`, `>>`, `<`, `>|`, `&>`, `2>&`, ...) into what precedes the
-// operator and the redirection target after it.
-func splitRedirect(token string) (before, target string, ok bool) {
-	i := strings.IndexAny(token, "<>")
-	if i < 0 {
-		return "", "", false
+// redirectNamesFile reports whether the word after the redirection
+// operator op is a file name.
+func redirectNamesFile(op string) bool {
+	return !strings.HasSuffix(op, "&") && !strings.HasPrefix(op, "<<")
+}
+
+// assignmentLHS matches what may precede `=` in an option or variable
+// assignment: `--file`, `-o`, `of`, `PREFIX`.
+var assignmentLHS = regexp.MustCompile(`^(-{1,2}[A-Za-z0-9][A-Za-z0-9_-]*|[A-Za-z_][A-Za-z0-9_]*)$`)
+
+// assignmentValueIndex returns the byte index just after `=` when text
+// is an option or assignment, and -1 otherwise.
+func assignmentValueIndex(text string) int {
+	lhs, _, found := strings.Cut(text, "=")
+	if !found || !assignmentLHS.MatchString(lhs) {
+		return -1
 	}
-	j := i
-	for j < len(token) && strings.ContainsRune("<>|&", rune(token[j])) {
-		j++
-	}
-	return token[:i], token[j:], true
+	return len(lhs) + 1
 }
 
 func looksLikePathToken(token string) bool {
@@ -170,25 +187,87 @@ func uniqueNonEmpty(values []string) []string {
 	return out
 }
 
-func shellSplit(input string) []string {
-	var fields []string
-	var current bytes.Buffer
+// quoteState is how one byte of a shell word was written.
+type quoteState byte
+
+const (
+	unquoted quoteState = iota
+	singleQuoted
+	doubleQuoted
+	backslashEscaped
+)
+
+// shellWord is one word of a shell command, or an unquoted redirection
+// operator. quotes records how each byte of text was quoted, because
+// the shell expands `~` and `$HOME` and recognises `<` / `>` only in
+// some of those states.
+type shellWord struct {
+	text     string
+	quotes   []quoteState
+	redirect bool
+}
+
+// pathAt returns the path that starts at byte i of the word, with a
+// leading home-directory spelling expanded when the shell would expand
+// it there: `~` only unquoted, `$HOME` / `${HOME}` unquoted or inside
+// double quotes. ok is false when that part of the word does not look
+// like a path.
+func (w shellWord) pathAt(i int) (string, bool) {
+	s := w.text[i:]
+	if !looksLikePathToken(s) {
+		return "", false
+	}
+	if _, isHome := cutHomePrefix(s); isHome {
+		q := w.quotes[i]
+		if q != unquoted && (strings.HasPrefix(s, "~") || q != doubleQuoted) {
+			return "", false
+		}
+		return expandHome(s), true
+	}
+	return s, true
+}
+
+func (w shellWord) pathOrText() string {
+	if p, ok := w.pathAt(0); ok {
+		return p
+	}
+	return w.text
+}
+
+// shellSplit splits a command into words the way a POSIX shell would for
+// the purpose of finding paths: whitespace and unquoted redirection
+// operators separate words, quotes and backslashes are removed but
+// remembered per byte. It does not expand variables or split on `|`,
+// `;` or `&&`.
+func shellSplit(input string) []shellWord {
+	var words []shellWord
+	var cur strings.Builder
+	var quotes []quoteState
 	inSingle := false
 	inDouble := false
 	escaped := false
 
-	flush := func() {
-		if current.Len() == 0 {
-			return
+	add := func(r rune, q quoteState) {
+		n := cur.Len()
+		cur.WriteRune(r)
+		for range cur.Len() - n {
+			quotes = append(quotes, q)
 		}
-		fields = append(fields, current.String())
-		current.Reset()
+	}
+	flush := func() {
+		if cur.Len() > 0 {
+			words = append(words, shellWord{text: cur.String(), quotes: quotes})
+		}
+		cur.Reset()
+		quotes = nil
 	}
 
-	for _, r := range input {
+	runes := []rune(input)
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
 		switch {
 		case escaped:
-			current.WriteRune(r)
+			add(r, backslashEscaped)
 			escaped = false
 		case r == '\\' && !inSingle:
 			escaped = true
@@ -196,12 +275,45 @@ func shellSplit(input string) []string {
 			inSingle = !inSingle
 		case r == '"' && !inSingle:
 			inDouble = !inDouble
-		case (r == ' ' || r == '\t' || r == '\n') && !inSingle && !inDouble:
+		case inSingle:
+			add(r, singleQuoted)
+		case inDouble:
+			add(r, doubleQuoted)
+		case r == ' ' || r == '\t' || r == '\n':
 			flush()
+		case r == '<' || r == '>':
+			// A file descriptor number or `&` right before the operator is
+			// part of it (`2>`, `&>`); anything else ends the word.
+			if isRedirectPrefix(cur.String(), quotes) {
+				cur.Reset()
+				quotes = nil
+			} else {
+				flush()
+			}
+			j := i
+			for j < len(runes) && strings.ContainsRune("<>|&", runes[j]) {
+				j++
+			}
+			words = append(words, shellWord{text: string(runes[i:j]), redirect: true})
+			i = j - 1
 		default:
-			current.WriteRune(r)
+			add(r, unquoted)
 		}
 	}
 	flush()
-	return fields
+	return words
+}
+
+// isRedirectPrefix reports whether the pending word is an unquoted fd
+// number or `&` that belongs to the redirection operator after it.
+func isRedirectPrefix(text string, quotes []quoteState) bool {
+	if text == "" {
+		return false
+	}
+	for i, c := range []byte(text) {
+		if quotes[i] != unquoted || (c != '&' && (c < '0' || c > '9')) {
+			return false
+		}
+	}
+	return text == "&" || !strings.Contains(text, "&")
 }

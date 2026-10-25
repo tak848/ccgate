@@ -206,7 +206,7 @@ ccgate が LLM に渡す情報 (代表項目):
 
 - `tool_name`, `tool_input`, `tool_input_raw` (元の JSON payload をそのまま渡す)。
 - `cwd`, `repo_root`, `branch_name`, worktree info (`gitutil.Context` から)。working tree の dirty/clean は **渡していない**。
-- `referenced_paths` — `tool_input` から best-effort で抽出した path リスト。対象 tool は `Read` / `Write` / `Edit` / `MultiEdit` / `Glob` / `Grep` / `Bash` (Claude)、`read` / `write` / `edit` / `glob` / `grep` / `exec` (Devin)。`apply_patch` (Codex / Devin) や MCP tool では空で、LLM は `tool_input_raw` の hunk / args を直接読む。shell コマンドからは、path らしいトークン (`/`・`./`・`../`・`~`・`$HOME`・`${HOME}` で始まるもの)、`>/etc/x` のようなリダイレクト先、`key=/path` の値を拾う。それ以外の変数、glob、同じコマンド内の `cd` からの相対 path は拾えないので、system prompt で「空でも workspace 内で完結している証拠にはならない」と LLM に伝えている。
+- `referenced_paths` — `tool_input` から best-effort で抽出した path リスト。対象 tool は `Read` / `Write` / `Edit` / `MultiEdit` / `Glob` / `Grep` / `Bash` (Claude)、`read` / `write` / `edit` / `glob` / `grep` / `exec` (Devin)。`apply_patch` (Codex / Devin) や MCP tool では空で、LLM は `tool_input_raw` の hunk / args を直接読む。shell コマンドからは、path らしい語 (`/`・`./`・`../`・`~`・`$HOME`・`${HOME}` で始まるもの)、リダイレクト先 (`>/etc/x`、`> out.txt`)、`--opt=/path` / `key=/path` の値を、shell のクォートに従って拾う (クォート内の `>` や `'$HOME'` はただの文字列として扱う)。それ以外の変数、glob、同じコマンド内の `cd` からの相対 path は拾えないので、system prompt で「空でも workspace 内で完結している証拠にはならない」と LLM に伝えている。
 - Claude のみ: `permission_mode` (`"plan"` で system prompt が plan mode rule に切替), `permission_suggestions`, `recent_transcript`, `settings_permissions` hint (whitelist ではなく hint 扱い)。
 
 target ごとの完全な入力一覧は [docs/claude-code.md](claude-code.md) / [docs/codex-cli.md](codex-cli.md) / [docs/devin-cli.md](devin-cli.md) を参照してください。
