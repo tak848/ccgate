@@ -8,7 +8,7 @@ ccgate calls a provider LLM (default: Claude Haiku) to classify each PermissionR
 
 | `provider.name` | Underlying SDK | Default model        |
 |-----------------|----------------|----------------------|
-| `anthropic`     | `anthropic-sdk-go` | `claude-haiku-4-5` |
+| `anthropic`     | `anthropic-sdk-go` | `claude-haiku-5-5` |
 | `openai`        | `openai-go`        | (set explicitly via `provider.model`) |
 | `gemini`        | `openai-go` against Gemini's OpenAI-compat endpoint | (set explicitly) |
 
@@ -16,13 +16,13 @@ ccgate calls a provider LLM (default: Claude Haiku) to classify each PermissionR
 
 Set `provider.name` (and `provider.model` when needed) in any layer, then export the matching API key (see [API keys](#api-keys) below). If the key is missing, ccgate falls through to the upstream tool's permission prompt, so a wrong provider name cannot break the hook.
 
-OpenAI with `gpt-5.6-luna`:
+OpenAI with `gpt-6-luna`:
 
 ```jsonnet
 {
   provider: {
     name: 'openai',
-    model: 'gpt-5.6-luna',
+    model: 'gpt-6-luna',
   },
 }
 ```
@@ -120,7 +120,7 @@ For a proxy that exposes `/v1/chat/completions` (LiteLLM proxy, Azure OpenAI in 
 {
   provider: {
     name: 'openai',
-    model: 'anthropic/claude-haiku-4-5', // whatever the proxy exposes
+    model: 'anthropic/claude-haiku-5-5', // whatever the proxy exposes
     base_url: 'https://your-proxy.example/v1',
   },
 }
@@ -136,7 +136,7 @@ For a proxy that exposes `/v1/messages`:
 {
   provider: {
     name: 'anthropic',
-    model: 'claude-haiku-4-5',
+    model: 'claude-haiku-5-5',
     base_url: 'https://your-proxy.example',
   },
 }

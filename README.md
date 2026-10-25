@@ -92,7 +92,7 @@ If `ccgate` is not on your `PATH` (e.g. when relying on `mise exec` instead of a
 
 ccgate calls Anthropic's Claude Haiku by default. Export `CCGATE_ANTHROPIC_API_KEY` (or `ANTHROPIC_API_KEY` as fallback). For OpenAI / Gemini and the resolution order, see [docs/providers.md#api-keys](docs/providers.md#api-keys).
 
-[Switching providers](docs/providers.md#switching-providers) has a copy-pasteable block for OpenAI with `gpt-5.6-luna`.
+[Switching providers](docs/providers.md#switching-providers) has a copy-pasteable block for OpenAI with `gpt-6-luna`.
 
 That's it — ccgate is now running with its embedded defaults. To customize what is allowed or denied, see [docs/rule-tuning.md](docs/rule-tuning.md); for background on how rules work, see [Concepts](#concepts).
 
@@ -145,7 +145,7 @@ See [docs/codex-cli.md](docs/codex-cli.md) for the full lookup order, project-lo
 
 ### 2. API key
 
-Export the provider API key — see [docs/providers.md#api-keys](docs/providers.md#api-keys). The default is Anthropic's Claude Haiku; [Switching providers](docs/providers.md#switching-providers) has a copy-pasteable block for OpenAI with `gpt-5.6-luna`.
+Export the provider API key — see [docs/providers.md#api-keys](docs/providers.md#api-keys). The default is Anthropic's Claude Haiku; [Switching providers](docs/providers.md#switching-providers) has a copy-pasteable block for OpenAI with `gpt-6-luna`.
 
 That's it — ccgate is now running with its embedded defaults. To customize what is allowed or denied, see [docs/rule-tuning.md](docs/rule-tuning.md); for background on how rules work, see [Concepts](#concepts).
 
@@ -177,7 +177,7 @@ See [docs/devin-cli.md](docs/devin-cli.md) for the full lookup order, user-level
 
 ### 2. API key
 
-Export the provider API key — see [docs/providers.md#api-keys](docs/providers.md#api-keys). The default is Anthropic's Claude Haiku; [Switching providers](docs/providers.md#switching-providers) has a copy-pasteable block for OpenAI with `gpt-5.6-luna`.
+Export the provider API key — see [docs/providers.md#api-keys](docs/providers.md#api-keys). The default is Anthropic's Claude Haiku; [Switching providers](docs/providers.md#switching-providers) has a copy-pasteable block for OpenAI with `gpt-6-luna`.
 
 That's it — ccgate is now running with its embedded defaults. To customize what is allowed or denied, see [docs/rule-tuning.md](docs/rule-tuning.md); for background on how rules work, see [Concepts](#concepts).
 

@@ -36,7 +36,7 @@ ccgate は target ごとに以下の層を順に読み込みます。各層は�
 | list: `allow` / `deny` / `environment` | 値を設定した layer が前の layer から引き継いだ list を **置き換える** (`[]` でも置換)。設定していない layer は前の値を保持 | embedded `allow: ["A","B"]` + global `allow: ["X"]` → 最終 `allow: ["X"]` |
 | list: `append_allow` / `append_deny` / `append_environment` | 値を設定した layer が前の layer の累積 list の **末尾に追加** | embedded `deny: ["A"]` + project `append_deny: ["P"]` → 最終 `deny: ["A","P"]` |
 | スカラー: `log_*` / `metrics_*` / `fallthrough_strategy` | 各 layer が値を設定していれば per-field で **overwrite**、設定していなければ前の値を保持 | embedded `log_max_size: 5MB` + global `log_max_size: 10MB` → 最終 `log_max_size: 10MB` |
-| ブロック: `provider` (`name` / `model` / `base_url` / `auth` / `timeout_ms` / `reasoning_effort`) | `provider` を書いた layer は **block 全体を置換**。 | embedded `provider: {name: anthropic, model: claude-haiku-4-5}` + global `provider: {name: openai, model: gpt-5.6-luna}` → 最終 `provider: {name: openai, model: gpt-5.6-luna}`。 |
+| ブロック: `provider` (`name` / `model` / `base_url` / `auth` / `timeout_ms` / `reasoning_effort`) | `provider` を書いた layer は **block 全体を置換**。 | embedded `provider: {name: anthropic, model: claude-haiku-5-5}` + global `provider: {name: openai, model: gpt-6-luna}` → 最終 `provider: {name: openai, model: gpt-6-luna}`。 |
 
 `provider` を block 全体で置換するのは、 下位 layer の proxy 用 `base_url` や helper 用 `auth.command` が `name` を切り替えただけの上位 layer に残らないようにするためです。 model だけ変えたい場合は `provider: {name: anthropic, model: claude-sonnet-4-6}` のように block 全体を書き直してください。 global で `auth` を設定している場合、 project-local 側で `provider` を上書きするときも `auth` ブロック全体を書き写す必要があります (書き漏らすと当該プロジェクトで helper 設定が silent に消えます)。
 
@@ -53,7 +53,7 @@ repo 全体に効くポリシーが必要なら、自前 fork の埋込デフォ
 | フィールド               | 型                                | デフォルト                                                                       | 説明                                                                                                       |
 |--------------------------|-----------------------------------|---------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------|
 | `provider.name`          | string                            | `"anthropic"`                                                                   | プロバイダー名。`"anthropic"` / `"openai"` / `"gemini"`。詳細は [docs/ja/providers.md](providers.md)。      |
-| `provider.model`         | string                            | `"claude-haiku-4-5"`                                                            | モデル名。選定指針は [docs/ja/providers.md](providers.md#モデル選択) を参照。                              |
+| `provider.model`         | string                            | `"claude-haiku-5-5"`                                                            | モデル名。選定指針は [docs/ja/providers.md](providers.md#モデル選択) を参照。                              |
 | `provider.base_url`      | string                            | `""`                                                                            | API base URL の上書き。空文字列 (default) で SDK の既定 endpoint を使用。詳細は [docs/ja/providers.md#base_url-と互換-proxy](providers.md#base_url-と互換-proxy)。 |
 | `provider.auth`          | object (`{type, ...}`)            | (省略時は env var)                                                              | refresh される credential を扱う discriminated union。`type=exec` / `type=file` / `type=profile`。詳細は [docs/ja/api-key-helper.md](api-key-helper.md)。 |
 | `provider.timeout_ms`    | int                               | `20000`                                                                         | API タイムアウト (ms)。`0` = タイムアウトなし。                                                            |
@@ -151,7 +151,7 @@ ccgate devin  metrics --days 7         # devin 側も同 shape
   "reason": "Read-only inspection inside repo; matches allow guidance.",
   "credential_source": "",
   "deny_msg": "",
-  "model": "claude-haiku-4-5",
+  "model": "claude-haiku-5-5",
   "in_tok": 4321,
   "out_tok": 87,
   "elapsed_ms": 612,

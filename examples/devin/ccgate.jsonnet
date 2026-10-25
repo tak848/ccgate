@@ -15,7 +15,7 @@
 
   provider: {
     name: 'anthropic',
-    model: 'claude-haiku-4-5',
+    model: 'claude-haiku-5-5',
     timeout_ms: 40000,
     // Profile auth (Anthropic only): see docs/api-key-helper.md.
     // auth: { type: 'profile', profile: 'ccgate' },                           // reads `ant auth login --profile ccgate` credentials, SDK refreshes
