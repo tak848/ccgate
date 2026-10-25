@@ -8,7 +8,7 @@ ccgate は各 PermissionRequest を provider LLM (default: Claude Haiku) に投�
 
 | `provider.name` | underlying SDK | 既定モデル                          |
 |-----------------|----------------|-------------------------------------|
-| `anthropic`     | `anthropic-sdk-go` | `claude-haiku-4-5`               |
+| `anthropic`     | `anthropic-sdk-go` | `claude-haiku-5-5`               |
 | `openai`        | `openai-go`        | (`provider.model` で明示指定が必要) |
 | `gemini`        | Gemini の OpenAI 互換 endpoint 経由で `openai-go` | (同じく明示指定が必要) |
 
@@ -16,13 +16,13 @@ ccgate は各 PermissionRequest を provider LLM (default: Claude Haiku) に投�
 
 任意の layer で `provider.name` (必要なら `provider.model` も) を書き換え、対応する API キー (下の [API キー](#api-キー) 参照) を export してください。キーが見つからない場合 ccgate は上流ツールの確認画面に fallthrough するので、 provider 切替で hook が壊れることはありません。
 
-OpenAI の `gpt-5.6-luna` の場合:
+OpenAI の `gpt-6-luna` の場合:
 
 ```jsonnet
 {
   provider: {
     name: 'openai',
-    model: 'gpt-5.6-luna',
+    model: 'gpt-6-luna',
   },
 }
 ```
@@ -120,7 +120,7 @@ ccgate は各 provider SDK の標準 chat / messages エンドポイントを使
 {
   provider: {
     name: 'openai',
-    model: 'anthropic/claude-haiku-4-5', // proxy が公開している名前
+    model: 'anthropic/claude-haiku-5-5', // proxy が公開している名前
     base_url: 'https://your-proxy.example/v1',
   },
 }
@@ -136,7 +136,7 @@ proxy の API キーを `CCGATE_OPENAI_API_KEY` で export。OpenAI SDK は base
 {
   provider: {
     name: 'anthropic',
-    model: 'claude-haiku-4-5',
+    model: 'claude-haiku-5-5',
     base_url: 'https://your-proxy.example',
   },
 }

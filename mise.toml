@@ -1,6 +1,11 @@
 [tools]
-go = "1.27.1"
-"aqua:golangci/golangci-lint" = "2.13.2"
+go = "1.27.3"
+"aqua:golangci/golangci-lint" = "2.15.0"
+
+# Read and update mise.lock even when a contributor's global config sets
+# lockfile = false (CI installs with --locked, which fails without it).
+[settings]
+lockfile = true
 
 [tasks.build]
 description = "Build the binary (dev use)"

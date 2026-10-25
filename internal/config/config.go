@@ -22,7 +22,7 @@ import (
 
 const (
 	DefaultTimeoutMS = 20_000
-	DefaultModel     = string(anthropic.ModelClaudeHaiku4_5)
+	DefaultModel     = string(anthropic.ModelClaudeHaiku5_5)
 	DefaultProvider  = "anthropic"
 	// DefaultReasoningEffort keeps reasoning off. ccgate classifies a
 	// single tool call, which no model needs to think about, and

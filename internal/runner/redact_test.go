@@ -3,6 +3,8 @@ package runner
 import (
 	"strings"
 	"testing"
+
+	"github.com/tak848/ccgate/internal/prompt"
 )
 
 // TestRedactedUserMessageStripsSensitivePayloads documents which
@@ -18,7 +20,7 @@ func TestRedactedUserMessageStripsSensitivePayloads(t *testing.T) {
 
 	const sentinel = "ZZZ-secret-do-not-log-ZZZ"
 
-	user := `{
+	payload := `{
   "tool_name": "Edit",
   "tool_input": {"file_path": "secrets.txt", "content": "` + sentinel + `"},
   "tool_input_raw": {"file_path": "secrets.txt", "content": "` + sentinel + `"},
@@ -26,6 +28,9 @@ func TestRedactedUserMessageStripsSensitivePayloads(t *testing.T) {
   "recent_transcript": {"entries": ["` + sentinel + `"]},
   "context": {"cwd": "/work/repo"}
 }`
+	// Go through prompt.Build so the test sees the user message in the
+	// exact shape decide() logs.
+	user := prompt.Build(prompt.Args{UserPayload: payload}).User
 
 	got := redactedUserMessage(user)
 

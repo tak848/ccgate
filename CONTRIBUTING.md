@@ -25,6 +25,8 @@ mise run build
 mise run test
 ```
 
+`mise.lock` pins the tool versions in `mise.toml` with per-platform checksums, and CI installs with `mise install --locked`. If you change a version in `mise.toml`, run `mise lock` and commit the updated `mise.lock`; without `--platform` it refreshes the platforms already in the file.
+
 ## Reporting issues
 
 Please open an issue on GitHub with a clear description of the problem and steps to reproduce it.

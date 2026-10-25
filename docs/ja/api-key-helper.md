@@ -21,7 +21,7 @@ provider に渡す credential が静的な環境変数では追いつかない�
 {
   provider: {
     name: 'anthropic',
-    model: 'claude-haiku-4-5',
+    model: 'claude-haiku-5-5',
     auth: {
       type: 'exec',
       command: '/usr/local/bin/my-key-broker --provider anthropic',
@@ -36,7 +36,7 @@ provider に渡す credential が静的な環境変数では追いつかない�
 {
   provider: {
     name: 'anthropic',
-    model: 'claude-haiku-4-5',
+    model: 'claude-haiku-5-5',
     auth: {
       type: 'file',
       path: '~/.config/my-broker/anthropic.json',
@@ -177,7 +177,7 @@ cache fingerprint には `auth.cache_key` も含まれるので、同じ `auth.c
 {
   provider: {
     name: 'anthropic',
-    model: 'claude-haiku-4-5',
+    model: 'claude-haiku-5-5',
     auth: {
       type: 'exec',
       command: 'aws-sts-broker --provider anthropic',
