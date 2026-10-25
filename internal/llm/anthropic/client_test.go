@@ -256,11 +256,11 @@ func TestNonProfileSuppressesEnvDefaults(t *testing.T) {
 		t.Fatalf("Decide: %v", err)
 	}
 
-	// The SDK sends an API key as a Bearer token, the same header a
-	// profile's access token uses, so a leaked profile credential shows
-	// up as a different Bearer value here.
+	// The SDK sends an API key as a Bearer token. This only confirms the
+	// explicit key reached the server; the shadow warning below is what
+	// shows whether env defaults were suppressed.
 	if want := "Bearer sk-ant-explicit"; gotAuth != want {
-		t.Errorf("Authorization = %q, want %q (autoloaded profile credential leaked?)", gotAuth, want)
+		t.Errorf("Authorization = %q, want %q", gotAuth, want)
 	}
 	if out := logBuf.String(); strings.Contains(out, "takes precedence over the profile") {
 		t.Errorf("env defaults not suppressed: SDK emitted shadow warning: %q", out)
