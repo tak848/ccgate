@@ -93,7 +93,7 @@ func extractBashPaths(cwd string, command string) []string {
 		// duplication (`2>&1`) and here-doc delimiters (`<<EOF`).
 		if w.redirect {
 			if i+1 < len(words) && !words[i+1].redirect {
-				if redirectNamesFile(w.text) {
+				if redirectNamesFile(w.text, words[i+1].text) {
 					target := words[i+1]
 					if p, ok := target.pathAt(0); ok {
 						add(p)
@@ -139,10 +139,22 @@ func extractBashPaths(cwd string, command string) []string {
 	return out
 }
 
-// redirectNamesFile reports whether the word after the redirection
-// operator op is a file name.
-func redirectNamesFile(op string) bool {
-	return !strings.HasSuffix(op, "&") && !strings.HasPrefix(op, "<<")
+// fdOperand matches the operand of a duplicating redirection that names
+// a file descriptor rather than a file: `1`, `2-` (move) or `-` (close).
+var fdOperand = regexp.MustCompile(`^([0-9]+-?|-)$`)
+
+// redirectNamesFile reports whether operand, the word after the
+// redirection operator op, is a file name. `>&` and `<&` duplicate a
+// descriptor only when the operand is one (`2>&1`); Bash treats
+// `>& /tmp/out` as redirecting stdout and stderr to that file.
+func redirectNamesFile(op, operand string) bool {
+	if strings.HasPrefix(op, "<<") {
+		return false
+	}
+	if strings.HasSuffix(op, "&") {
+		return !fdOperand.MatchString(operand)
+	}
+	return true
 }
 
 // assignmentLHS matches what may precede `=` in an option or variable

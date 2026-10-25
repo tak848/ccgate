@@ -239,6 +239,14 @@ func TestExtractBashPathsFindsTargets(t *testing.T) {
 			command: `curl 'https://example.com/api?path=/etc/passwd' -o ./out.json`,
 			raw:     []string{"./out.json"},
 		},
+		">& with a file operand redirects to that file": {
+			command: `echo hello >& /tmp/out`,
+			raw:     []string{"/tmp/out"},
+		},
+		"descriptor operands are not files": {
+			command: `cmd 2>&1 3>&- 4<&0`,
+			raw:     nil,
+		},
 		"relative redirection target": {
 			command: `echo hi > out.txt`,
 			raw:     []string{"out.txt"},
