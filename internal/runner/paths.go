@@ -121,7 +121,8 @@ var errUnknownValue = errors.New("value not known before the command runs")
 // expandConfig makes expand.Literal resolve quotes, backslashes, `~` and
 // $HOME the way the shell would, and fail on any other variable and on
 // command or process substitution. A word that fails is skipped rather
-// than turned into a wrong path ("$TMPDIR/x" is not "/x").
+// than turned into a wrong path ("$TMPDIR/x" is not "/x"). Every other
+// variable counts as unset, so `${TMPDIR:-/tmp}` takes its default.
 func expandConfig() *expand.Config {
 	var env []string
 	if home, err := os.UserHomeDir(); err == nil {
@@ -178,12 +179,30 @@ func (c *bashPathCollector) visit(node syntax.Node) bool {
 		}
 	case *syntax.CallExpr:
 		c.args(n.Args)
+	case *syntax.ParamExp, *syntax.ArithmExp, *syntax.ArithmCmd, *syntax.BraceExp:
+		c.markFragments(n)
 	case *syntax.Word:
 		if s, ok := c.literal(n); ok && !c.handled[n] && looksLikePath(s) {
 			c.add(s)
 		}
 	}
 	return true
+}
+
+// markFragments marks the words inside an expansion or arithmetic as
+// handled. They are pieces of a larger value (the `/etc` default of
+// `"./cache/${HOME:-/etc}"`), not paths of their own. Words in command
+// and process substitutions are left alone, since those are commands.
+func (c *bashPathCollector) markFragments(node syntax.Node) {
+	syntax.Walk(node, func(n syntax.Node) bool {
+		switch n := n.(type) {
+		case *syntax.CmdSubst, *syntax.ProcSubst:
+			return false
+		case *syntax.Word:
+			c.handled[n] = true
+		}
+		return true
+	})
 }
 
 // args collects what a command's arguments name besides the words that

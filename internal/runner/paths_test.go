@@ -268,6 +268,14 @@ func TestExtractBashPathsFindsTargets(t *testing.T) {
 			command: `targets=( /etc/important ./build ); rm -rf "${targets[@]}"`,
 			raw:     []string{"/etc/important", "./build"},
 		},
+		"default inside an expansion is not a path of its own": {
+			command: `rm -rf "./cache/${XDG_CACHE_HOME:-/etc}" ./a$((1+1))`,
+			raw:     []string{"./cache/etc", "./a2"},
+		},
+		"command inside an expansion default runs": {
+			command: `echo ${X:-$(rm -rf /tmp/y)}`,
+			raw:     []string{"/tmp/y"},
+		},
 		"test operands": {
 			command: `[[ -e /etc/x ]] && echo found`,
 			raw:     []string{"/etc/x"},
