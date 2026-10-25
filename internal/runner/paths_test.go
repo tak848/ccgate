@@ -232,6 +232,14 @@ func TestExtractBashPathsFindsTargets(t *testing.T) {
 			command: "cat <<EOF > out.txt\n> /etc/passwd\nEOF",
 			raw:     []string{"out.txt"},
 		},
+		"commit message from a here-doc is not a path": {
+			command: "git commit -m \"$(cat <<'EOF'\nfix: handle /etc/hosts lookup\nEOF\n)\"",
+			raw:     nil,
+		},
+		"command substitution in an unquoted here-doc runs": {
+			command: "bash <<EOF\n$(rm -rf /x)\nEOF",
+			raw:     []string{"/x"},
+		},
 		"comment is not a command": {
 			command: `ls /x # rm -rf /etc`,
 			raw:     []string{"/x"},
