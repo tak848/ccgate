@@ -46,7 +46,7 @@ Claude Code は標準 PermissionRequest payload を流します ([upstream hooks
 - `referenced_paths`: `tool_input` から best-effort で抽出した path のリスト。対象 tool は `Read` / `Write` / `Edit` / `MultiEdit` / `Glob` / `Grep` / `Bash` のみ。それ以外の tool (MCP / user-interaction tool) では空。LLM は `tool_input_raw` から raw payload を直接読めます
 - `permission_mode`: `"plan"` のとき system prompt を plan mode rule に切替。`"bypassPermissions"` / `"dontAsk"` は ccgate を fallthrough で短絡
 - `cwd`: git context builder (`gitutil.RepoRoot`, branch, worktree) に渡す。working tree の dirty/clean は渡しません
-- `transcript_path`: デフォルトでは recent-transcript loader が末尾 N 件を読み、ユーザー意図 context として LLM に渡す。`include_recent_transcript_in_prompt: false` で省略可能
+- `transcript_path`: デフォルトでは recent-transcript loader が transcript の末尾を読み、直近のユーザーメッセージ 3 件 (各 200 文字まで) と直近の tool 呼び出し 5 件の tool 名を、ユーザー意図 context として LLM に渡す。transcript の大半は tool の結果なので、末尾 64 KiB から読み始め、ユーザーメッセージが 3 件そろうまで最大 4 MiB まで範囲を広げる。Claude Code 自身が書く行 (meta 行、slash command のエコー、コマンド出力、task 通知、中断マーカー) と subagent の行はユーザーメッセージとして数えない。`include_recent_transcript_in_prompt: false` で省略可能
 - `permission_suggestions`: LLM に背景情報として転送
 - `settings_permissions`: ccgate が `~/.claude/settings.json` を別途読み、ユーザー定義の static allow / deny パターンを LLM に hint として渡す (whitelist 必須ではない、後述「settings.json パターンが whitelist 要件ではない理由」参照)
 
