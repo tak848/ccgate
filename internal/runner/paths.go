@@ -27,17 +27,45 @@ func referencedPaths(input HookInput) []string {
 	}
 }
 
+// homePrefixes are the spellings of the home directory a shell command
+// commonly starts a path with. shellSplit keeps `$HOME` literal, so
+// they are expanded here.
+var homePrefixes = []string{"~", "$HOME", "${HOME}"}
+
+// cutHomePrefix reports whether value starts with a home-directory
+// spelling, alone or followed by `/`, and returns the rest of the path.
+func cutHomePrefix(value string) (string, bool) {
+	for _, prefix := range homePrefixes {
+		rest, found := strings.CutPrefix(value, prefix)
+		if found && (rest == "" || strings.HasPrefix(rest, "/")) {
+			return strings.TrimPrefix(rest, "/"), true
+		}
+	}
+	return "", false
+}
+
+// expandHome replaces a leading home-directory spelling with the home
+// directory. The value is returned unchanged when the home directory
+// cannot be resolved.
+func expandHome(value string) string {
+	rest, ok := cutHomePrefix(value)
+	if !ok {
+		return value
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return value
+	}
+	return filepath.Join(home, rest)
+}
+
 func expandPaths(cwd string, values ...string) []string {
 	var out []string
 	for _, value := range values {
 		if value == "" {
 			continue
 		}
-		if after, ok := strings.CutPrefix(value, "~/"); ok {
-			if home, err := os.UserHomeDir(); err == nil {
-				value = filepath.Join(home, after)
-			}
-		}
+		value = expandHome(value)
 		if filepath.IsAbs(value) {
 			out = append(out, filepath.Clean(value))
 			continue
@@ -74,12 +102,20 @@ func extractBashPaths(cwd string, command string) []string {
 			i++
 			continue
 		}
-		if strings.HasPrefix(token, "--") && strings.Contains(token, "=") {
-			_, rhs, found := strings.Cut(token, "=")
-			if found && looksLikePathToken(rhs) {
-				candidates = append(candidates, rhs)
-				continue
+		// Redirections written without a space (`>/etc/x`, `2>>~/log`,
+		// `cmd>/x`): the target follows the operator inside the token.
+		if before, target, ok := splitRedirect(token); ok {
+			for _, part := range []string{before, target} {
+				if looksLikePathToken(part) {
+					candidates = append(candidates, part)
+				}
 			}
+			continue
+		}
+		// `--file=/x`, `of=/dev/sda`, `PREFIX=~/opt`: the value after `=`.
+		if _, rhs, found := strings.Cut(token, "="); found && looksLikePathToken(rhs) {
+			candidates = append(candidates, rhs)
+			continue
 		}
 		if looksLikePathToken(token) {
 			candidates = append(candidates, token)
@@ -89,14 +125,31 @@ func extractBashPaths(cwd string, command string) []string {
 	return expandPaths(cwd, candidates...)
 }
 
+// splitRedirect splits a token at its first shell redirection operator
+// (`>`, `>>`, `<`, `>|`, `&>`, `2>&`, ...) into what precedes the
+// operator and the redirection target after it.
+func splitRedirect(token string) (before, target string, ok bool) {
+	i := strings.IndexAny(token, "<>")
+	if i < 0 {
+		return "", "", false
+	}
+	j := i
+	for j < len(token) && strings.ContainsRune("<>|&", rune(token[j])) {
+		j++
+	}
+	return token[:i], token[j:], true
+}
+
 func looksLikePathToken(token string) bool {
 	if token == "." || token == ".." {
 		return true
 	}
+	if _, ok := cutHomePrefix(token); ok {
+		return true
+	}
 	return strings.HasPrefix(token, "/") ||
 		strings.HasPrefix(token, "./") ||
-		strings.HasPrefix(token, "../") ||
-		strings.HasPrefix(token, "~/")
+		strings.HasPrefix(token, "../")
 }
 
 func uniqueNonEmpty(values []string) []string {

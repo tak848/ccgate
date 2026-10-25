@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -70,6 +71,12 @@ func TestLooksLikePathToken(t *testing.T) {
 		{"./local", true},
 		{"../parent", true},
 		{"~/docs", true},
+		{"~", true},
+		{"$HOME/docs", true},
+		{"${HOME}/docs", true},
+		{"$HOME", true},
+		{"~user/docs", false},
+		{"$HOMEDIR/docs", false},
 		{"git", false},
 		{"--verbose", false},
 		{"", false},
@@ -171,6 +178,89 @@ func TestExtractBashPaths(t *testing.T) {
 			got := extractBashPaths(tt.cwd, tt.command)
 			if len(got) != tt.wantLen {
 				t.Fatalf("extractBashPaths(%q, %q) got %d paths %v, want %d", tt.cwd, tt.command, len(got), got, tt.wantLen)
+			}
+		})
+	}
+}
+
+// TestExtractBashPathsFindsTargets pins which raw tokens a command
+// yields. The expected paths go through expandPaths too, so the cases
+// stay independent of OS path semantics and only check extraction.
+func TestExtractBashPathsFindsTargets(t *testing.T) {
+	t.Parallel()
+
+	const cwd = "/tmp/repo"
+	cases := map[string]struct {
+		command string
+		raw     []string
+	}{
+		"redirect without a space": {
+			command: `echo hi >/etc/motd`,
+			raw:     []string{"/etc/motd"},
+		},
+		"append redirect with fd": {
+			command: `make 2>>~/build.log`,
+			raw:     []string{"~/build.log"},
+		},
+		"redirect inside a token": {
+			command: `cat ./a>/tmp/out`,
+			raw:     []string{"./a", "/tmp/out"},
+		},
+		"fd duplication is not a path": {
+			command: `go test ./... 2>&1`,
+			raw:     []string{"./..."},
+		},
+		"home directory alone": {
+			command: `rm -rf ~`,
+			raw:     []string{"~"},
+		},
+		"HOME variable": {
+			command: `rm -rf "$HOME/.ssh" ${HOME}/.aws`,
+			raw:     []string{"$HOME/.ssh", "${HOME}/.aws"},
+		},
+		"value after = without a leading --": {
+			command: `dd if=./disk.img of=/dev/sda`,
+			raw:     []string{"./disk.img", "/dev/sda"},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			got := extractBashPaths(cwd, tc.command)
+			want := expandPaths(cwd, tc.raw...)
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("extractBashPaths(%q) = %v, want %v", tc.command, got, want)
+			}
+		})
+	}
+}
+
+func TestExpandPathsHomeForms(t *testing.T) {
+	t.Parallel()
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("no home directory: %v", err)
+	}
+	cases := map[string]struct {
+		value string
+		want  string
+	}{
+		"tilde alone":    {value: "~", want: home},
+		"tilde slash":    {value: "~/docs/a.md", want: filepath.Join(home, "docs", "a.md")},
+		"HOME variable":  {value: "$HOME/.ssh", want: filepath.Join(home, ".ssh")},
+		"braced HOME":    {value: "${HOME}/.aws", want: filepath.Join(home, ".aws")},
+		"HOME alone":     {value: "$HOME", want: home},
+		"other variable": {value: "$HOMEDIR/x", want: filepath.Join("/cwd", "$HOMEDIR", "x")},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			got := expandPaths("/cwd", tc.value)
+			if len(got) != 1 || got[0] != filepath.Clean(tc.want) {
+				t.Fatalf("expandPaths(%q) = %v, want [%s]", tc.value, got, tc.want)
 			}
 		})
 	}

@@ -206,7 +206,7 @@ What ccgate puts in front of the LLM (representative fields):
 
 - `tool_name`, `tool_input`, and `tool_input_raw` (the original JSON payload, passed through verbatim).
 - `cwd`, `repo_root`, `branch_name`, and worktree info from `gitutil.Context`. The working-tree dirty/clean state is **not** delivered.
-- `referenced_paths` — paths extracted from `tool_input` on a best-effort basis. Supported tools: `Read`, `Write`, `Edit`, `MultiEdit`, `Glob`, `Grep`, `Bash` (Claude) and `read`, `write`, `edit`, `glob`, `grep`, `exec` (Devin). For `apply_patch` (Codex / Devin) and MCP tools, `referenced_paths` is empty; the LLM reads `tool_input_raw` directly to see hunk targets or call arguments.
+- `referenced_paths` — paths extracted from `tool_input` on a best-effort basis. Supported tools: `Read`, `Write`, `Edit`, `MultiEdit`, `Glob`, `Grep`, `Bash` (Claude) and `read`, `write`, `edit`, `glob`, `grep`, `exec` (Devin). For `apply_patch` (Codex / Devin) and MCP tools, `referenced_paths` is empty; the LLM reads `tool_input_raw` directly to see hunk targets or call arguments. For shell commands it picks up tokens that look like paths (`/`, `./`, `../`, `~`, `$HOME`, `${HOME}`), redirection targets such as `>/etc/x`, and `key=/path` values; it still misses other variables, globs, and paths relative to an earlier `cd`, so the system prompt tells the LLM that an empty list proves nothing.
 - Claude-only: `permission_mode` (switches the prompt to plan-mode rules when `"plan"`), `permission_suggestions`, `recent_transcript`, and `settings_permissions` (treated as a hint, not a whitelist).
 
 For the complete input list per target, see [docs/claude-code.md](docs/claude-code.md), [docs/codex-cli.md](docs/codex-cli.md), and [docs/devin-cli.md](docs/devin-cli.md).
