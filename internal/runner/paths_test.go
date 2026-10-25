@@ -8,69 +8,6 @@ import (
 	"testing"
 )
 
-func TestShellSplit(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name  string
-		input string
-		want  []string
-	}{
-		{
-			name:  "simple tokens",
-			input: "git status",
-			want:  []string{"git", "status"},
-		},
-		{
-			name:  "double quotes",
-			input: `git -C "../other repo" status`,
-			want:  []string{"git", "-C", "../other repo", "status"},
-		},
-		{
-			name:  "single quotes",
-			input: "echo 'hello world'",
-			want:  []string{"echo", "hello world"},
-		},
-		{
-			name:  "escaped space",
-			input: `echo hello\ world`,
-			want:  []string{"echo", "hello world"},
-		},
-		{
-			name:  "empty input",
-			input: "",
-			want:  nil,
-		},
-		{
-			name:  "tabs and newlines",
-			input: "a\tb\nc",
-			want:  []string{"a", "b", "c"},
-		},
-		{
-			name:  "unquoted redirection splits the word",
-			input: "cat ./a>/tmp/out 2>&1",
-			want:  []string{"cat", "./a", ">", "/tmp/out", ">&", "1"},
-		},
-		{
-			name:  "quoted redirection characters stay in the word",
-			input: `printf 'hi >/tmp/out' "a<b"`,
-			want:  []string{"printf", "hi >/tmp/out", "a<b"},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			var got []string
-			for _, w := range shellSplit(tt.input) {
-				got = append(got, w.text)
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Fatalf("shellSplit(%q) = %v, want %v", tt.input, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestLooksLikePathToken(t *testing.T) {
 	t.Parallel()
 
@@ -274,6 +211,50 @@ func TestExtractBashPathsFindsTargets(t *testing.T) {
 		"path containing = stays one path": {
 			command: `rm -rf ./cache=/etc`,
 			raw:     []string{"./cache=/etc"},
+		},
+		"commands after ; and |": {
+			command: `echo hi;rm -rf /opt/x|tee /tmp/log`,
+			raw:     []string{"/opt/x", "/tmp/log"},
+		},
+		"subshell": {
+			command: `(cd /tmp && rm -rf ./build)`,
+			raw:     []string{"/tmp", "./build"},
+		},
+		"command substitution": {
+			command: `echo $(cat /etc/hosts) > ./hosts.txt`,
+			raw:     []string{"/etc/hosts", "./hosts.txt"},
+		},
+		"process substitution": {
+			command: `diff <(sort ./a) <(sort ./b)`,
+			raw:     []string{"./a", "./b"},
+		},
+		"here-doc body is not a command": {
+			command: "cat <<EOF > out.txt\n> /etc/passwd\nEOF",
+			raw:     []string{"out.txt"},
+		},
+		"comment is not a command": {
+			command: `ls /x # rm -rf /etc`,
+			raw:     []string{"/x"},
+		},
+		"for loop items": {
+			command: `for f in ./a ./b; do rm "$f"; done`,
+			raw:     []string{"./a", "./b"},
+		},
+		"assignments": {
+			command: `PREFIX=/opt/x make install && export DEST=~/opt`,
+			raw:     []string{"/opt/x", "~/opt"},
+		},
+		"tilde after = of an option": {
+			command: `./configure --prefix=~/opt`,
+			raw:     []string{"./configure", "~/opt"},
+		},
+		"value unknown before the command runs": {
+			command: `rm -rf "$TMPDIR/cache" $(mktemp -d)/x`,
+			raw:     nil,
+		},
+		"command that does not parse falls back to words": {
+			command: `echo 'unterminated ./x`,
+			raw:     []string{"./x"},
 		},
 	}
 
