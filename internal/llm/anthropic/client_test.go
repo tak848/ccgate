@@ -272,33 +272,54 @@ func TestNonProfileSuppressesEnvDefaults(t *testing.T) {
 
 // TestEndpointWireFormat pins the API version and credential header
 // that reach the server: the SDK's defaults for the Claude API, and
-// v1's for a base_url (see proxyAPIVersion).
+// v1's for a proxy, whether provider.base_url or the profile names it
+// (see proxyAPIVersion).
 //
-// Cannot run t.Parallel — the profile case mutates process env via
+// Cannot run t.Parallel — the profile cases mutate process env via
 // t.Setenv.
 func TestEndpointWireFormat(t *testing.T) {
+	// serverURL stands for the test server's URL in the table.
+	const serverURL = "<test server>"
 	cases := map[string]struct {
-		client      Client
-		viaBaseURL  bool
-		wantAuth    string
-		wantAPIKey  string
-		wantVersion string // empty: whatever the SDK sends, as long as it is not proxyAPIVersion
+		client         Client
+		baseURL        string // provider.base_url
+		profileBaseURL string // the profile's own base_url
+		wantAuth       string
+		wantAPIKey     string
+		wantVersion    string // empty: whatever the SDK sends, as long as it is not proxyAPIVersion
 	}{
 		"API key to the Claude API": {
 			client:   Client{APIKey: "sk-ant-test"},
 			wantAuth: "Bearer sk-ant-test",
 		},
-		"API key to a base_url": {
+		"API key with base_url set to the Claude API": {
+			client:   Client{APIKey: "sk-ant-test"},
+			baseURL:  claudeAPIBaseURL + "/",
+			wantAuth: "Bearer sk-ant-test",
+		},
+		"API key to a proxy base_url": {
 			client:      Client{APIKey: "sk-ant-test"},
-			viaBaseURL:  true,
+			baseURL:     serverURL,
 			wantAPIKey:  "sk-ant-test",
 			wantVersion: proxyAPIVersion,
 		},
-		"profile to a base_url": {
-			client:      Client{UseProfile: true, Profile: "work"},
-			viaBaseURL:  true,
-			wantAuth:    "Bearer fake-access-work",
-			wantVersion: proxyAPIVersion,
+		"profile to a proxy base_url": {
+			client:         Client{UseProfile: true, Profile: "work"},
+			baseURL:        serverURL,
+			profileBaseURL: claudeAPIBaseURL,
+			wantAuth:       "Bearer fake-access-work",
+			wantVersion:    proxyAPIVersion,
+		},
+		"profile whose own base_url is a proxy": {
+			client:         Client{UseProfile: true, Profile: "work"},
+			profileBaseURL: serverURL,
+			wantAuth:       "Bearer fake-access-work",
+			wantVersion:    proxyAPIVersion,
+		},
+		"profile whose own base_url is the Claude API": {
+			client:         Client{UseProfile: true, Profile: "work"},
+			profileBaseURL: claudeAPIBaseURL,
+			wantAuth:       "Bearer fake-access-work",
 		},
 	}
 	for name, tc := range cases {
@@ -316,20 +337,24 @@ func TestEndpointWireFormat(t *testing.T) {
 			}))
 			t.Cleanup(srv.Close)
 
+			resolve := func(u string) string {
+				if u == serverURL {
+					return srv.URL
+				}
+				return u
+			}
 			c := tc.client
 			if c.UseProfile {
 				t.Setenv("ANTHROPIC_CONFIG_DIR", t.TempDir())
-				writeCredentials(t, fixtureProfileConfig(t, c.Profile, srv.URL), c.Profile)
+				writeCredentials(t, fixtureProfileConfig(t, c.Profile, resolve(tc.profileBaseURL)), c.Profile)
 			}
-			if tc.viaBaseURL {
-				c.BaseURL = srv.URL
-			}
+			c.BaseURL = resolve(tc.baseURL)
 			endpointOpts, err := c.endpointOptions()
 			if err != nil {
 				t.Fatalf("endpointOptions: %v", err)
 			}
-			// Without a base_url the options aim at the Claude API, so the
-			// server URL goes last, after the options under test.
+			// Cases aimed at the Claude API must still reach the test
+			// server, so its URL goes last, after the options under test.
 			opts := append([]option.RequestOption{option.WithoutEnvironmentDefaults(), option.WithMaxRetries(0)}, endpointOpts...)
 			opts = append(opts, option.WithBaseURL(srv.URL))
 			client := anthropicsdk.NewClient(opts...)

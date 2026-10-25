@@ -144,7 +144,7 @@ For a proxy that exposes `/v1/messages`:
 
 Export the proxy's API key as `CCGATE_ANTHROPIC_API_KEY`. The Anthropic SDK appends `/v1/messages` itself, so the base URL stops at the host root.
 
-With `base_url` set, ccgate sends the key in `X-Api-Key` and sets `anthropic-version: 2023-06-01`, so a proxy sees the same headers as before ccgate moved to anthropic-sdk-go v2. Without `base_url`, requests to the Claude API use the SDK's defaults: `Authorization: Bearer <key>` and `anthropic-version: 2026-10-21` (see Anthropic's [migration guide](https://platform.claude.com/docs/en/api/migration-2026-10-21)).
+When `base_url` points anywhere other than `https://api.anthropic.com`, ccgate sends the key in `X-Api-Key` and sets `anthropic-version: 2023-06-01`, so a proxy sees the same headers as before ccgate moved to anthropic-sdk-go v2. With `auth.type=profile`, a `base_url` in the profile itself counts the same way (the profile's token goes in `Authorization: Bearer`, as before). Requests to the Claude API use the SDK's defaults: `Authorization: Bearer <key>` and `anthropic-version: 2026-10-21` (see Anthropic's [migration guide](https://platform.claude.com/docs/en/api/migration-2026-10-21)).
 
 ## See also
 
