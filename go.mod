@@ -1,6 +1,6 @@
 module github.com/tak848/ccgate
 
-go 1.27.1
+go 1.27.3
 
 require (
 	github.com/alecthomas/kong v1.16.1
@@ -8,10 +8,10 @@ require (
 	github.com/gofrs/flock v0.13.1
 	github.com/google/go-jsonnet v0.22.0
 	github.com/invopop/jsonschema v0.14.0
-	github.com/openai/openai-go/v3 v3.63.1
-	github.com/pb33f/ordered-map/v2 v2.3.1
-	golang.org/x/sys v0.48.0
-	golang.org/x/term v0.46.0
+	github.com/openai/openai-go/v3 v3.85.1
+	github.com/pb33f/ordered-map/v2 v2.3.2
+	golang.org/x/sys v0.49.0
+	golang.org/x/term v0.47.0
 )
 
 require (
@@ -20,6 +20,7 @@ require (
 	github.com/coder/websocket v1.8.15 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
+	github.com/pb33f/go-yaml v0.1.0 // indirect
 	github.com/standard-webhooks/standard-webhooks/libraries v0.0.1 // indirect
 	github.com/tidwall/gjson v1.19.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
@@ -29,8 +30,7 @@ require (
 	go.opentelemetry.io/otel v1.33.0 // indirect
 	go.opentelemetry.io/otel/metric v1.33.0 // indirect
 	go.opentelemetry.io/otel/trace v1.33.0 // indirect
-	go.yaml.in/yaml/v4 v4.0.0-rc.2 // indirect
-	golang.org/x/crypto v0.54.0 // indirect
-	golang.org/x/sync v0.16.0 // indirect
+	golang.org/x/crypto v0.57.0 // indirect
+	golang.org/x/sync v0.23.0 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
