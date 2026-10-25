@@ -26,6 +26,15 @@ const (
 	maxRetries = 5
 )
 
+// proxyAPIVersion is the anthropic-version sent to a provider.base_url.
+// anthropic-sdk-go v2 sends 2026-10-21 and the API key as
+// Authorization: Bearer, while v1 sent 2023-06-01 and X-Api-Key, and an
+// Anthropic-compatible proxy that worked with v1 may accept only those.
+// Requests to a base_url keep v1's version and key header so upgrading
+// ccgate does not break them. The request ccgate builds uses none of
+// the fields the two versions treat differently.
+const proxyAPIVersion = "2023-06-01"
+
 // ErrNoAPIKey is returned by Decide when neither
 // CCGATE_ANTHROPIC_API_KEY nor ANTHROPIC_API_KEY is set, and no
 // alternative credential source (auth.type=profile) was declared.
@@ -111,19 +120,11 @@ func (c *Client) Decide(ctx context.Context, p llm.Prompt) (llm.Result, error) {
 		option.WithMaxRetries(maxRetries),
 		option.WithoutEnvironmentDefaults(),
 	}
-	if c.UseProfile {
-		profileOpts, err := c.resolveProfileOptions()
-		if err != nil {
-			return llm.Result{}, err
-		}
-		opts = append(opts, profileOpts...)
-	} else {
-		opts = append(opts, option.WithAPIKey(c.APIKey))
+	endpointOpts, err := c.endpointOptions()
+	if err != nil {
+		return llm.Result{}, err
 	}
-	if c.BaseURL != "" {
-		opts = append(opts, option.WithBaseURL(c.BaseURL))
-	}
-	client := anthropicsdk.NewClient(opts...)
+	client := anthropicsdk.NewClient(append(opts, endpointOpts...)...)
 
 	// The SDK's Schema field is map[string]any, whose keys the encoder
 	// sorts alphabetically; OutputSchemaMap injects `properties` as a
@@ -225,6 +226,39 @@ func reasoningParams(effort string) (anthropicsdk.ThinkingConfigParamUnion, anth
 			OfAdaptive: &anthropicsdk.ThinkingConfigAdaptiveParam{},
 		}, anthropicsdk.OutputConfigEffort(effort)
 	}
+}
+
+// endpointOptions returns the credential and base URL options.
+// Requests to the Claude API use the SDK's defaults. Requests to a
+// base_url keep the version and API key header v1 sent (see
+// proxyAPIVersion); a profile's token already went in Authorization
+// under v1, so only the API key path changes header.
+func (c *Client) endpointOptions() ([]option.RequestOption, error) {
+	var opts []option.RequestOption
+	switch {
+	case c.UseProfile:
+		profileOpts, err := c.resolveProfileOptions()
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, profileOpts...)
+	case c.BaseURL != "":
+		// The SDK sends a hand-set key header as it is and adds no
+		// credential of its own.
+		opts = append(opts,
+			option.WithHeader("X-Api-Key", c.APIKey),
+			option.WithHeaderDel("Authorization"),
+		)
+	default:
+		opts = append(opts, option.WithAPIKey(c.APIKey))
+	}
+	if c.BaseURL != "" {
+		opts = append(opts,
+			option.WithBaseURL(c.BaseURL),
+			option.WithHeader("anthropic-version", proxyAPIVersion),
+		)
+	}
+	return opts, nil
 }
 
 // resolveProfileOptions runs the profile-mode credential pipeline

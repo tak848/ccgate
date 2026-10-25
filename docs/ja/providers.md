@@ -144,7 +144,7 @@ proxy の API キーを `CCGATE_OPENAI_API_KEY` で export。OpenAI SDK は base
 
 proxy の API キーを `CCGATE_ANTHROPIC_API_KEY` で export。 Anthropic SDK が `/v1/messages` を自分で append するので、base URL は host root で止めます。
 
-リクエストはキーを `X-Api-Key` ではなく `Authorization: Bearer <key>` で送り、`anthropic-version: 2026-10-21` を付けます (Anthropic の [移行ガイド](https://platform.claude.com/docs/en/api/migration-2026-10-21) を参照)。proxy は両方を受け付ける必要があります。`X-Api-Key` しか読まない proxy は 401 を返し、`CCGATE_ANTHROPIC_API_KEY` 経由の場合は hook が exit 1 になります ([provider が 401/403 を返した場合の挙動](api-key-helper.md#provider-が-401403-を返した場合の挙動) を参照)。
+`base_url` を設定しているときは、キーを `X-Api-Key` で送り、`anthropic-version: 2023-06-01` を付けます。ccgate が anthropic-sdk-go v2 に移る前と同じヘッダーなので、proxy 側から見た変化はありません。`base_url` を設定していないときの Claude API へのリクエストは SDK の既定どおりで、`Authorization: Bearer <key>` と `anthropic-version: 2026-10-21` になります (Anthropic の [移行ガイド](https://platform.claude.com/docs/en/api/migration-2026-10-21) を参照)。
 
 ## 関連
 

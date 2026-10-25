@@ -16,7 +16,9 @@ import (
 	"testing"
 	"time"
 
+	anthropicsdk "github.com/anthropics/anthropic-sdk-go/v2"
 	anthropicconfig "github.com/anthropics/anthropic-sdk-go/v2/config"
+	"github.com/anthropics/anthropic-sdk-go/v2/option"
 
 	"github.com/tak848/ccgate/internal/llm"
 )
@@ -234,9 +236,10 @@ func TestNonProfileSuppressesEnvDefaults(t *testing.T) {
 	writeCredentials(t, credPath, "default")
 	setActiveConfig(t, "default")
 
-	var gotAuth string
+	var gotAuth, gotAPIKey string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
+		gotAPIKey = r.Header.Get("X-Api-Key")
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"id": "msg_test", "type": "message", "role": "assistant", "model": "claude-test",
@@ -256,14 +259,104 @@ func TestNonProfileSuppressesEnvDefaults(t *testing.T) {
 		t.Fatalf("Decide: %v", err)
 	}
 
-	// The SDK sends an API key as a Bearer token. This only confirms the
-	// explicit key reached the server; the shadow warning below is what
-	// shows whether env defaults were suppressed.
-	if want := "Bearer sk-ant-explicit"; gotAuth != want {
-		t.Errorf("Authorization = %q, want %q", gotAuth, want)
+	if gotAPIKey != "sk-ant-explicit" {
+		t.Errorf("X-Api-Key = %q, want sk-ant-explicit", gotAPIKey)
+	}
+	if gotAuth != "" {
+		t.Errorf("autoloaded profile credential leaked: Authorization = %q", gotAuth)
 	}
 	if out := logBuf.String(); strings.Contains(out, "takes precedence over the profile") {
 		t.Errorf("env defaults not suppressed: SDK emitted shadow warning: %q", out)
+	}
+}
+
+// TestEndpointWireFormat pins the API version and credential header
+// that reach the server: the SDK's defaults for the Claude API, and
+// v1's for a base_url (see proxyAPIVersion).
+//
+// Cannot run t.Parallel — the profile case mutates process env via
+// t.Setenv.
+func TestEndpointWireFormat(t *testing.T) {
+	cases := map[string]struct {
+		client      Client
+		viaBaseURL  bool
+		wantAuth    string
+		wantAPIKey  string
+		wantVersion string // empty: whatever the SDK sends, as long as it is not proxyAPIVersion
+	}{
+		"API key to the Claude API": {
+			client:   Client{APIKey: "sk-ant-test"},
+			wantAuth: "Bearer sk-ant-test",
+		},
+		"API key to a base_url": {
+			client:      Client{APIKey: "sk-ant-test"},
+			viaBaseURL:  true,
+			wantAPIKey:  "sk-ant-test",
+			wantVersion: proxyAPIVersion,
+		},
+		"profile to a base_url": {
+			client:      Client{UseProfile: true, Profile: "work"},
+			viaBaseURL:  true,
+			wantAuth:    "Bearer fake-access-work",
+			wantVersion: proxyAPIVersion,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			var got http.Header
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				got = r.Header.Clone()
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"id": "msg_test", "type": "message", "role": "assistant", "model": "claude-test",
+					"content":     []map[string]any{{"type": "text", "text": `{"behavior":"allow"}`}},
+					"stop_reason": "end_turn",
+					"usage":       map[string]any{"input_tokens": 1, "output_tokens": 1},
+				})
+			}))
+			t.Cleanup(srv.Close)
+
+			c := tc.client
+			if c.UseProfile {
+				t.Setenv("ANTHROPIC_CONFIG_DIR", t.TempDir())
+				writeCredentials(t, fixtureProfileConfig(t, c.Profile, srv.URL), c.Profile)
+			}
+			if tc.viaBaseURL {
+				c.BaseURL = srv.URL
+			}
+			endpointOpts, err := c.endpointOptions()
+			if err != nil {
+				t.Fatalf("endpointOptions: %v", err)
+			}
+			// Without a base_url the options aim at the Claude API, so the
+			// server URL goes last, after the options under test.
+			opts := append([]option.RequestOption{option.WithoutEnvironmentDefaults(), option.WithMaxRetries(0)}, endpointOpts...)
+			opts = append(opts, option.WithBaseURL(srv.URL))
+			client := anthropicsdk.NewClient(opts...)
+			if _, err := client.Messages.New(context.Background(), anthropicsdk.MessageNewParams{
+				Model:     "claude-test",
+				MaxTokens: 1,
+				Messages:  []anthropicsdk.MessageParam{anthropicsdk.NewUserMessage(anthropicsdk.NewTextBlock("hi"))},
+			}); err != nil {
+				t.Fatalf("Messages.New: %v", err)
+			}
+
+			if v := got.Get("Authorization"); v != tc.wantAuth {
+				t.Errorf("Authorization = %q, want %q", v, tc.wantAuth)
+			}
+			if v := got.Get("X-Api-Key"); v != tc.wantAPIKey {
+				t.Errorf("X-Api-Key = %q, want %q", v, tc.wantAPIKey)
+			}
+			versions := got.Values("anthropic-version")
+			switch {
+			case len(versions) != 1:
+				t.Errorf("anthropic-version = %q, want one value", versions)
+			case tc.wantVersion != "" && versions[0] != tc.wantVersion:
+				t.Errorf("anthropic-version = %q, want %q", versions[0], tc.wantVersion)
+			case tc.wantVersion == "" && versions[0] == proxyAPIVersion:
+				t.Errorf("anthropic-version = %q, want the SDK's own version", versions[0])
+			}
+		})
 	}
 }
 
