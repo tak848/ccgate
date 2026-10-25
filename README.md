@@ -294,6 +294,7 @@ Column meanings, the JSON entry schema, and the credential-failure aggregation a
 
 ## Known limitations
 
+- **Text in the payload can still steer the LLM.** The system prompt tells the LLM that everything in the payload is data, and that a command or tool argument addressed to the classifier means deny. A model can still be fooled by text in a command, a file, or the transcript it is shown, so keep hard limits (secrets, production credentials) in the host tool's static deny rules too, not only in ccgate guidance.
 - **Plan mode correctness is prompt-only (Claude only).** Under `permission_mode == "plan"`, ccgate relies on the LLM plus prose in the system prompt to (a) reject implementation-side writes and (b) allow read-only queries without requiring an allow-guidance match. Either side can misfire.
 - **No surgical reset for a single embedded default rule.** A layer can either **replace** a list wholesale (`allow: [...]`) or **append** to it (`append_allow: [...]`). Removing one specific embedded `allow` / `deny` rule while keeping the rest requires re-stating the whole list minus that one entry.
 - **No runtime conditional logic in jsonnet.** jsonnet evaluation happens once per hook invocation, at config-load time, **before ccgate sees `tool_input`**. Rules cannot branch on `tool_input` / git working-tree state / external command output. Runtime classification is the LLM's job. Config-time env reads via `std.native('env')(name)` / `std.native('must_env')(name)` are available for things like embedding a host name into a rule string.

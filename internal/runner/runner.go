@@ -812,8 +812,12 @@ func buildPrompt(cfg config.Config, in HookInput, ro runtimeOptions) (llm.Prompt
 }
 
 func redactedUserMessage(user string) string {
+	payload, ok := prompt.UnwrapPayload(user)
+	if !ok {
+		return "{}"
+	}
 	var m map[string]any
-	if err := json.Unmarshal([]byte(user), &m); err != nil {
+	if err := json.Unmarshal([]byte(payload), &m); err != nil {
 		return "{}"
 	}
 	// tool_input_raw carries the verbatim upstream payload alongside
