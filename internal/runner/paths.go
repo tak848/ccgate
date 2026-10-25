@@ -211,25 +211,37 @@ func (c *bashPathCollector) args(args []*syntax.Word) {
 }
 
 // valueAfterEquals returns the value after the first `=` of an option or
-// assignment word (`--file=/x`, `of=/dev/sda`), expanded as a word of its
-// own: a `~` right after the `=` expands (`prefix=~/opt`, as Bash does
-// for assignment-like arguments) and quoted text stays literal
-// (`--output='$HOME/out'`). Other words containing `=` (URLs with
+// assignment word (`--file=/x`, `of=/dev/sda`). Quoted text in it stays
+// literal (`--output='$HOME/out'`). Other words containing `=` (URLs with
 // `?path=/etc/x`, paths such as `./cache=/etc`) have no such value.
 func (c *bashPathCollector) valueAfterEquals(w *syntax.Word) (string, bool) {
+	// An unquoted `=` in the leading literal: expand what follows it as a
+	// word of its own, so a `~` right after the `=` expands
+	// (`prefix=~/opt`), as Bash does for assignment-like arguments.
 	if len(w.Parts) == 0 {
 		return "", false
 	}
-	lit, ok := w.Parts[0].(*syntax.Lit)
+	if lit, ok := w.Parts[0].(*syntax.Lit); ok {
+		if lhs, rest, found := strings.Cut(lit.Value, "="); found {
+			if !assignmentLHS.MatchString(lhs) {
+				return "", false
+			}
+			parts := append([]syntax.WordPart{&syntax.Lit{Value: rest}}, w.Parts[1:]...)
+			return c.literal(&syntax.Word{Parts: parts})
+		}
+	}
+	// Otherwise the `=` is quoted (`'--output=/x'`). No tilde after it
+	// expands, and expanding the whole word already applied the quoting,
+	// so the result is split as it is.
+	s, ok := c.literal(w)
 	if !ok {
 		return "", false
 	}
-	lhs, rest, found := strings.Cut(lit.Value, "=")
-	if !found || !assignmentLHS.MatchString(lhs) {
+	lhs, value, found := strings.Cut(s, "=")
+	if !found || !assignmentLHS.MatchString(lhs) || value == "" {
 		return "", false
 	}
-	parts := append([]syntax.WordPart{&syntax.Lit{Value: rest}}, w.Parts[1:]...)
-	return c.literal(&syntax.Word{Parts: parts})
+	return value, true
 }
 
 // fdOperand matches the operand of a duplicating redirection that names

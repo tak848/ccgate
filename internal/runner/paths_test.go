@@ -260,6 +260,10 @@ func TestExtractBashPathsFindsTargets(t *testing.T) {
 			command: `curl --output='$HOME/out' https://example.com`,
 			raw:     nil,
 		},
+		"whole option quoted": {
+			command: `curl '--output=/etc/example' "--config=$HOME/.curlrc" '--trace=$HOME/t' https://example.com`,
+			raw:     []string{"/etc/example", "$HOME/.curlrc"},
+		},
 		"array elements": {
 			command: `targets=( /etc/important ./build ); rm -rf "${targets[@]}"`,
 			raw:     []string{"/etc/important", "./build"},
