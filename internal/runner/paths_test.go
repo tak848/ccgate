@@ -254,7 +254,19 @@ func TestExtractBashPathsFindsTargets(t *testing.T) {
 		},
 		"tilde after = of an option": {
 			command: `./configure --prefix=~/opt`,
-			raw:     []string{"./configure", "~/opt"},
+			raw:     []string{"~/opt", "./configure"},
+		},
+		"quoted HOME after = is literal text": {
+			command: `curl --output='$HOME/out' https://example.com`,
+			raw:     nil,
+		},
+		"array elements": {
+			command: `targets=( /etc/important ./build ); rm -rf "${targets[@]}"`,
+			raw:     []string{"/etc/important", "./build"},
+		},
+		"test operands": {
+			command: `[[ -e /etc/x ]] && echo found`,
+			raw:     []string{"/etc/x"},
 		},
 		"value unknown before the command runs": {
 			command: `rm -rf "$TMPDIR/cache" $(mktemp -d)/x`,

@@ -84,17 +84,19 @@ func expandPaths(cwd string, values ...string) []string {
 	return out
 }
 
-// extractBashPaths parses command as Bash and collects the paths its
-// commands, assignments, loops and redirections name, including those
-// inside `$(...)`, `<(...)` and subshells. Here-doc bodies and comments
-// are not commands, so paths in them are not collected.
+// extractBashPaths parses command as Bash and collects the words in it
+// that are paths (arguments, assignment and array values, loop items,
+// test operands), redirection targets, and the paths a few argument
+// forms name, including inside `$(...)`, `<(...)` and subshells.
+// Here-doc bodies and comments are not words of the command, so paths
+// in them are not collected.
 func extractBashPaths(cwd string, command string) []string {
 	file, err := syntax.NewParser(syntax.Variant(syntax.LangBash)).Parse(strings.NewReader(command), "")
 	if err != nil {
 		// Not valid Bash: a zsh-only construct, or a command cut short.
 		return fallbackBashPaths(cwd, command)
 	}
-	c := &bashPathCollector{cwd: cwd, cfg: expandConfig()}
+	c := &bashPathCollector{cwd: cwd, cfg: expandConfig(), handled: map[*syntax.Word]bool{}}
 	syntax.Walk(file, c.visit)
 	return c.paths
 }
@@ -139,6 +141,10 @@ type bashPathCollector struct {
 	cwd   string
 	cfg   *expand.Config
 	paths []string
+	// handled marks words a rule above the generic one already dealt
+	// with (redirection operands, here-doc bodies, the git -C directory),
+	// so visiting them as plain words neither repeats nor misreads them.
+	handled map[*syntax.Word]bool
 }
 
 func (c *bashPathCollector) add(p string) {
@@ -153,69 +159,77 @@ func (c *bashPathCollector) literal(w *syntax.Word) (string, bool) {
 	return s, err == nil && s != ""
 }
 
+// visit runs on every node of the syntax tree. The walk continues into
+// handled words too, because command substitutions inside them (even in
+// an unquoted here-doc body) still run.
 func (c *bashPathCollector) visit(node syntax.Node) bool {
 	switch n := node.(type) {
 	case *syntax.Redirect:
 		// The word after a redirection is the file it reads or writes,
 		// whatever it looks like (`> out.txt`).
+		c.handled[n.Word] = true
+		if n.Hdoc != nil {
+			c.handled[n.Hdoc] = true
+		}
 		if redirectNamesFile(n) {
 			if s, ok := c.literal(n.Word); ok {
 				c.add(s)
 			}
 		}
-	case *syntax.Assign:
-		if s, ok := c.literal(n.Value); ok && looksLikePath(s) {
-			c.add(s)
-		}
-	case *syntax.WordIter:
-		for _, w := range n.Items {
-			if s, ok := c.literal(w); ok && looksLikePath(s) {
-				c.add(s)
-			}
-		}
 	case *syntax.CallExpr:
 		c.args(n.Args)
+	case *syntax.Word:
+		if s, ok := c.literal(n); ok && !c.handled[n] && looksLikePath(s) {
+			c.add(s)
+		}
 	}
 	return true
 }
 
-// args collects paths from a command's arguments: the directory of
-// `git -C`, words that are paths, and the value of `--file=/x` or
-// `of=/dev/sda`.
+// args collects what a command's arguments name besides the words that
+// are paths themselves, which visit collects: the directory of `git -C`
+// and the value after `=` of an option or assignment.
 func (c *bashPathCollector) args(args []*syntax.Word) {
-	isGit := len(args) > 0 && args[0].Lit() == "git"
-	for i := 0; i < len(args); i++ {
-		s, ok := c.literal(args[i])
-		if !ok {
-			continue
-		}
-		if isGit && i == 1 {
-			if s == "-C" && i+1 < len(args) {
-				if dir, ok := c.literal(args[i+1]); ok {
+	if len(args) > 1 && args[0].Lit() == "git" {
+		if s, ok := c.literal(args[1]); ok {
+			switch {
+			case s == "-C" && len(args) > 2:
+				c.handled[args[2]] = true
+				if dir, ok := c.literal(args[2]); ok {
 					c.add(dir)
 				}
-				i++
-				continue
+			case len(s) > len("-C") && strings.HasPrefix(s, "-C"):
+				c.add(strings.TrimPrefix(s, "-C"))
 			}
-			if dir, found := strings.CutPrefix(s, "-C"); found && dir != "" {
-				c.add(dir)
-				continue
-			}
-		}
-		// A word that is itself a path wins over the `=` rule below, so
-		// `./cache=/etc` stays one path.
-		if looksLikePath(s) {
-			c.add(s)
-			continue
-		}
-		// The value after `=` of an option or assignment. Other words
-		// containing `=` (URLs with `?path=/etc/x`) name no local file.
-		// expand.Literal only expands a `~` at the start of a word, so
-		// one right after the `=` (`prefix=~/opt`) is expanded here.
-		if lhs, value, found := strings.Cut(s, "="); found && assignmentLHS.MatchString(lhs) && looksLikePathToken(value) {
-			c.add(expandHome(value))
 		}
 	}
+	for _, w := range args {
+		if value, ok := c.valueAfterEquals(w); ok && looksLikePath(value) {
+			c.add(value)
+		}
+	}
+}
+
+// valueAfterEquals returns the value after the first `=` of an option or
+// assignment word (`--file=/x`, `of=/dev/sda`), expanded as a word of its
+// own: a `~` right after the `=` expands (`prefix=~/opt`, as Bash does
+// for assignment-like arguments) and quoted text stays literal
+// (`--output='$HOME/out'`). Other words containing `=` (URLs with
+// `?path=/etc/x`, paths such as `./cache=/etc`) have no such value.
+func (c *bashPathCollector) valueAfterEquals(w *syntax.Word) (string, bool) {
+	if len(w.Parts) == 0 {
+		return "", false
+	}
+	lit, ok := w.Parts[0].(*syntax.Lit)
+	if !ok {
+		return "", false
+	}
+	lhs, rest, found := strings.Cut(lit.Value, "=")
+	if !found || !assignmentLHS.MatchString(lhs) {
+		return "", false
+	}
+	parts := append([]syntax.WordPart{&syntax.Lit{Value: rest}}, w.Parts[1:]...)
+	return c.literal(&syntax.Word{Parts: parts})
 }
 
 // fdOperand matches the operand of a duplicating redirection that names
