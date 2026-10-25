@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	anthropicsdk "github.com/anthropics/anthropic-sdk-go"
-	anthropicconfig "github.com/anthropics/anthropic-sdk-go/config"
-	"github.com/anthropics/anthropic-sdk-go/option"
+	anthropicsdk "github.com/anthropics/anthropic-sdk-go/v2"
+	anthropicconfig "github.com/anthropics/anthropic-sdk-go/v2/config"
+	"github.com/anthropics/anthropic-sdk-go/v2/option"
 
 	"github.com/tak848/ccgate/internal/llm"
 )

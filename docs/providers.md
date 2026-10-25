@@ -144,6 +144,8 @@ For a proxy that exposes `/v1/messages`:
 
 Export the proxy's API key as `CCGATE_ANTHROPIC_API_KEY`. The Anthropic SDK appends `/v1/messages` itself, so the base URL stops at the host root.
 
+The request carries the key as `Authorization: Bearer <key>`, not `X-Api-Key`, and sets `anthropic-version: 2026-10-21` (see Anthropic's [migration guide](https://platform.claude.com/docs/en/api/migration-2026-10-21)). The proxy has to accept both. One that only reads `X-Api-Key` answers 401, which on the `CCGATE_ANTHROPIC_API_KEY` path makes the hook exit 1 (see [401/403 behaviour](api-key-helper.md#provider-401403-behaviour)).
+
 ## See also
 
 - [docs/api-key-helper.md](api-key-helper.md) — `provider.auth` (refreshable credentials, helper contract, 401/403 behaviour, recovery checklist)

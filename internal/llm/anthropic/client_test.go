@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	anthropicconfig "github.com/anthropics/anthropic-sdk-go/config"
+	anthropicconfig "github.com/anthropics/anthropic-sdk-go/v2/config"
 
 	"github.com/tak848/ccgate/internal/llm"
 )
@@ -234,10 +234,9 @@ func TestNonProfileSuppressesEnvDefaults(t *testing.T) {
 	writeCredentials(t, credPath, "default")
 	setActiveConfig(t, "default")
 
-	var gotAuth, gotAPIKey string
+	var gotAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
-		gotAPIKey = r.Header.Get("X-Api-Key")
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"id": "msg_test", "type": "message", "role": "assistant", "model": "claude-test",
@@ -257,11 +256,11 @@ func TestNonProfileSuppressesEnvDefaults(t *testing.T) {
 		t.Fatalf("Decide: %v", err)
 	}
 
-	if gotAPIKey != "sk-ant-explicit" {
-		t.Errorf("X-Api-Key = %q, want sk-ant-explicit", gotAPIKey)
-	}
-	if gotAuth != "" {
-		t.Errorf("autoloaded profile credential leaked: Authorization = %q", gotAuth)
+	// The SDK sends an API key as a Bearer token, the same header a
+	// profile's access token uses, so a leaked profile credential shows
+	// up as a different Bearer value here.
+	if want := "Bearer sk-ant-explicit"; gotAuth != want {
+		t.Errorf("Authorization = %q, want %q (autoloaded profile credential leaked?)", gotAuth, want)
 	}
 	if out := logBuf.String(); strings.Contains(out, "takes precedence over the profile") {
 		t.Errorf("env defaults not suppressed: SDK emitted shadow warning: %q", out)
