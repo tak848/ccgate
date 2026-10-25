@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"regexp"
 	"strings"
 )
 
@@ -27,10 +26,10 @@ const (
 	maxUserMessageLen = 200
 
 	// The tail window starts at initialTailBytes and grows by
-	// tailGrowthFactor until it holds a user message, covers the whole
-	// file, or reaches maxTailBytes. Tool results make up most of a
-	// transcript, so the user's latest message is often further back
-	// than the first window.
+	// tailGrowthFactor until it holds maxUserMessages user messages,
+	// covers the whole file, or reaches maxTailBytes. Tool results make
+	// up most of a transcript, so the user's recent messages are often
+	// further back than the first window.
 	initialTailBytes = 64 * 1024
 	tailGrowthFactor = 4
 	maxTailBytes     = 4 * 1024 * 1024
@@ -41,12 +40,28 @@ const (
 // records that an interruption happened, not anything the user asked for.
 const interruptMarkerPrefix = "[Request interrupted by user"
 
-// harnessTagPattern matches the wrapper tags Claude Code puts around
-// text it injects as a user turn (<command-name>, <local-command-stdout>,
-// <task-notification>, ...). The text inside is a slash-command echo,
-// command output, or a background-task result, none of which the user
-// typed.
-var harnessTagPattern = regexp.MustCompile(`^<[a-z][a-z0-9-]*>`)
+// harnessTags are the wrapper tags Claude Code puts around text it
+// writes as a user turn: slash-command echoes, local command output, and
+// background-task results, none of which the user typed. Only these
+// known tags are dropped, so a real request that happens to start with
+// markup such as <div> still reaches the classifier.
+var harnessTags = []string{
+	"<command-name>",
+	"<command-message>",
+	"<local-command-stdout>",
+	"<local-command-stderr>",
+	"<local-command-caveat>",
+	"<task-notification>",
+}
+
+func hasHarnessTag(text string) bool {
+	for _, tag := range harnessTags {
+		if strings.HasPrefix(text, tag) {
+			return true
+		}
+	}
+	return false
+}
 
 // transcriptEntry is the part of a Claude Code transcript JSONL line
 // the loader reads. Tool calls are tool_use blocks inside assistant
@@ -86,7 +101,7 @@ func loadRecentTranscript(path string) (recentTranscript, error) {
 			return recentTranscript{}, fmt.Errorf("read transcript %s: %w", path, err)
 		}
 		result := parseTranscript(data)
-		if len(result.UserMessages) > 0 || wholeFile || window >= maxTailBytes {
+		if len(result.UserMessages) >= maxUserMessages || wholeFile || window >= maxTailBytes {
 			return result, nil
 		}
 	}
@@ -164,7 +179,7 @@ func userText(text string, blocks []contentBlock) string {
 		text = strings.Join(parts, "\n")
 	}
 	text = strings.TrimSpace(text)
-	if strings.HasPrefix(text, interruptMarkerPrefix) || harnessTagPattern.MatchString(text) {
+	if strings.HasPrefix(text, interruptMarkerPrefix) || hasHarnessTag(text) {
 		return ""
 	}
 	return text

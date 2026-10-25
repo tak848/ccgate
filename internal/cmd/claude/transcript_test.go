@@ -70,6 +70,10 @@ func TestLoadRecentTranscript(t *testing.T) {
 			lines: []string{lineToolResultOnly, lineInterrupted, lineMetaSkill, lineMetaCaveat, lineCommandEcho, lineTaskNotice, lineSidechain},
 			want:  recentTranscript{},
 		},
+		"a request that starts with markup is kept": {
+			lines: []string{userLine("<div>Remove the obsolete link</div>")},
+			want:  recentTranscript{UserMessages: []string{"<div>Remove the obsolete link</div>"}},
+		},
 		"lines of other types are skipped even with a user or assistant role": {
 			lines: []string{lineRequestBlobUsr, lineRequestBlobAst},
 			want:  recentTranscript{},
@@ -127,12 +131,13 @@ func TestLoadRecentTranscriptDropsPartialFirstLineOfTail(t *testing.T) {
 
 	// The first line is longer than the first tail window, so the tail
 	// starts in the middle of it and that fragment must not be parsed.
+	// The three messages after it fill the window, so it is not widened.
 	old := userLine(strings.Repeat("x", initialTailBytes))
-	got, err := loadRecentTranscript(writeTranscript(t, []string{old, userLine("latest")}))
+	got, err := loadRecentTranscript(writeTranscript(t, []string{old, userLine("a"), userLine("b"), userLine("latest")}))
 	if err != nil {
 		t.Fatalf("loadRecentTranscript: %v", err)
 	}
-	want := recentTranscript{UserMessages: []string{"latest"}}
+	want := recentTranscript{UserMessages: []string{"a", "b", "latest"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
@@ -144,37 +149,59 @@ func toolResultLine(size int) string {
 	return `{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"x","content":"` + strings.Repeat("o", size) + `"}]}}`
 }
 
+// fillerLines returns tool_result lines totalling about n bytes.
+func fillerLines(n int) []string {
+	const lineBytes = 16 * 1024
+	var lines []string
+	for range n / lineBytes {
+		lines = append(lines, toolResultLine(lineBytes))
+	}
+	return lines
+}
+
 func TestLoadRecentTranscriptLooksFurtherBackForUserMessages(t *testing.T) {
 	t.Parallel()
 
-	const fillerLineBytes = 16 * 1024
+	// A line longer than bufio.Scanner's default token limit must not
+	// stop parsing of the lines after it.
+	longLine := toolResultLine(2 * initialTailBytes)
+	gap := 3 * initialTailBytes
+
 	cases := map[string]struct {
-		fillerBytes int
-		want        recentTranscript
+		lines [][]string
+		want  recentTranscript
 	}{
 		"found beyond the first window": {
-			fillerBytes: 3 * initialTailBytes,
+			lines: [][]string{{userLine("the request")}, fillerLines(gap), {longLine, lineAssistantBash}},
 			want: recentTranscript{
 				UserMessages:    []string{"the request"},
 				RecentToolCalls: []string{"Bash"},
 			},
 		},
+		"keeps widening until it has three user messages": {
+			lines: [][]string{
+				{userLine("first")}, fillerLines(gap),
+				{userLine("second")}, fillerLines(gap),
+				{userLine("third"), lineAssistantBash},
+			},
+			want: recentTranscript{
+				UserMessages:    []string{"first", "second", "third"},
+				RecentToolCalls: []string{"Bash"},
+			},
+		},
 		"not read beyond the cap": {
-			fillerBytes: maxTailBytes + initialTailBytes,
-			want:        recentTranscript{RecentToolCalls: []string{"Bash"}},
+			lines: [][]string{{userLine("the request")}, fillerLines(maxTailBytes + initialTailBytes), {longLine, lineAssistantBash}},
+			want:  recentTranscript{RecentToolCalls: []string{"Bash"}},
 		},
 	}
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			lines := []string{userLine("the request")}
-			for range tc.fillerBytes / fillerLineBytes {
-				lines = append(lines, toolResultLine(fillerLineBytes))
+			var lines []string
+			for _, part := range tc.lines {
+				lines = append(lines, part...)
 			}
-			// A line longer than bufio.Scanner's default token limit
-			// must not stop parsing of the lines after it.
-			lines = append(lines, toolResultLine(2*initialTailBytes), lineAssistantBash)
 
 			got, err := loadRecentTranscript(writeTranscript(t, lines))
 			if err != nil {
