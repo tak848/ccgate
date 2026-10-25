@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	anthropic "github.com/anthropics/anthropic-sdk-go"
 	jsonnet "github.com/google/go-jsonnet"
 	"github.com/google/go-jsonnet/ast"
 	"github.com/invopop/jsonschema"
@@ -22,7 +21,7 @@ import (
 
 const (
 	DefaultTimeoutMS = 20_000
-	DefaultModel     = string(anthropic.ModelClaudeHaiku4_5)
+	DefaultModel     = "claude-haiku-5-5"
 	DefaultProvider  = "anthropic"
 	// DefaultReasoningEffort keeps reasoning off. ccgate classifies a
 	// single tool call, which no model needs to think about, and

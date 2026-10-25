@@ -21,7 +21,7 @@ The shell that runs an `exec` helper is selected per-config via `auth.shell` (de
 {
   provider: {
     name: 'anthropic',
-    model: 'claude-haiku-4-5',
+    model: 'claude-haiku-5-5',
     auth: {
       type: 'exec',
       command: '/usr/local/bin/my-key-broker --provider anthropic',
@@ -36,7 +36,7 @@ The shell that runs an `exec` helper is selected per-config via `auth.shell` (de
 {
   provider: {
     name: 'anthropic',
-    model: 'claude-haiku-4-5',
+    model: 'claude-haiku-5-5',
     auth: {
       type: 'file',
       path: '~/.config/my-broker/anthropic.json',
@@ -177,7 +177,7 @@ The cache fingerprint includes `auth.cache_key`, so two configs with the same `a
 {
   provider: {
     name: 'anthropic',
-    model: 'claude-haiku-4-5',
+    model: 'claude-haiku-5-5',
     auth: {
       type: 'exec',
       command: 'aws-sts-broker --provider anthropic',
