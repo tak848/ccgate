@@ -113,7 +113,9 @@ func extractBashPaths(cwd string, command string) []string {
 			continue
 		}
 		// `--file=/x`, `of=/dev/sda`, `PREFIX=~/opt`: the value after `=`.
-		if _, rhs, found := strings.Cut(token, "="); found && looksLikePathToken(rhs) {
+		// URLs are skipped: `?path=/etc/x` in a query string names no
+		// local file.
+		if _, rhs, found := strings.Cut(token, "="); found && !strings.Contains(token, "://") && looksLikePathToken(rhs) {
 			candidates = append(candidates, rhs)
 			continue
 		}

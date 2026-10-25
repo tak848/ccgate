@@ -222,6 +222,10 @@ func TestExtractBashPathsFindsTargets(t *testing.T) {
 			command: `dd if=./disk.img of=/dev/sda`,
 			raw:     []string{"./disk.img", "/dev/sda"},
 		},
+		"URL query value is not a path": {
+			command: `curl 'https://example.com/api?path=/etc/passwd' -o ./out.json`,
+			raw:     []string{"./out.json"},
+		},
 	}
 
 	for name, tc := range cases {
