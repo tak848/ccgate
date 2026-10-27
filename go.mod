@@ -12,6 +12,7 @@ require (
 	github.com/pb33f/ordered-map/v2 v2.3.2
 	golang.org/x/sys v0.49.0
 	golang.org/x/term v0.47.0
+	mvdan.cc/sh/v3 v3.14.1
 )
 
 require (

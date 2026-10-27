@@ -206,7 +206,7 @@ ccgate が LLM に渡す情報 (代表項目):
 
 - `tool_name`, `tool_input`, `tool_input_raw` (元の JSON payload をそのまま渡す)。
 - `cwd`, `repo_root`, `branch_name`, worktree info (`gitutil.Context` から)。working tree の dirty/clean は **渡していない**。
-- `referenced_paths` — `tool_input` から best-effort で抽出した path リスト。対象 tool は `Read` / `Write` / `Edit` / `MultiEdit` / `Glob` / `Grep` / `Bash` (Claude)、`read` / `write` / `edit` / `glob` / `grep` / `exec` (Devin)。`apply_patch` (Codex / Devin) や MCP tool では空で、LLM は `tool_input_raw` の hunk / args を直接読む。
+- `referenced_paths` — `tool_input` から best-effort で抽出した path リスト。対象 tool は `Read` / `Write` / `Edit` / `MultiEdit` / `Glob` / `Grep` / `Bash` (Claude)、`read` / `write` / `edit` / `glob` / `grep` / `exec` (Devin)。`apply_patch` (Codex / Devin) や MCP tool では空で、LLM は `tool_input_raw` の hunk / args を直接読む。shell コマンドは [mvdan.cc/sh](https://github.com/mvdan/sh) で Bash としてパースし、path である引数 (`/`・`./`・`../` で始まるもの。`~` と `$HOME` は shell が展開する位置でだけ展開する)、リダイレクト先 (`>/etc/x`、`> out.txt`)、`--opt=/path` / `key=/path` と代入の値を拾う。`$(...)`・`<(...)`・subshell の中も対象で、here-doc の本文とコメントは対象外。それ以外の変数、コマンド置換、glob、同じコマンド内の `cd` からの相対 path は解決できず、Bash としてパースできないコマンドは空白区切りの語から拾うだけになるので、system prompt で「空でも workspace 内で完結している証拠にはならない」と LLM に伝えている。
 - Claude のみ: `permission_mode` (`"plan"` で system prompt が plan mode rule に切替), `permission_suggestions`, `recent_transcript`, `settings_permissions` hint (whitelist ではなく hint 扱い)。
 
 target ごとの完全な入力一覧は [docs/claude-code.md](claude-code.md) / [docs/codex-cli.md](codex-cli.md) / [docs/devin-cli.md](devin-cli.md) を参照してください。

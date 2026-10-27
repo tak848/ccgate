@@ -1,61 +1,12 @@
 package runner
 
 import (
+	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
 	"testing"
 )
-
-func TestShellSplit(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name  string
-		input string
-		want  []string
-	}{
-		{
-			name:  "simple tokens",
-			input: "git status",
-			want:  []string{"git", "status"},
-		},
-		{
-			name:  "double quotes",
-			input: `git -C "../other repo" status`,
-			want:  []string{"git", "-C", "../other repo", "status"},
-		},
-		{
-			name:  "single quotes",
-			input: "echo 'hello world'",
-			want:  []string{"echo", "hello world"},
-		},
-		{
-			name:  "escaped space",
-			input: `echo hello\ world`,
-			want:  []string{"echo", "hello world"},
-		},
-		{
-			name:  "empty input",
-			input: "",
-			want:  nil,
-		},
-		{
-			name:  "tabs and newlines",
-			input: "a\tb\nc",
-			want:  []string{"a", "b", "c"},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got := shellSplit(tt.input)
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Fatalf("shellSplit(%q) = %v, want %v", tt.input, got, tt.want)
-			}
-		})
-	}
-}
 
 func TestLooksLikePathToken(t *testing.T) {
 	t.Parallel()
@@ -70,6 +21,12 @@ func TestLooksLikePathToken(t *testing.T) {
 		{"./local", true},
 		{"../parent", true},
 		{"~/docs", true},
+		{"~", true},
+		{"$HOME/docs", true},
+		{"${HOME}/docs", true},
+		{"$HOME", true},
+		{"~user/docs", false},
+		{"$HOMEDIR/docs", false},
 		{"git", false},
 		{"--verbose", false},
 		{"", false},
@@ -171,6 +128,205 @@ func TestExtractBashPaths(t *testing.T) {
 			got := extractBashPaths(tt.cwd, tt.command)
 			if len(got) != tt.wantLen {
 				t.Fatalf("extractBashPaths(%q, %q) got %d paths %v, want %d", tt.cwd, tt.command, len(got), got, tt.wantLen)
+			}
+		})
+	}
+}
+
+// TestExtractBashPathsFindsTargets pins which raw tokens a command
+// yields. The expected paths go through expandPaths too, so the cases
+// stay independent of OS path semantics and only check extraction.
+func TestExtractBashPathsFindsTargets(t *testing.T) {
+	t.Parallel()
+
+	const cwd = "/tmp/repo"
+	cases := map[string]struct {
+		command string
+		raw     []string
+	}{
+		"redirect without a space": {
+			command: `echo hi >/etc/motd`,
+			raw:     []string{"/etc/motd"},
+		},
+		"append redirect with fd": {
+			command: `make 2>>~/build.log`,
+			raw:     []string{"~/build.log"},
+		},
+		"redirect inside a token": {
+			command: `cat ./a>/tmp/out`,
+			raw:     []string{"./a", "/tmp/out"},
+		},
+		"fd duplication is not a path": {
+			command: `go test ./... 2>&1`,
+			raw:     []string{"./..."},
+		},
+		"home directory alone": {
+			command: `rm -rf ~`,
+			raw:     []string{"~"},
+		},
+		"HOME variable": {
+			command: `rm -rf "$HOME/.ssh" ${HOME}/.aws`,
+			raw:     []string{"$HOME/.ssh", "${HOME}/.aws"},
+		},
+		"value after = without a leading --": {
+			command: `dd if=./disk.img of=/dev/sda`,
+			raw:     []string{"./disk.img", "/dev/sda"},
+		},
+		"URL query value is not a path": {
+			command: `curl 'https://example.com/api?path=/etc/passwd' -o ./out.json`,
+			raw:     []string{"./out.json"},
+		},
+		">& with a file operand redirects to that file": {
+			command: `echo hello >& /tmp/out`,
+			raw:     []string{"/tmp/out"},
+		},
+		"descriptor operands are not files": {
+			command: `cmd 2>&1 3>&- 4<&0`,
+			raw:     nil,
+		},
+		"relative redirection target": {
+			command: `echo hi > out.txt`,
+			raw:     []string{"out.txt"},
+		},
+		"here-doc delimiter is not a file": {
+			command: `cat <<EOF`,
+			raw:     nil,
+		},
+		"quoted redirection is text": {
+			command: `printf '%s\n' 'hi >/tmp/out'`,
+			raw:     nil,
+		},
+		"quoted > inside a path keeps the path whole": {
+			command: `rm -rf './a>/etc/passwd'`,
+			raw:     []string{"./a>/etc/passwd"},
+		},
+		"single-quoted HOME is literal text": {
+			command: `rg '$HOME' ./README.md`,
+			raw:     []string{"./README.md"},
+		},
+		"quoted tilde is literal text": {
+			command: `ls "~/docs"`,
+			raw:     nil,
+		},
+		"path containing = stays one path": {
+			command: `rm -rf ./cache=/etc`,
+			raw:     []string{"./cache=/etc"},
+		},
+		"commands after ; and |": {
+			command: `echo hi;rm -rf /opt/x|tee /tmp/log`,
+			raw:     []string{"/opt/x", "/tmp/log"},
+		},
+		"subshell": {
+			command: `(cd /tmp && rm -rf ./build)`,
+			raw:     []string{"/tmp", "./build"},
+		},
+		"command substitution": {
+			command: `echo $(cat /etc/hosts) > ./hosts.txt`,
+			raw:     []string{"/etc/hosts", "./hosts.txt"},
+		},
+		"process substitution": {
+			command: `diff <(sort ./a) <(sort ./b)`,
+			raw:     []string{"./a", "./b"},
+		},
+		"here-doc body is not a command": {
+			command: "cat <<EOF > out.txt\n> /etc/passwd\nEOF",
+			raw:     []string{"out.txt"},
+		},
+		"commit message from a here-doc is not a path": {
+			command: "git commit -m \"$(cat <<'EOF'\nfix: handle /etc/hosts lookup\nEOF\n)\"",
+			raw:     nil,
+		},
+		"command substitution in an unquoted here-doc runs": {
+			command: "bash <<EOF\n$(rm -rf /x)\nEOF",
+			raw:     []string{"/x"},
+		},
+		"comment is not a command": {
+			command: `ls /x # rm -rf /etc`,
+			raw:     []string{"/x"},
+		},
+		"for loop items": {
+			command: `for f in ./a ./b; do rm "$f"; done`,
+			raw:     []string{"./a", "./b"},
+		},
+		"assignments": {
+			command: `PREFIX=/opt/x make install && export DEST=~/opt`,
+			raw:     []string{"/opt/x", "~/opt"},
+		},
+		"tilde after = of an option": {
+			command: `./configure --prefix=~/opt`,
+			raw:     []string{"~/opt", "./configure"},
+		},
+		"quoted HOME after = is literal text": {
+			command: `curl --output='$HOME/out' https://example.com`,
+			raw:     nil,
+		},
+		"whole option quoted": {
+			command: `curl '--output=/etc/example' "--config=$HOME/.curlrc" '--trace=$HOME/t' https://example.com`,
+			raw:     []string{"/etc/example", "$HOME/.curlrc"},
+		},
+		"array elements": {
+			command: `targets=( /etc/important ./build ); rm -rf "${targets[@]}"`,
+			raw:     []string{"/etc/important", "./build"},
+		},
+		"default inside an expansion is not a path of its own": {
+			command: `rm -rf "./cache/${XDG_CACHE_HOME:-/etc}" ./a$((1+1))`,
+			raw:     []string{"./cache/etc", "./a2"},
+		},
+		"command inside an expansion default runs": {
+			command: `echo ${X:-$(rm -rf /tmp/y)}`,
+			raw:     []string{"/tmp/y"},
+		},
+		"test operands": {
+			command: `[[ -e /etc/x ]] && echo found`,
+			raw:     []string{"/etc/x"},
+		},
+		"value unknown before the command runs": {
+			command: `rm -rf "$TMPDIR/cache" $(mktemp -d)/x`,
+			raw:     nil,
+		},
+		"command that does not parse falls back to words": {
+			command: `echo 'unterminated ./x`,
+			raw:     []string{"./x"},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			got := extractBashPaths(cwd, tc.command)
+			want := expandPaths(cwd, tc.raw...)
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("extractBashPaths(%q) = %v, want %v", tc.command, got, want)
+			}
+		})
+	}
+}
+
+func TestExpandPathsHomeForms(t *testing.T) {
+	t.Parallel()
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("no home directory: %v", err)
+	}
+	cases := map[string]struct {
+		value string
+		want  string
+	}{
+		"tilde alone":    {value: "~", want: home},
+		"tilde slash":    {value: "~/docs/a.md", want: filepath.Join(home, "docs", "a.md")},
+		"HOME variable":  {value: "$HOME/.ssh", want: filepath.Join(home, ".ssh")},
+		"braced HOME":    {value: "${HOME}/.aws", want: filepath.Join(home, ".aws")},
+		"HOME alone":     {value: "$HOME", want: home},
+		"other variable": {value: "$HOMEDIR/x", want: filepath.Join("/cwd", "$HOMEDIR", "x")},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			got := expandPaths("/cwd", tc.value)
+			if len(got) != 1 || got[0] != filepath.Clean(tc.want) {
+				t.Fatalf("expandPaths(%q) = %v, want [%s]", tc.value, got, tc.want)
 			}
 		})
 	}
