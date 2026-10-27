@@ -1,17 +1,5 @@
-// Package cli wires the kong subcommand tree for the ccgate binary.
-//
-// Layout:
-//
-//	ccgate                       (no args + stdin pipe) -> claude.Run     (permanent default)
-//	ccgate claude                                       -> claude.Run     (explicit)
-//	ccgate claude init                                  -> claude.Init
-//	ccgate claude metrics                               -> claude.Metrics
-//	ccgate codex / devin                                -> codex.Run / devin.Run (+ init / metrics)
-//	ccgate init / ccgate metrics                        -> deprecated     (exit 2 with migration hint)
-//
-// Bare `ccgate` is the canonical Claude Code hook invocation and will
-// keep working forever — existing `~/.claude/settings.json` entries
-// using `"command": "ccgate"` are not touched.
+// Package cli implements the ccgate command line.
+// Bare ccgate remains the pipe-driven Claude Code hook entry point.
 package cli
 
 import (
@@ -19,7 +7,6 @@ import (
 	"io"
 	"os"
 
-	"github.com/alecthomas/kong"
 	"golang.org/x/term"
 
 	"github.com/tak848/ccgate/internal/cmd/claude"
@@ -27,29 +14,10 @@ import (
 	"github.com/tak848/ccgate/internal/cmd/devin"
 )
 
-// CLI is the kong-bound root command tree.
-type CLI struct {
-	Version kong.VersionFlag `help:"Print version and exit."`
-
-	Claude  ClaudeCmd            `cmd:"" help:"Run the Claude Code PermissionRequest hook (or manage its config / metrics). With no sub-sub-command, runs the hook from stdin."`
-	Codex   CodexCmd             `cmd:"" help:"Run the OpenAI Codex CLI PermissionRequest hook (experimental). With no sub-sub-command, runs the hook from stdin."`
-	Devin   DevinCmd             `cmd:"" help:"Run the Devin PermissionRequest hook. With no sub-sub-command, runs the hook from stdin."`
-	Clm     ClaudeMetricsCmd     `cmd:"" help:"Shortcut for 'ccgate claude metrics'."`
-	Com     CodexMetricsCmd      `cmd:"" help:"Shortcut for 'ccgate codex metrics'."`
-	Dvm     DevinMetricsCmd      `cmd:"" help:"Shortcut for 'ccgate devin metrics'."`
-	Init    DeprecatedInitCmd    `cmd:"" help:"[removed in v0.6] Use 'ccgate claude init', 'ccgate codex init', or 'ccgate devin init' instead."`
-	Metrics DeprecatedMetricsCmd `cmd:"" help:"[removed in v0.6] Use 'ccgate claude metrics', 'ccgate codex metrics', or 'ccgate devin metrics' instead."`
-}
-
-// Run is the binary entry point. main() should call cli.Run with the
-// process's args/stdin/stdout/stderr and propagate the returned exit
-// code.
+// Run dispatches args using the supplied streams and returns the process exit
+// code. Only main exits the process, including for help and parse errors.
 func Run(version string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	claude.SetBuildVersion(version)
-
-	// No args: behave like the legacy bare `ccgate` invocation —
-	// pipe-driven hook on stdin, friendly usage on a tty. This path
-	// must keep working forever; existing user settings refer to it.
 	if len(args) == 0 {
 		if isTerminal(stdin) {
 			printUsage(stderr, version)
@@ -57,51 +25,30 @@ func Run(version string, args []string, stdin io.Reader, stdout, stderr io.Write
 		}
 		return claude.Run(stdin, stdout)
 	}
-
-	var cli CLI
-	parser, err := kong.New(&cli,
-		kong.Name("ccgate"),
-		kong.Description("ccgate -- PermissionRequest hook for AI coding tools (Claude Code, OpenAI Codex CLI, Devin).\nNo args + stdin pipe = Claude Code hook (legacy invocation, permanent)."),
-		kong.Vars{"version": version},
-		kong.Writers(stdout, stderr),
-		kong.Exit(func(code int) {
-			// kong calls Exit on --help / --version / parse errors.
-			// We can't actually exit here without aborting the
-			// caller; instead we rely on the int return below.
-			// Empty body is intentional — see the panic recovery
-			// in main() if this assumption ever changes.
-			panic(kongExit{code: code})
-		}),
-	)
+	c, err := parseCommand(args)
 	if err != nil {
-		fmt.Fprintf(stderr, "internal error: %v\n", err)
-		return 1
-	}
-
-	defer func() {
-		if r := recover(); r != nil {
-			if exit, ok := r.(kongExit); ok {
-				os.Exit(exit.code)
-			}
-			panic(r)
-		}
-	}()
-
-	kctx, err := parser.Parse(args)
-	if err != nil {
-		parser.Errorf("%v", err)
+		fmt.Fprintf(stderr, "ccgate: error: %v\n", err)
 		return 2
 	}
-
-	return dispatch(kctx, &cli, version, stdin, stdout, stderr)
+	switch c.show {
+	case "help":
+		if err := writeHelp(stdout, c); err != nil {
+			fmt.Fprintf(stderr, "ccgate: %v\n", err)
+			return 1
+		}
+		return 0
+	case "version":
+		if _, err := fmt.Fprintln(stdout, version); err != nil {
+			fmt.Fprintf(stderr, "ccgate: write version: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	return dispatch(c, version, stdin, stdout, stderr)
 }
 
-// kongExit unwinds back to Run so we can translate kong's process-level
-// exit semantics into the int the caller already returns.
-type kongExit struct{ code int }
-
-func dispatch(kctx *kong.Context, cli *CLI, version string, stdin io.Reader, stdout, stderr io.Writer) int {
-	switch kctx.Command() {
+func dispatch(c command, version string, stdin io.Reader, stdout, stderr io.Writer) int {
+	switch c.name() {
 	case "claude", "claude hook":
 		if isTerminal(stdin) {
 			printUsage(stderr, version)
@@ -110,19 +57,19 @@ func dispatch(kctx *kong.Context, cli *CLI, version string, stdin io.Reader, std
 		return claude.Run(stdin, stdout)
 	case "claude init":
 		return claude.Init(stdout, stderr, claude.InitOptions{
-			Project: cli.Claude.Init.Project,
-			Output:  cli.Claude.Init.Output,
-			Force:   cli.Claude.Init.Force,
+			Project: c.project,
+			Output:  c.output,
+			Force:   c.force,
 		})
-	case "claude metrics":
+	case "claude metrics", "clm":
 		cwd, err := os.Getwd()
 		if err != nil {
 			fmt.Fprintf(stderr, "warning: failed to get working directory: %v\n", err)
 		}
 		return claude.Metrics(stdout, stderr, cwd, claude.MetricsOptions{
-			Days:       cli.Claude.Metrics.Days,
-			AsJSON:     cli.Claude.Metrics.JSON,
-			DetailsTop: cli.Claude.Metrics.Details,
+			Days:       c.days,
+			AsJSON:     c.json,
+			DetailsTop: c.details,
 		})
 	case "codex", "codex hook":
 		if isTerminal(stdin) {
@@ -132,19 +79,19 @@ func dispatch(kctx *kong.Context, cli *CLI, version string, stdin io.Reader, std
 		return codex.Run(stdin, stdout)
 	case "codex init":
 		return codex.Init(stdout, stderr, codex.InitOptions{
-			Project: cli.Codex.Init.Project,
-			Output:  cli.Codex.Init.Output,
-			Force:   cli.Codex.Init.Force,
+			Project: c.project,
+			Output:  c.output,
+			Force:   c.force,
 		})
-	case "codex metrics":
+	case "codex metrics", "com":
 		cwd, err := os.Getwd()
 		if err != nil {
 			fmt.Fprintf(stderr, "warning: failed to get working directory: %v\n", err)
 		}
 		return codex.Metrics(stdout, stderr, cwd, codex.MetricsOptions{
-			Days:       cli.Codex.Metrics.Days,
-			AsJSON:     cli.Codex.Metrics.JSON,
-			DetailsTop: cli.Codex.Metrics.Details,
+			Days:       c.days,
+			AsJSON:     c.json,
+			DetailsTop: c.details,
 		})
 	case "devin", "devin hook":
 		if isTerminal(stdin) {
@@ -154,56 +101,26 @@ func dispatch(kctx *kong.Context, cli *CLI, version string, stdin io.Reader, std
 		return devin.Run(stdin, stdout)
 	case "devin init":
 		return devin.Init(stdout, stderr, devin.InitOptions{
-			Project: cli.Devin.Init.Project,
-			Output:  cli.Devin.Init.Output,
-			Force:   cli.Devin.Init.Force,
+			Project: c.project,
+			Output:  c.output,
+			Force:   c.force,
 		})
-	case "devin metrics":
+	case "devin metrics", "dvm":
 		cwd, err := os.Getwd()
 		if err != nil {
 			fmt.Fprintf(stderr, "warning: failed to get working directory: %v\n", err)
 		}
 		return devin.Metrics(stdout, stderr, cwd, devin.MetricsOptions{
-			Days:       cli.Devin.Metrics.Days,
-			AsJSON:     cli.Devin.Metrics.JSON,
-			DetailsTop: cli.Devin.Metrics.Details,
-		})
-	case "clm":
-		cwd, err := os.Getwd()
-		if err != nil {
-			fmt.Fprintf(stderr, "warning: failed to get working directory: %v\n", err)
-		}
-		return claude.Metrics(stdout, stderr, cwd, claude.MetricsOptions{
-			Days:       cli.Clm.Days,
-			AsJSON:     cli.Clm.JSON,
-			DetailsTop: cli.Clm.Details,
-		})
-	case "com":
-		cwd, err := os.Getwd()
-		if err != nil {
-			fmt.Fprintf(stderr, "warning: failed to get working directory: %v\n", err)
-		}
-		return codex.Metrics(stdout, stderr, cwd, codex.MetricsOptions{
-			Days:       cli.Com.Days,
-			AsJSON:     cli.Com.JSON,
-			DetailsTop: cli.Com.Details,
-		})
-	case "dvm":
-		cwd, err := os.Getwd()
-		if err != nil {
-			fmt.Fprintf(stderr, "warning: failed to get working directory: %v\n", err)
-		}
-		return devin.Metrics(stdout, stderr, cwd, devin.MetricsOptions{
-			Days:       cli.Dvm.Days,
-			AsJSON:     cli.Dvm.JSON,
-			DetailsTop: cli.Dvm.Details,
+			Days:       c.days,
+			AsJSON:     c.json,
+			DetailsTop: c.details,
 		})
 	case "init":
 		return runDeprecatedInit(stderr)
 	case "metrics":
 		return runDeprecatedMetrics(stderr)
 	default:
-		fmt.Fprintf(stderr, "unknown command: %s\n", kctx.Command())
+		fmt.Fprintf(stderr, "unknown command: %s\n", c.name())
 		return 2
 	}
 }

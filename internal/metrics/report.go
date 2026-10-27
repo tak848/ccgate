@@ -45,7 +45,7 @@ const noInputPlaceholder = "(no input)"
 //   - > 0:  the top N rows are shown in each section.
 //
 // The Go zero value (0) is "suppress", not "use default", which differs
-// from how the kong CLI flag defaults to 10. Programmatic callers that
+// from how the CLI flag defaults to 10. Programmatic callers that
 // want the default behavior must set DetailsTop explicitly (e.g. 10).
 type ReportOptions struct {
 	Days       int

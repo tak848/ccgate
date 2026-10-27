@@ -3,7 +3,6 @@ module github.com/tak848/ccgate
 go 1.27.3
 
 require (
-	github.com/alecthomas/kong v1.16.1
 	github.com/anthropics/anthropic-sdk-go/v2 v2.3.0
 	github.com/gofrs/flock v0.13.1
 	github.com/google/go-jsonnet v0.22.0
