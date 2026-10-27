@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	anthropicsdk "github.com/anthropics/anthropic-sdk-go"
-	anthropicconfig "github.com/anthropics/anthropic-sdk-go/config"
-	"github.com/anthropics/anthropic-sdk-go/option"
+	anthropicsdk "github.com/anthropics/anthropic-sdk-go/v2"
+	anthropicconfig "github.com/anthropics/anthropic-sdk-go/v2/config"
+	"github.com/anthropics/anthropic-sdk-go/v2/option"
 
 	"github.com/tak848/ccgate/internal/llm"
 )
@@ -25,6 +25,25 @@ const (
 	maxTokens  = 4096
 	maxRetries = 5
 )
+
+// proxyAPIVersion is the anthropic-version sent to a proxy (see
+// viaProxy). anthropic-sdk-go v2 sends 2026-10-21 and the API key as
+// Authorization: Bearer, while v1 sent 2023-06-01 and X-Api-Key, and an
+// Anthropic-compatible proxy that worked with v1 may accept only those.
+// Requests to a proxy keep v1's version and key header so upgrading
+// ccgate does not break them. The request ccgate builds uses none of
+// the fields the two versions treat differently.
+const proxyAPIVersion = "2023-06-01"
+
+// claudeAPIBaseURL is the SDK's default base URL. A base_url set to it
+// still reaches the Claude API, not a proxy.
+const claudeAPIBaseURL = "https://api.anthropic.com"
+
+// viaProxy reports whether requests sent to baseURL go somewhere other
+// than the Claude API. An empty baseURL means the SDK's default.
+func viaProxy(baseURL string) bool {
+	return baseURL != "" && strings.TrimRight(baseURL, "/") != claudeAPIBaseURL
+}
 
 // ErrNoAPIKey is returned by Decide when neither
 // CCGATE_ANTHROPIC_API_KEY nor ANTHROPIC_API_KEY is set, and no
@@ -111,19 +130,11 @@ func (c *Client) Decide(ctx context.Context, p llm.Prompt) (llm.Result, error) {
 		option.WithMaxRetries(maxRetries),
 		option.WithoutEnvironmentDefaults(),
 	}
-	if c.UseProfile {
-		profileOpts, err := c.resolveProfileOptions()
-		if err != nil {
-			return llm.Result{}, err
-		}
-		opts = append(opts, profileOpts...)
-	} else {
-		opts = append(opts, option.WithAPIKey(c.APIKey))
+	endpointOpts, err := c.endpointOptions()
+	if err != nil {
+		return llm.Result{}, err
 	}
-	if c.BaseURL != "" {
-		opts = append(opts, option.WithBaseURL(c.BaseURL))
-	}
-	client := anthropicsdk.NewClient(opts...)
+	client := anthropicsdk.NewClient(append(opts, endpointOpts...)...)
 
 	// The SDK's Schema field is map[string]any, whose keys the encoder
 	// sorts alphabetically; OutputSchemaMap injects `properties` as a
@@ -227,12 +238,52 @@ func reasoningParams(effort string) (anthropicsdk.ThinkingConfigParamUnion, anth
 	}
 }
 
+// endpointOptions returns the credential and base URL options.
+// Requests to the Claude API use the SDK's defaults. Requests to a
+// proxy keep the version and API key header v1 sent (see
+// proxyAPIVersion); a profile's token already went in Authorization
+// under v1, so only the API key path changes header.
+func (c *Client) endpointOptions() ([]option.RequestOption, error) {
+	var opts []option.RequestOption
+	// Requests go to provider.base_url when it is set, and otherwise to
+	// the profile's base_url.
+	baseURL := c.BaseURL
+	switch {
+	case c.UseProfile:
+		profileOpts, profileBaseURL, err := c.resolveProfileOptions()
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, profileOpts...)
+		if baseURL == "" {
+			baseURL = profileBaseURL
+		}
+	case viaProxy(c.BaseURL):
+		// The SDK sends a hand-set key header as it is and adds no
+		// credential of its own.
+		opts = append(opts,
+			option.WithHeader("X-Api-Key", c.APIKey),
+			option.WithHeaderDel("Authorization"),
+		)
+	default:
+		opts = append(opts, option.WithAPIKey(c.APIKey))
+	}
+	if c.BaseURL != "" {
+		opts = append(opts, option.WithBaseURL(c.BaseURL))
+	}
+	if viaProxy(baseURL) {
+		opts = append(opts, option.WithHeader("anthropic-version", proxyAPIVersion))
+	}
+	return opts, nil
+}
+
 // resolveProfileOptions runs the profile-mode credential pipeline
 // (LoadProfile / LoadConfig + preflight) and returns the SDK options
-// that wire the resolved config into NewClient. Any failure surfaces
+// that wire the resolved config into NewClient, along with the
+// profile's base_url (empty when it sets none). Any failure surfaces
 // as ErrProfileUnavailable so runner.decide() can route the
 // fallthrough.
-func (c *Client) resolveProfileOptions() ([]option.RequestOption, error) {
+func (c *Client) resolveProfileOptions() ([]option.RequestOption, string, error) {
 	cfg, err := loadProfileConfig(c.Profile)
 	if err != nil {
 		// Don't %w-wrap the SDK error: its message can include the
@@ -245,11 +296,11 @@ func (c *Client) resolveProfileOptions() ([]option.RequestOption, error) {
 			"error_class", classifyProfileLoadError(err),
 			"profile_name_set", c.Profile != "",
 		)
-		return nil, fmt.Errorf("%w: load profile", ErrProfileUnavailable)
+		return nil, "", fmt.Errorf("%w: load profile", ErrProfileUnavailable)
 	}
 
 	if err := preflightCredentials(cfg); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	slog.Info("credential source selected",
@@ -261,7 +312,7 @@ func (c *Client) resolveProfileOptions() ([]option.RequestOption, error) {
 	// Decide for every mode, so it is not repeated here.
 	return []option.RequestOption{
 		option.WithConfig(cfg),
-	}, nil
+	}, cfg.BaseURL, nil
 }
 
 // loadProfileConfig calls the SDK's profile loader. Empty profile

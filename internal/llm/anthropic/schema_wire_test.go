@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	anthropicsdk "github.com/anthropics/anthropic-sdk-go"
+	anthropicsdk "github.com/anthropics/anthropic-sdk-go/v2"
 
 	"github.com/tak848/ccgate/internal/llm"
 )

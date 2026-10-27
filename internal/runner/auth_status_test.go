@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	anthropicsdk "github.com/anthropics/anthropic-sdk-go"
+	anthropicsdk "github.com/anthropics/anthropic-sdk-go/v2"
 	openaisdk "github.com/openai/openai-go/v3"
 
 	"github.com/tak848/ccgate/internal/config"
