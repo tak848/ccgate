@@ -4,11 +4,11 @@ go 1.27.3
 
 require (
 	github.com/alecthomas/kong v1.16.1
-	github.com/anthropics/anthropic-sdk-go/v2 v2.3.0
+	github.com/anthropics/anthropic-sdk-go/v2 v2.4.0
 	github.com/gofrs/flock v0.13.1
 	github.com/google/go-jsonnet v0.22.0
 	github.com/invopop/jsonschema v0.14.0
-	github.com/openai/openai-go/v3 v3.85.1
+	github.com/openai/openai-go/v3 v3.89.0
 	github.com/pb33f/ordered-map/v2 v2.3.2
 	golang.org/x/sys v0.49.0
 	golang.org/x/term v0.47.0
